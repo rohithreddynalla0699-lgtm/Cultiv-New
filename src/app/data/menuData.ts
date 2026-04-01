@@ -1,7 +1,8 @@
 // menuData.ts — centralized menu data: categories, food items, and bowl builder steps with nutrition.
 
 import { TABLE_BUILD_OPTIONS_BY_TYPE } from './buildYourOwnTableData';
-import { DRINK_ITEMS } from './drinksData';
+import { DRINK_ITEMS, hydrateDrinksCatalog, type DrinkItem, type DrinkSection } from './drinksData';
+import { fetchMenuRepositoryPayload } from './menuRepository';
 
 // ─── Food item (shown on category pages) ────────────────────────────────────
 
@@ -542,7 +543,7 @@ export const MENU_CATEGORIES: MenuCategoryData[] = [
         description: 'Greens, veg proteins, crunchy toppings, and fresh salsa. No rice included.',
         calories: 310,
         protein: 16,
-        price: 199,
+        price: 169,
         image: 'https://images.unsplash.com/photo-1512058556646-c4da40fba323?w=1080',
         badge: 'Fresh',
       },
@@ -552,7 +553,7 @@ export const MENU_CATEGORIES: MenuCategoryData[] = [
         description: 'Greens, chicken proteins, fresh toppings, and salsa. No rice included.',
         calories: 360,
         protein: 28,
-        price: 229,
+        price: 189,
         image: 'https://images.unsplash.com/photo-1547592180-85f173990554?w=1080',
       },
       {
@@ -561,7 +562,7 @@ export const MENU_CATEGORIES: MenuCategoryData[] = [
         description: 'Greens with both veg and chicken proteins for a balanced power salad. No rice included.',
         calories: 410,
         protein: 34,
-        price: 249,
+        price: 199,
         image: 'https://images.unsplash.com/photo-1625944374530-cd0f5489ec77?w=1080',
         badge: 'Power Pick',
       },
@@ -612,6 +613,37 @@ export const MENU_CATEGORIES: MenuCategoryData[] = [
     items: DRINK_ITEMS,
   },
 ];
+
+const DEFAULT_OPTION_GROUPS_BY_CATEGORY_SLUG: Record<string, string[]> = {
+  'build-your-own-bowl': ['base', 'protein', 'toppings', 'sauce', 'extras'],
+  'signature-bowls': ['base', 'protein', 'toppings', 'sauce', 'extras'],
+  'salad-bowls': ['protein', 'toppings', 'sauce', 'extras'],
+  'breakfast-bowls': ['fruits', 'crunch', 'add-ons'],
+};
+
+const DEFAULT_ITEM_OPTION_GROUPS_BY_ITEM_ID: Record<string, string[]> = Object.fromEntries(
+  MENU_CATEGORIES.flatMap((category) =>
+    category.items.map((item) => [item.id, [...(DEFAULT_OPTION_GROUPS_BY_CATEGORY_SLUG[category.slug] ?? [])]]),
+  ),
+);
+
+const TABLE_ITEM_ID_ALIAS_TO_MENU_ITEM_ID: Record<string, string> = {
+  'table-veg': 'veg-table-bowl',
+  'table-chicken': 'chicken-table-bowl',
+  'table-both': 'power-table-bowl',
+  'table-power': 'power-table-bowl',
+};
+
+export const ITEM_OPTION_GROUPS_BY_ITEM_ID: Record<string, string[]> = {
+  ...DEFAULT_ITEM_OPTION_GROUPS_BY_ITEM_ID,
+};
+
+export function getAllowedOptionGroupIdsForItem(itemId: string): string[] | null {
+  const normalizedItemId = TABLE_ITEM_ID_ALIAS_TO_MENU_ITEM_ID[itemId] ?? itemId;
+  const groups = ITEM_OPTION_GROUPS_BY_ITEM_ID[normalizedItemId];
+  if (!groups || groups.length === 0) return null;
+  return [...groups];
+}
 
 // Slug → category lookup
 export const CATEGORY_BY_SLUG: Record<string, MenuCategoryData> =
@@ -691,3 +723,308 @@ export const BOWL_BUILDER_STEPS: BuilderStep[] = [
     ],
   },
 ];
+
+function replaceArray<T>(target: T[], next: T[]) {
+  target.splice(0, target.length, ...next);
+}
+
+function replaceObject<T extends Record<string, unknown>>(target: T, next: T) {
+  for (const key of Object.keys(target)) {
+    delete target[key as keyof T];
+  }
+  Object.assign(target, next);
+}
+
+const CATEGORY_ORDER = [
+  'build-your-own-bowl',
+  'breakfast-bowls',
+  'signature-bowls',
+  'high-protein-cups',
+  'salad-bowls',
+  'kids-meal',
+  'drinks-juices',
+] as const;
+
+const CATEGORY_META_FALLBACK = Object.fromEntries(
+  MENU_CATEGORIES.map((category) => [
+    category.slug,
+    {
+      name: category.name,
+      description: category.description,
+      image: category.image,
+    },
+  ]),
+) as Record<string, { name: string; description: string; image: string }>;
+
+const ITEM_META_FALLBACK = Object.fromEntries(
+  MENU_CATEGORIES.flatMap((category) =>
+    category.items.map((item) => [
+      item.id,
+      {
+        description: item.description,
+        calories: item.calories,
+        protein: item.protein,
+        image: item.image,
+        badge: item.badge,
+      },
+    ]),
+  ),
+) as Record<string, { description: string; calories: number; protein: number; image: string; badge?: string }>;
+
+const INGREDIENT_META_FALLBACK = Object.fromEntries(
+  [...BOWL_BUILDER_STEPS, ...BREAKFAST_CUSTOMIZE_STEPS].flatMap((step) =>
+    step.ingredients.map((ingredient) => [
+      ingredient.id,
+      {
+        description: ingredient.description,
+        calories: ingredient.calories,
+        protein: ingredient.protein,
+      },
+    ]),
+  ),
+) as Record<string, { description?: string; calories: number; protein: number }>;
+
+const BREAKFAST_DEFAULTS_FALLBACK = Object.fromEntries(
+  Object.values(BREAKFAST_PRESET_META_BY_ID).map((meta) => [meta.itemId, [...meta.defaultFruitIds]]),
+) as Record<string, string[]>;
+
+const BREAKFAST_GRANOLA_FALLBACK = Object.fromEntries(
+  Object.values(BREAKFAST_PRESET_META_BY_ID).map((meta) => [meta.itemId, meta.hasGranolaByDefault]),
+) as Record<string, boolean>;
+
+function inferBreakfastFamily(itemId: string, subcategorySlug: string | null): BreakfastFamily {
+  if (subcategorySlug === 'overnight-oats') return 'overnight-oats';
+  if (subcategorySlug === 'chia-yogurt') return 'chia-yogurt';
+  return itemId.includes('overnight-oats') ? 'overnight-oats' : 'chia-yogurt';
+}
+
+function inferDrinkSection(itemId: string, subcategorySlug: string | null): DrinkSection {
+  if (subcategorySlug === 'dispenser' || subcategorySlug === 'fresh' || subcategorySlug === 'packaged') {
+    return subcategorySlug;
+  }
+  const existing = DRINK_ITEMS.find((drink) => drink.id === itemId);
+  return existing?.section ?? 'packaged';
+}
+
+function inferDrinkChip(section: DrinkSection): 'Fizzy' | 'Fresh' | 'Packaged' {
+  if (section === 'dispenser') return 'Fizzy';
+  if (section === 'fresh') return 'Fresh';
+  return 'Packaged';
+}
+
+export async function hydrateMenuCatalogFromSupabase() {
+  const payload = await fetchMenuRepositoryPayload();
+
+  if (!payload.menuItems.length) {
+    throw new Error('menu_items is empty in Supabase.');
+  }
+
+  const visibleMenuItems = payload.menuItems.filter((item) => item.is_available !== false);
+  const groupedByCategory = new Map<string, typeof visibleMenuItems>();
+  for (const item of visibleMenuItems) {
+    const list = groupedByCategory.get(item.category_slug) ?? [];
+    list.push(item);
+    groupedByCategory.set(item.category_slug, list);
+  }
+
+  const subcategoryByItemId = Object.fromEntries(visibleMenuItems.map((item) => [item.id, item.subcategory_slug]));
+
+  const nextCategories: MenuCategoryData[] = CATEGORY_ORDER
+    .filter((slug) => groupedByCategory.has(slug))
+    .map((slug) => {
+      const categoryItems = (groupedByCategory.get(slug) ?? [])
+        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name));
+      const meta = CATEGORY_META_FALLBACK[slug] ?? {
+        name: slug,
+        description: 'Menu items',
+        image: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=1080',
+      };
+
+      return {
+        slug,
+        name: meta.name,
+        description: meta.description,
+        image: meta.image,
+        items: categoryItems.map((row) => {
+          const fallback = ITEM_META_FALLBACK[row.id] ?? {
+            description: '',
+            calories: 0,
+            protein: 0,
+            image: meta.image,
+          };
+          return {
+            id: row.id,
+            name: row.name,
+            description: fallback.description,
+            calories: fallback.calories,
+            protein: fallback.protein,
+            price: row.base_price,
+            image: fallback.image,
+            badge: fallback.badge,
+          };
+        }),
+      };
+    });
+
+  replaceArray(MENU_CATEGORIES, nextCategories);
+  replaceObject(CATEGORY_BY_SLUG, Object.fromEntries(nextCategories.map((category) => [category.slug, category])) as Record<string, MenuCategoryData>);
+
+  const groupsById = Object.fromEntries(payload.optionGroups.map((group) => [group.id, group]));
+  const optionItemsByGroupId = payload.optionItems
+    .reduce((acc, item) => {
+      const list = acc.get(item.group_id) ?? [];
+      list.push(item);
+      acc.set(item.group_id, list);
+      return acc;
+    }, new Map<string, typeof payload.optionItems>());
+
+  const toStep = (
+    groupId: string,
+    title: string,
+    subtitle: string,
+    requiredFallback: boolean,
+  ): BuilderStep | null => {
+    const group = groupsById[groupId];
+    const optionItems = (optionItemsByGroupId.get(groupId) ?? [])
+      .filter((item) => item.is_available !== false)
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name));
+
+    if (!group || optionItems.length === 0) return null;
+
+    return {
+      id: groupId,
+      title,
+      subtitle,
+      type: group.selection_type,
+      required: group.is_required ?? requiredFallback,
+      ingredients: optionItems.map((item) => {
+        const fallback = INGREDIENT_META_FALLBACK[item.id] ?? { calories: 0, protein: 0 };
+        return {
+          id: item.id,
+          name: item.name,
+          description: fallback.description,
+          calories: fallback.calories,
+          protein: fallback.protein,
+          price: item.price_modifier,
+        };
+      }),
+    };
+  };
+
+  const nextBowlSteps = [
+    toStep('base', 'Choose your base', 'Pick one or two, or skip for a salad bowl', false),
+    toStep('protein', 'Choose your protein', 'Pick one or more', true),
+    toStep('toppings', 'Add toppings', 'Pick as many as you like (all included)', false),
+    toStep('sauce', 'Add a sauce', 'Pick as many as you like (all included)', false),
+    toStep('extras', 'Add extras', 'Optional paid upgrades', false),
+  ].filter(Boolean) as BuilderStep[];
+
+  if (nextBowlSteps.length >= 4) {
+    replaceArray(BOWL_BUILDER_STEPS, nextBowlSteps);
+  }
+
+  const nextBreakfastSteps = [
+    toStep('fruits', 'Choose fruits', 'Pick one or more', true),
+    toStep('crunch', 'Add crunch', 'Optional texture add-on', false),
+    toStep('add-ons', 'Add add-ons', 'Extra Fruit means extra portion of selected fruits', false),
+  ].filter(Boolean) as BuilderStep[];
+
+  if (nextBreakfastSteps.length >= 2) {
+    replaceArray(BREAKFAST_CUSTOMIZE_STEPS, nextBreakfastSteps);
+  }
+
+  const breakfastCategory = nextCategories.find((category) => category.slug === 'breakfast-bowls');
+  const breakfastItems = breakfastCategory?.items ?? [];
+  replaceArray(BREAKFAST_PRESET_ITEMS, breakfastItems);
+
+  const nextFruitIds = (nextBreakfastSteps.find((step) => step.id === 'fruits')?.ingredients ?? []).map((item) => item.id);
+  if (nextFruitIds.length > 0) {
+    replaceArray(BREAKFAST_AVAILABLE_FRUIT_IDS, nextFruitIds);
+  }
+
+  const chiaIds = breakfastItems
+    .filter((item) => inferBreakfastFamily(item.id, subcategoryByItemId[item.id] ?? null) === 'chia-yogurt')
+    .map((item) => item.id);
+  const overnightIds = breakfastItems
+    .filter((item) => inferBreakfastFamily(item.id, subcategoryByItemId[item.id] ?? null) === 'overnight-oats')
+    .map((item) => item.id);
+
+  replaceArray(BREAKFAST_SECTION_ITEM_IDS.chiaYogurtBowls, chiaIds);
+  replaceArray(BREAKFAST_SECTION_ITEM_IDS.overnightOats, overnightIds);
+
+  const nextBreakfastMeta = Object.fromEntries(
+    breakfastItems.map((item) => {
+      const family = inferBreakfastFamily(item.id, subcategoryByItemId[item.id] ?? null);
+      return [
+        item.id,
+        {
+          itemId: item.id,
+          title: item.name,
+          family,
+          basePrice: item.price,
+          defaultFruitIds: BREAKFAST_DEFAULTS_FALLBACK[item.id] ?? [...BREAKFAST_AVAILABLE_FRUIT_IDS],
+          hasGranolaByDefault: BREAKFAST_GRANOLA_FALLBACK[item.id] ?? family === 'chia-yogurt',
+        },
+      ];
+    }),
+  ) as typeof BREAKFAST_PRESET_META_BY_ID;
+
+  if (Object.keys(nextBreakfastMeta).length > 0) {
+    replaceObject(BREAKFAST_PRESET_META_BY_ID, nextBreakfastMeta);
+  }
+
+  const nextDrinks: DrinkItem[] = visibleMenuItems
+    .filter((item) => item.category_slug === 'drinks-juices')
+    .map((row) => {
+      const existing = DRINK_ITEMS.find((drink) => drink.id === row.id);
+      const section = inferDrinkSection(row.id, row.subcategory_slug);
+      const fallback = ITEM_META_FALLBACK[row.id] ?? {
+        description: existing?.description ?? '',
+        calories: existing?.calories ?? 0,
+        protein: existing?.protein ?? 0,
+        image: existing?.image ?? 'https://images.unsplash.com/photo-1502741224143-90386d7f8c82?w=1080',
+      };
+
+      return {
+        id: row.id,
+        name: row.name,
+        description: fallback.description,
+        calories: fallback.calories,
+        protein: fallback.protein,
+        price: row.base_price,
+        image: fallback.image,
+        badge: ITEM_META_FALLBACK[row.id]?.badge,
+        section,
+        sectionChip: inferDrinkChip(section),
+        isDispenser: section === 'dispenser',
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  if (nextDrinks.length > 0) {
+    hydrateDrinksCatalog(nextDrinks);
+  }
+
+  const nextItemOptionGroups = payload.itemOptionGroupMap
+    .reduce((acc, row) => {
+      const list = acc.get(row.item_id) ?? [];
+      list.push(row);
+      acc.set(row.item_id, list);
+      return acc;
+    }, new Map<string, typeof payload.itemOptionGroupMap>())
+    ;
+
+  const mappedGroups = Object.fromEntries(
+    Array.from(nextItemOptionGroups.entries()).map(([itemId, rows]) => [
+      itemId,
+      rows
+        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+        .map((row) => row.group_id),
+    ]),
+  ) as Record<string, string[]>;
+
+  replaceObject(ITEM_OPTION_GROUPS_BY_ITEM_ID, {
+    ...DEFAULT_ITEM_OPTION_GROUPS_BY_ITEM_ID,
+    ...mappedGroups,
+  });
+}

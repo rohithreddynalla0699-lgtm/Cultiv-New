@@ -3,8 +3,10 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { AuthShell } from './AuthShell';
+import { ErrorShake, LoadingPulse } from '../core/motion/cultivMotion';
 import type { AuthRedirectState } from '../types/navigation';
 
 export function LoginScreen() {
@@ -39,12 +41,27 @@ export function LoginScreen() {
 			subtitle="Sign in with your phone or email to track orders, keep history, and unlock member benefits."
 			footer={<p className="text-center text-sm text-foreground/60">Don't have an account? <Link to="/signup" className="font-medium text-primary">Create one</Link></p>}
 		>
-			<form onSubmit={handleSubmit} className="space-y-5">
-				<div>
+			<motion.form 
+				onSubmit={handleSubmit} 
+				className="space-y-5"
+				initial="hidden"
+				animate="visible"
+				variants={{
+					hidden: { opacity: 0 },
+					visible: {
+						opacity: 1,
+						transition: {
+							staggerChildren: 0.08,
+							delayChildren: 0.1
+						}
+					}
+				}}
+			>
+				<motion.div variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }}>
 					<label className="mb-2 block text-sm font-medium text-foreground/78">Phone number or email</label>
 					<input value={identifier} onChange={(e) => setIdentifier(e.target.value)} className="w-full rounded-2xl border border-border bg-background/80 px-4 py-4 outline-none transition-colors focus:border-primary" placeholder="9876543210 or member@cultiv.app" required />
-				</div>
-				<div>
+				</motion.div>
+				<motion.div variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }}>
 					<label className="mb-2 block text-sm font-medium text-foreground/78">Password</label>
 					<div className="relative">
 						<input type={showPassword ? 'text' : 'password'} value={password} onChange={(e) => setPassword(e.target.value)} className="w-full rounded-2xl border border-border bg-background/80 px-4 py-4 pr-12 outline-none transition-colors focus:border-primary" placeholder="Enter your password" required />
@@ -52,13 +69,30 @@ export function LoginScreen() {
 							{showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
 						</button>
 					</div>
-				</div>
-				<div className="flex justify-end">
+				</motion.div>
+				<motion.div variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }} className="flex justify-end">
 					<Link to="/forgot-password" className="text-sm font-medium text-primary">Forgot password?</Link>
-				</div>
-				{error ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
-				<button type="submit" disabled={isLoading} className="w-full rounded-full bg-primary py-3.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-92 disabled:opacity-60">{isLoading ? 'Signing In...' : 'Sign In'}</button>
-			</form>
+				</motion.div>
+				{error ? (
+					<motion.div 
+						{...ErrorShake}
+						className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+					>
+						{error}
+					</motion.div>
+				) : null}
+				<motion.button 
+					type="submit" 
+					disabled={isLoading} 
+					whileHover={{ scale: isLoading ? 1 : 1.02 }}
+					whileTap={{ scale: 0.98 }}
+					className="w-full rounded-full bg-primary py-3.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-92 disabled:opacity-60"
+				>
+					<motion.span animate={isLoading ? { opacity: [0.6, 1, 0.6] } : { opacity: 1 }} transition={{ duration: 1.5, repeat: isLoading ? Infinity : 0 }}>
+						{isLoading ? 'Signing In...' : 'Sign In'}
+					</motion.span>
+				</motion.button>
+			</motion.form>
 		</AuthShell>
 	);
 }

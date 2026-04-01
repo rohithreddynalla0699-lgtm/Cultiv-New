@@ -3,8 +3,10 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { Eye, EyeOff, Check } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { AuthShell } from './AuthShell';
+import { ErrorShake } from '../core/motion/cultivMotion';
 import type { AuthRedirectState } from '../types/navigation';
 
 const getPasswordPolicyError = (password: string) => {
@@ -69,34 +71,67 @@ export function SignupScreen() {
 			subtitle="Create a calm, premium member profile for saved orders, rewards, and repeat benefits."
 			footer={<p className="text-center text-sm text-foreground/60">Already have an account? <Link to="/login" className="font-medium text-primary">Sign in</Link></p>}
 		>
-			<form onSubmit={handleSubmit} className="space-y-4">
-				<input className="w-full rounded-2xl border border-border bg-background/80 px-4 py-4 outline-none transition-colors focus:border-primary" placeholder="Full name" value={formData.fullName} onChange={(e) => setFormData((p) => ({ ...p, fullName: e.target.value }))} required />
-				<input className="w-full rounded-2xl border border-border bg-background/80 px-4 py-4 outline-none transition-colors focus:border-primary" placeholder="Phone number" value={formData.phone} onChange={(e) => setFormData((p) => ({ ...p, phone: e.target.value }))} inputMode="numeric" pattern="[0-9]{10}" maxLength={10} required />
-				<input className="w-full rounded-2xl border border-border bg-background/80 px-4 py-4 outline-none transition-colors focus:border-primary" placeholder="Email address" type="email" value={formData.email} onChange={(e) => setFormData((p) => ({ ...p, email: e.target.value }))} required />
+			<motion.form 
+				onSubmit={handleSubmit} 
+				className="space-y-4"
+				initial="hidden"
+				animate="visible"
+				variants={{
+					hidden: { opacity: 0 },
+					visible: {
+						opacity: 1,
+						transition: {
+							staggerChildren: 0.06,
+							delayChildren: 0.1
+						}
+					}
+				}}
+			>
+				<motion.input variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }} className="w-full rounded-2xl border border-border bg-background/80 px-4 py-4 outline-none transition-colors focus:border-primary" placeholder="Full name" value={formData.fullName} onChange={(e) => setFormData((p) => ({ ...p, fullName: e.target.value }))} required />
+				<motion.input variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }} className="w-full rounded-2xl border border-border bg-background/80 px-4 py-4 outline-none transition-colors focus:border-primary" placeholder="Phone number" value={formData.phone} onChange={(e) => setFormData((p) => ({ ...p, phone: e.target.value }))} inputMode="numeric" pattern="[0-9]{10}" maxLength={10} required />
+				<motion.input variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }} className="w-full rounded-2xl border border-border bg-background/80 px-4 py-4 outline-none transition-colors focus:border-primary" placeholder="Email address" type="email" value={formData.email} onChange={(e) => setFormData((p) => ({ ...p, email: e.target.value }))} required />
 
-				<div className="relative">
+				<motion.div variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }} className="relative">
 					<input className="w-full rounded-2xl border border-border bg-background/80 px-4 py-4 pr-12 outline-none transition-colors focus:border-primary" placeholder="Password" type={showPassword ? 'text' : 'password'} value={formData.password} onChange={(e) => setFormData((p) => ({ ...p, password: e.target.value }))} required />
 					<button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-foreground/45">
 						{showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
 					</button>
-				</div>
+				</motion.div>
 
-				<div className="relative">
+				<motion.div variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }} className="relative">
 					<input className="w-full rounded-2xl border border-border bg-background/80 px-4 py-4 pr-12 outline-none transition-colors focus:border-primary" placeholder="Confirm Password" type={showConfirmPassword ? 'text' : 'password'} value={formData.confirmPassword} onChange={(e) => setFormData((p) => ({ ...p, confirmPassword: e.target.value }))} required />
 					<button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-foreground/45">
 						{showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
 					</button>
-				</div>
+				</motion.div>
 
-				<button type="button" onClick={() => setAgreed(!agreed)} className="flex items-center gap-2 text-sm text-foreground/70">
+				<motion.button variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }} type="button" onClick={() => setAgreed(!agreed)} className="flex items-center gap-2 text-sm text-foreground/70">
 					<span className={`flex h-4 w-4 items-center justify-center rounded border ${agreed ? 'border-primary bg-primary' : 'border-border'}`}>{agreed ? <Check className="h-3 w-3 text-primary-foreground" /> : null}</span>
 					I agree to continue with a CULTIV member profile.
-				</button>
+				</motion.button>
 
-				{error ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div> : null}
+				{error ? (
+					<motion.div 
+						{...ErrorShake}
+						className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+					>
+						{error}
+					</motion.div>
+				) : null}
 
-				<button type="submit" disabled={isLoading || !agreed} className="w-full rounded-full bg-primary py-3.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-92 disabled:opacity-60">{isLoading ? 'Creating Account...' : 'Create Account'}</button>
-			</form>
+				<motion.button 
+					variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }}
+					type="submit" 
+					disabled={isLoading || !agreed} 
+					whileHover={{ scale: isLoading || !agreed ? 1 : 1.02 }}
+					whileTap={{ scale: 0.98 }}
+					className="w-full rounded-full bg-primary py-3.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-92 disabled:opacity-60"
+				>
+					<motion.span animate={isLoading ? { opacity: [0.6, 1, 0.6] } : { opacity: 1 }} transition={{ duration: 1.5, repeat: isLoading ? Infinity : 0 }}>
+						{isLoading ? 'Creating Account...' : 'Create Account'}
+					</motion.span>
+				</motion.button>
+			</motion.form>
 		</AuthShell>
 	);
 }

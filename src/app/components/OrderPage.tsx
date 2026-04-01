@@ -4,13 +4,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronLeft, ChevronRight, Minus, Plus, ShoppingBag } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { PageReveal } from '../core/motion/cultivMotion';
+import { PageReveal, ListItemReveal, CounterPulse } from '../core/motion/cultivMotion';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import {
   BOWL_BUILDER_STEPS,
   BREAKFAST_AVAILABLE_FRUIT_IDS,
   BREAKFAST_CUSTOMIZE_STEPS,
   BREAKFAST_SECTION_ITEM_IDS,
+  getAllowedOptionGroupIdsForItem,
   getBreakfastFamilyFromItemId,
   MENU_CATEGORIES,
   resolveBreakfastPriceFromFruitSelections,
@@ -43,6 +44,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { DEFAULT_ORDER_STORE_ID } from '../constants/admin';
 import { DISCOUNT_REWARD_VALUES, FREE_ITEM_REWARD_DETAILS } from '../config/rewardsCatalog';
 import type { OrderPageLocationState, OrdersSuccessLocationState } from '../types/navigation';
+import { getSelectedStore, loadSelectedStoreId, loadStores, requestOpenStoreSelector, subscribeSelectedStore, type StoreLocatorStore } from '../data/storeLocator';
 import {
   DEFAULT_ACTIVE_ORDER_CATEGORY_SLUG,
   PICKUP_ESTIMATE_WINDOW,
@@ -135,40 +137,9 @@ const CATEGORY_CONTEXT: Record<string, { accentLabel?: string; helperText: strin
 const CHECKOUT_CONTACT_STORAGE_KEY = 'cultiv_checkout_contact_v1';
 const GUEST_CONFIRMATION_STORAGE_KEY = 'cultiv_guest_order_confirmation_v1';
 const GUEST_AUTH_PROMPT_DISMISSED_KEY = 'cultiv_guest_auth_prompt_dismissed_v1';
-const ADMIN_STORES_STORAGE_KEY = 'cultiv_admin_stores_v1';
-
-interface CheckoutStoreOption {
-  id: string;
-  label: string;
-}
 
 function isBrowser() {
   return typeof window !== 'undefined' && typeof localStorage !== 'undefined';
-}
-
-function loadCheckoutStoreOptions(): CheckoutStoreOption[] {
-  if (!isBrowser()) {
-    return [{ id: DEFAULT_ORDER_STORE_ID, label: 'Siddipet Central' }];
-  }
-
-  try {
-    const raw = localStorage.getItem(ADMIN_STORES_STORAGE_KEY);
-    if (!raw) {
-      return [{ id: DEFAULT_ORDER_STORE_ID, label: 'Siddipet Central' }];
-    }
-
-    const parsed = JSON.parse(raw) as Array<{ id?: string; name?: string; city?: string; isActive?: boolean }>;
-    const options = parsed
-      .filter((store) => Boolean(store.id) && store.isActive !== false)
-      .map((store) => ({
-        id: store.id as string,
-        label: store.city ? `${store.name ?? 'Store'} · ${store.city}` : (store.name ?? 'Store'),
-      }));
-
-    return options.length > 0 ? options : [{ id: DEFAULT_ORDER_STORE_ID, label: 'Siddipet Central' }];
-  } catch {
-    return [{ id: DEFAULT_ORDER_STORE_ID, label: 'Siddipet Central' }];
-  }
 }
 
 function buildMenuSections(slug: string, items: FoodItem[]): MenuSection[] {
@@ -336,8 +307,12 @@ export function OrderPage() {
   const [showGuestAuthPrompt, setShowGuestAuthPrompt] = useState(true);
   const [selectedRewardIds, setSelectedRewardIds] = useState<string[]>([]);
   const submissionLockRef = useRef(false);
-  const [storeOptions] = useState<CheckoutStoreOption[]>(() => loadCheckoutStoreOptions());
-  const [selectedStoreId, setSelectedStoreId] = useState<string>(() => loadCheckoutStoreOptions()[0]?.id ?? DEFAULT_ORDER_STORE_ID);
+  const [stores, setStores] = useState<StoreLocatorStore[]>(() => loadStores());
+  const [selectedStoreId, setSelectedStoreId] = useState<string>(() => loadSelectedStoreId(loadStores()));
+  const selectedStore = useMemo(
+    () => getSelectedStore(stores),
+    [stores],
+  );
 
   useEffect(() => {
     if (!isBrowser()) return;
@@ -396,6 +371,20 @@ export function OrderPage() {
     if (!user || !guestOrderConfirmation) return;
     setGuestOrderConfirmation(null);
   }, [guestOrderConfirmation, user]);
+
+  useEffect(() => {
+    const syncStores = () => {
+      const nextStores = loadStores();
+      setStores(nextStores);
+      setSelectedStoreId(loadSelectedStoreId(nextStores));
+    };
+
+    syncStores();
+    const unsubscribe = subscribeSelectedStore(() => {
+      syncStores();
+    });
+    return unsubscribe;
+  }, []);
 
   useEffect(() => subscribeDraftCart(() => setCartLines(loadDraftCart())), []);
 
@@ -575,11 +564,26 @@ export function OrderPage() {
   const customizeSteps = useMemo(() => {
     if (!customizing) return BOWL_BUILDER_STEPS;
 
+    const allowedGroupIds = getAllowedOptionGroupIdsForItem(customizing.itemId);
+
     if (customizing.mode === 'breakfast') {
-      return BREAKFAST_CUSTOMIZE_STEPS;
+      const breakfastSteps = BREAKFAST_CUSTOMIZE_STEPS;
+      if (!allowedGroupIds || allowedGroupIds.length === 0) {
+        return breakfastSteps;
+      }
+      const filteredBreakfastSteps = breakfastSteps.filter((step) => allowedGroupIds.includes(step.id));
+      return filteredBreakfastSteps.length > 0 ? filteredBreakfastSteps : breakfastSteps;
     }
 
-    return BOWL_BUILDER_STEPS
+    const baseSteps = BOWL_BUILDER_STEPS;
+    const scopedSteps = (!allowedGroupIds || allowedGroupIds.length === 0)
+      ? baseSteps
+      : (() => {
+        const filtered = baseSteps.filter((step) => allowedGroupIds.includes(step.id));
+        return filtered.length > 0 ? filtered : baseSteps;
+      })();
+
+    return scopedSteps
       .filter((step) => {
         if (customizing.hideBaseStep && step.id === 'base') return false;
         return true;
@@ -915,7 +919,7 @@ export function OrderPage() {
       next.reward = rewardValidationMessage;
     }
 
-    if (!selectedStoreId || !storeOptions.some((store) => store.id === selectedStoreId)) {
+    if (!selectedStoreId || !stores.some((store) => store.id === selectedStoreId && store.isActive)) {
       next.store = 'Select a valid pickup store.';
     }
 
@@ -1243,17 +1247,28 @@ export function OrderPage() {
                         {errors.customize ? <p className="mt-2 text-xs text-red-600">{errors.customize}</p> : null}
                       </div>
 
-                      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <motion.div 
+                        layout
+                        key={`step-${customizing.stepIndex}`}
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -20 }}
+                        transition={{ duration: 0.25 }}
+                        className="grid grid-cols-1 gap-3 md:grid-cols-2"
+                      >
                         {customizeStep.ingredients.map((ingredient) => {
                           if (customizeStep.id === 'fruits' && !BREAKFAST_AVAILABLE_FRUIT_IDS.includes(ingredient.id)) {
                             return null;
                           }
                           const selected = (customizing.selections[customizeStep.id] ?? []).includes(ingredient.id);
                           return (
-                            <button
+                            <motion.button
                               key={ingredient.id}
                               type="button"
                               onClick={() => toggleCustomizeIngredient(customizeStep, ingredient.id)}
+                              whileHover={{ scale: 1.02, y: -1 }}
+                              whileTap={{ scale: 0.98 }}
+                              animate={selected ? { borderColor: 'var(--primary)', backgroundColor: 'var(--primary-alpha-6)' } : {}}
                               className={`rounded-2xl border p-4 text-left transition-colors ${selected ? 'border-primary bg-primary/6' : 'border-primary/12 bg-white hover:border-primary/30'}`}
                             >
                               <div className="flex items-start justify-between gap-3">
@@ -1264,15 +1279,20 @@ export function OrderPage() {
                                 </div>
                                 <div className="text-right">
                                   {ingredient.price > 0 ? <p className="text-sm font-semibold">+₹{ingredient.price}</p> : null}
-                                  <span className={`mt-2 inline-flex h-5 w-5 items-center justify-center rounded-full border-2 ${selected ? 'border-primary bg-primary text-white' : 'border-primary/22 bg-white'}`}>
-                                    {selected ? <Check className="h-3 w-3" /> : null}
-                                  </span>
+                                  <motion.span 
+                                    layout
+                                    initial={{ scale: 0 }}
+                                    animate={{ scale: 1 }}
+                                    className={`mt-2 inline-flex h-5 w-5 items-center justify-center rounded-full border-2 ${selected ? 'border-primary bg-primary text-white' : 'border-primary/22 bg-white'}`}
+                                  >
+                                    {selected ? <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.08 }}><Check className="h-3 w-3" /></motion.div> : null}
+                                  </motion.span>
                                 </div>
                               </div>
-                            </button>
+                            </motion.button>
                           );
                         })}
-                      </div>
+                      </motion.div>
 
                       <div className="mt-6 flex flex-col gap-3.5 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex flex-wrap gap-2.5 sm:flex-nowrap sm:gap-2">
@@ -1413,25 +1433,43 @@ export function OrderPage() {
 
                         <div className="mt-3.5 flex items-center justify-between gap-3">
                           <div className="flex items-center gap-2.5">
-                            <button
+                            <motion.button
                               type="button"
                               onClick={() => updateQuantity(line.key, 'dec')}
+                              whileTap={{ scale: 0.9 }}
                               aria-label={`Decrease quantity for ${line.title}`}
                               className="flex h-10 w-10 items-center justify-center rounded-full border border-primary/16 bg-white transition-transform active:scale-95 md:h-7 md:w-7"
                             >
                               <Minus className="h-4 w-4 md:h-3.5 md:w-3.5" />
-                            </button>
-                            <span className="w-8 text-center text-sm font-semibold tabular-nums">{line.quantity}</span>
-                            <button
+                            </motion.button>
+                            <motion.span 
+                              key={line.quantity}
+                              initial={{ scale: 1.2 }}
+                              animate={{ scale: 1 }}
+                              transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                              className="w-8 text-center text-sm font-semibold tabular-nums"
+                            >
+                              {line.quantity}
+                            </motion.span>
+                            <motion.button
                               type="button"
                               onClick={() => updateQuantity(line.key, 'inc')}
+                              whileTap={{ scale: 0.9 }}
                               aria-label={`Increase quantity for ${line.title}`}
                               className="flex h-10 w-10 items-center justify-center rounded-full border border-primary/16 bg-white transition-transform active:scale-95 md:h-7 md:w-7"
                             >
                               <Plus className="h-4 w-4 md:h-3.5 md:w-3.5" />
-                            </button>
+                            </motion.button>
                           </div>
-                          <span className="text-sm font-semibold tabular-nums">₹{line.unitPrice * line.quantity}</span>
+                          <motion.span 
+                            key={`total-${line.unitPrice}-${line.quantity}`}
+                            initial={{ scale: 1.1, opacity: 0.6 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                            className="text-sm font-semibold tabular-nums"
+                          >
+                            ₹{line.unitPrice * line.quantity}
+                          </motion.span>
                         </div>
                       </motion.div>
                     ))}
@@ -1460,10 +1498,16 @@ export function OrderPage() {
                           <span className="tabular-nums">-₹{rewardDiscount}</span>
                         </div>
                       ) : null}
-                    <div className="mt-2 flex items-center justify-between text-base font-semibold">
+                    <motion.div 
+                      key={`payable-${payableTotal}`}
+                      initial={{ scale: 0.95, opacity: 0.7 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ type: 'spring', stiffness: 280, damping: 18 }}
+                      className="mt-2 flex items-center justify-between text-base font-semibold"
+                    >
                       <span>Payable Total</span>
                         <span className="tabular-nums">₹{payableTotal}</span>
-                    </div>
+                    </motion.div>
                     <div className="mt-2 flex items-center justify-between text-sm text-foreground/60">
                       <span>Pickup estimate</span>
                       <span>{PICKUP_ESTIMATE_WINDOW}</span>
@@ -1510,16 +1554,22 @@ export function OrderPage() {
                     ) : null}
 
                   <div className="mt-3 space-y-2">
-                    <select
-                      data-testid="order-store-select"
-                      value={selectedStoreId}
-                      onChange={(e) => setSelectedStoreId(e.target.value)}
-                      className={`w-full rounded-xl border bg-white px-3 py-2.5 text-sm outline-none ${errors.store ? 'border-red-400' : 'border-primary/14'}`}
-                    >
-                      {storeOptions.map((store) => (
-                        <option key={store.id} value={store.id}>{store.label}</option>
-                      ))}
-                    </select>
+                    <div data-testid="order-store-select" className={`rounded-xl border bg-white px-3 py-2.5 ${errors.store ? 'border-red-400' : 'border-primary/14'}`}>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/55">Pickup from</p>
+                      <div className="mt-1 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-foreground/88">{selectedStore.name}</p>
+                          <p className="text-xs text-foreground/55">{selectedStore.city} • {selectedStore.pin}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => requestOpenStoreSelector()}
+                          className="rounded-full border border-primary/22 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary transition-colors hover:border-primary/38"
+                        >
+                          Change
+                        </button>
+                      </div>
+                    </div>
                     {errors.store ? <p className="text-xs text-red-600">{errors.store}</p> : null}
                     <input
                       type="text"

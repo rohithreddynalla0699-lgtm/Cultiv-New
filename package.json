@@ -9,6 +9,7 @@
     "sync": "node server/sync-server.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.101.1",
     "framer-motion": "^12.38.0",
     "lucide-react": "^0.487.0",
     "react": "18.3.1",
@@ -20,6 +21,7 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "4.7.0",
+    "playwright": "^1.59.1",
     "tailwindcss": "4.1.12",
     "typescript": "^5.6.3",
     "vite": "6.3.5"

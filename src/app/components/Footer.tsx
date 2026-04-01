@@ -2,6 +2,7 @@
 
 import { Logo } from "./Logo";
 import { Link } from "react-router-dom";
+import { BRAND_CONTACT } from '../config/brandContact';
 
 export function Footer() {
   return (
@@ -33,9 +34,22 @@ export function Footer() {
           <div>
             <h4 className="font-medium mb-4">Connect</h4>
             <ul className="space-y-3 text-foreground/70 text-sm">
-              <li><a href="#" className="hover:text-foreground transition-colors">Instagram</a></li>
-              <li><a href="#" className="hover:text-foreground transition-colors">Contact</a></li>
-              <li><a href="#" className="hover:text-foreground transition-colors">Careers</a></li>
+              <li>
+                <a
+                  href={BRAND_CONTACT.instagramUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hover:text-foreground transition-colors"
+                >
+                  Instagram
+                </a>
+              </li>
+              <li>
+                <a href={`mailto:${BRAND_CONTACT.supportEmail}`} className="hover:text-foreground transition-colors">
+                  {BRAND_CONTACT.supportEmail}
+                </a>
+              </li>
+              <li><Link to="/careers" className="hover:text-foreground transition-colors">Careers</Link></li>
             </ul>
           </div>
         </div>

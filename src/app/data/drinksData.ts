@@ -156,3 +156,14 @@ export const DRINKS_BY_SECTION: Record<DrinkSection, DrinkItem[]> = {
   fresh: DRINK_ITEMS.filter((drink) => drink.section === 'fresh'),
   packaged: DRINK_ITEMS.filter((drink) => drink.section === 'packaged'),
 };
+
+function replaceArray<T>(target: T[], next: T[]) {
+  target.splice(0, target.length, ...next);
+}
+
+export function hydrateDrinksCatalog(nextDrinkItems: DrinkItem[]) {
+  replaceArray(DRINK_ITEMS, nextDrinkItems);
+  replaceArray(DRINKS_BY_SECTION.dispenser, nextDrinkItems.filter((drink) => drink.section === 'dispenser'));
+  replaceArray(DRINKS_BY_SECTION.fresh, nextDrinkItems.filter((drink) => drink.section === 'fresh'));
+  replaceArray(DRINKS_BY_SECTION.packaged, nextDrinkItems.filter((drink) => drink.section === 'packaged'));
+}

@@ -13,6 +13,7 @@ import {
   BOWL_BUILDER_STEPS,
   BREAKFAST_CUSTOMIZE_STEPS,
   CATEGORY_BY_SLUG,
+  getAllowedOptionGroupIdsForItem,
   MENU_CATEGORIES,
   getBreakfastFamilyFromItemId,
   resolveBreakfastPriceFromFruitSelections,
@@ -224,11 +225,24 @@ function getSelectedIngredients(steps: BuilderStep[], selections: Record<string,
 
 function getCustomizeSteps(customizing: CustomizeState | null) {
   if (!customizing) return [];
+
+  const allowedGroupIds = getAllowedOptionGroupIdsForItem(customizing.itemId);
   if (customizing.mode === 'breakfast') {
-    return BREAKFAST_CUSTOMIZE_STEPS;
+    const breakfastSteps = BREAKFAST_CUSTOMIZE_STEPS;
+    if (!allowedGroupIds || allowedGroupIds.length === 0) return breakfastSteps;
+    const filteredBreakfastSteps = breakfastSteps.filter((step) => allowedGroupIds.includes(step.id));
+    return filteredBreakfastSteps.length > 0 ? filteredBreakfastSteps : breakfastSteps;
   }
 
-  return BOWL_BUILDER_STEPS
+  const baseSteps = BOWL_BUILDER_STEPS;
+  const scopedSteps = (!allowedGroupIds || allowedGroupIds.length === 0)
+    ? baseSteps
+    : (() => {
+      const filtered = baseSteps.filter((step) => allowedGroupIds.includes(step.id));
+      return filtered.length > 0 ? filtered : baseSteps;
+    })();
+
+  return scopedSteps
     .filter((step) => !(customizing.hideBaseStep && step.id === 'base'))
     .map((step) => {
       if (step.id !== 'protein' || !customizing.allowedProteinIds?.length) return step;

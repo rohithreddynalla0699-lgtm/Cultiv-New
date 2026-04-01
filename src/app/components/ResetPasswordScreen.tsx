@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { AuthShell } from './AuthShell';
 import { useAuth } from '../contexts/AuthContext';
+import { ErrorShake } from '../core/motion/cultivMotion';
 import type { ResetPasswordLocationState } from '../types/navigation';
 
 const RESET_TOKEN_STORAGE_KEY = 'cultiv_reset_token_v1';
@@ -58,25 +60,61 @@ export function ResetPasswordScreen() {
 	return (
 		<AuthShell title="Reset Password" subtitle="Choose a new password and return to your CULTIV account." footer={<p className="text-center text-sm text-foreground/60">Need a new link? <Link to="/forgot-password" className="font-medium text-primary">Start again</Link></p>}>
 			{!token ? (
-				<div className="rounded-2xl border border-primary/14 bg-primary/[0.04] p-5 text-sm leading-6 text-foreground/66">
+				<motion.div 
+					initial={{ opacity: 0, y: 8 }}
+					animate={{ opacity: 1, y: 0 }}
+					className="rounded-2xl border border-primary/14 bg-primary/[0.04] p-5 text-sm leading-6 text-foreground/66"
+				>
 					This reset screen needs a valid token. <Link to="/forgot-password" className="font-medium text-primary">Generate one here.</Link>
-				</div>
+				</motion.div>
 			) : (
-				<form onSubmit={handleSubmit} className="space-y-5">
-					<div className="relative">
+				<motion.form 
+					onSubmit={handleSubmit} 
+					className="space-y-5"
+					initial="hidden"
+					animate="visible"
+					variants={{
+						hidden: { opacity: 0 },
+						visible: {
+							opacity: 1,
+							transition: {
+								staggerChildren: 0.08,
+								delayChildren: 0.1
+							}
+						}
+					}}
+				>
+					<motion.div variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }} className="relative">
 						<label className="mb-2 block text-sm font-medium text-foreground/78">New password</label>
 						<input type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} className="w-full rounded-2xl border border-border bg-background/80 px-4 py-4 pr-12 outline-none transition-colors focus:border-primary" required />
 						<button type="button" onClick={() => setShowPassword((current) => !current)} className="absolute right-4 top-[3.15rem] text-foreground/45">
 							{showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
 						</button>
-					</div>
-					<div>
+					</motion.div>
+					<motion.div variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }}>
 						<label className="mb-2 block text-sm font-medium text-foreground/78">Confirm password</label>
 						<input type={showPassword ? 'text' : 'password'} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="w-full rounded-2xl border border-border bg-background/80 px-4 py-4 outline-none transition-colors focus:border-primary" required />
-					</div>
-					<button type="submit" className="w-full rounded-full bg-primary py-3.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-92">Update Password</button>
-					{message ? <p className="text-sm leading-6 text-foreground/64">{message}</p> : null}
-				</form>
+					</motion.div>
+					<motion.button 
+						variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }}
+						type="submit" 
+						whileHover={{ scale: 1.02 }}
+						whileTap={{ scale: 0.98 }}
+						className="w-full rounded-full bg-primary py-3.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-92"
+					>
+						Update Password
+					</motion.button>
+					<AnimatePresence>
+						{message ? (
+							<motion.p 
+								{...ErrorShake}
+								className="text-sm leading-6 text-foreground/64"
+							>
+								{message}
+							</motion.p>
+						) : null}
+					</AnimatePresence>
+				</motion.form>
 			)}
 		</AuthShell>
 	);

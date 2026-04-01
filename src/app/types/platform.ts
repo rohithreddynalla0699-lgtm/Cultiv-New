@@ -94,7 +94,7 @@ export interface Order {
 	phone: string;
 	fullName: string;
 	email: string;
-	source: 'app' | 'walk-in';
+	source: 'app' | 'walk-in' | 'phone';
 	paymentMethod?: CounterPaymentMethod;
 	tipPercentage?: number;
 	tipAmount?: number;
@@ -171,7 +171,7 @@ export interface PlaceOrderInput {
 	fullName: string;
 	phone: string;
 	email: string;
-	source?: 'app' | 'walk-in';
+	source?: 'app' | 'walk-in' | 'phone';
 }
 
 export interface CounterOrderItemInput {

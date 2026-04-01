@@ -5,6 +5,7 @@ import { ArrowRight, Download, Gift, Repeat2, Star, Truck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { HoverLift, SectionReveal, CardStagger, CardStaggerItem } from '../core/motion/cultivMotion';
+import { requestOpenAppWaitlist } from '../data/appLaunch';
 
 export function HomeRewardsSnapshot() {
   const { user, loyaltyProfile } = useAuth();
@@ -42,9 +43,13 @@ export function HomeRewardsSnapshot() {
             </CardStagger>
 
             <div className="mt-8 flex flex-col sm:flex-row gap-3">
-              <button type="button" className="inline-flex items-center justify-center gap-2 rounded-full border border-primary/16 bg-white/80 px-5 py-3 text-sm font-medium text-primary shadow-sm">
+              <button
+                type="button"
+                onClick={() => requestOpenAppWaitlist()}
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-primary/16 bg-white/80 px-5 py-3 text-sm font-medium text-primary shadow-sm"
+              >
                 <Download className="h-4 w-4" />
-                Download App
+                Join App Waitlist
               </button>
               <Link to="/rewards" className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-medium text-primary-foreground shadow-md">
                 View rewards

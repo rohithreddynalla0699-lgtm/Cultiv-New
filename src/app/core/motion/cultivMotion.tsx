@@ -61,6 +61,81 @@ export const LogoAnimation = {
 	}
 };
 
+// Error shake feedback
+export const ErrorShake = {
+	animate: {
+		x: [-4, 4, -4, 4, 0],
+		transition: { duration: 0.4 }
+	}
+};
+
+// List item entrance (admin boards, order history)
+export const ListItemReveal = {
+	hidden: { opacity: 0, x: -8 },
+	visible: {
+		opacity: 1,
+		x: 0,
+		transition: { duration: 0.25 }
+	}
+};
+
+// Loading pulse for disabled buttons, spinners
+export const LoadingPulse = {
+	animate: {
+		opacity: [0.6, 1, 0.6],
+		transition: { duration: 1.5, repeat: Infinity }
+	}
+};
+
+// Counter/number animation (points, totals, quantities)
+export const CounterPulse = {
+	initial: { scale: 1 },
+	animate: {
+		scale: [1, 1.1, 1],
+		transition: { duration: 0.5 }
+	}
+};
+
+// Success checkmark/state
+export const SuccessBounce = {
+	initial: { scale: 0, opacity: 0 },
+	animate: {
+		scale: [0, 1.2, 1],
+		opacity: 1,
+		transition: { duration: 0.4 }
+	}
+};
+
+// Collapse/expand panel animation
+export const PanelExpand = {
+	hidden: { height: 0, opacity: 0 },
+	visible: {
+		height: "auto",
+		opacity: 1,
+		transition: { duration: 0.3 }
+	},
+	exit: {
+		height: 0,
+		opacity: 0,
+		transition: { duration: 0.2 }
+	}
+};
+
+// Dropdown entrance animation
+export const DropdownSlide = {
+	hidden: { opacity: 0, y: -8 },
+	visible: {
+		opacity: 1,
+		y: 0,
+		transition: { duration: 0.15 }
+	},
+	exit: {
+		opacity: 0,
+		y: -8,
+		transition: { duration: 0.1 }
+	}
+};
+
 interface SectionRevealProps {
 	id?: string;
 	className?: string;

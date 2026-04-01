@@ -16,7 +16,8 @@ import { HomeHowItWorks } from './components/HomeHowItWorks';
 import { HomeStoreSection } from './components/HomeStoreSection';
 import { About } from './components/About';
 import { loadDraftCart, subscribeDraftCart } from './data/cartDraft';
-import { MENU_CATEGORIES } from './data/menuData';
+import { BREAKFAST_PRESET_META_BY_ID, MENU_CATEGORIES, hydrateMenuCatalogFromSupabase } from './data/menuData';
+import { syncPresetCatalogFromMenu } from './data/bowlConfigurations';
 import { resolveCategorySlugFromLabel } from './utils/categoryRouting';
 import type { HomeOrderLaunchState, HomeScrollLocationState } from './types/navigation';
 
@@ -27,6 +28,7 @@ const SignupScreen = lazy(() => import('./components/SignupScreen').then((module
 const ProfileScreen = lazy(() => import('./components/ProfileScreen').then((module) => ({ default: module.ProfileScreen })));
 const OrderHistoryScreen = lazy(() => import('./components/OrderHistoryScreen').then((module) => ({ default: module.OrderHistoryScreen })));
 const RewardsScreen = lazy(() => import('./components/RewardsScreen').then((module) => ({ default: module.RewardsScreen })));
+const CareersScreen = lazy(() => import('./components/CareersScreen').then((module) => ({ default: module.CareersScreen })));
 const ForgotPasswordScreen = lazy(() => import('./components/ForgotPasswordScreen').then((module) => ({ default: module.ForgotPasswordScreen })));
 const ResetPasswordScreen = lazy(() => import('./components/ResetPasswordScreen').then((module) => ({ default: module.ResetPasswordScreen })));
 const OrderDetailScreen = lazy(() => import('./components/OrderDetailScreen').then((module) => ({ default: module.OrderDetailScreen })));
@@ -174,6 +176,7 @@ function AppShell() {
             <Route path="/orders" element={<OrderHistoryScreen />} />
             <Route path="/orders/:orderId" element={<OrderDetailScreen />} />
             <Route path="/rewards" element={<RewardsScreen />} />
+            <Route path="/careers" element={<CareersScreen />} />
             <Route path="/admin" element={<AdminDashboardProvider><AdminDashboardLayout /></AdminDashboardProvider>}>
               <Route index element={<Navigate to="summary" replace />} />
               <Route path="summary" element={<AdminSummaryScreen />} />
@@ -314,6 +317,78 @@ function AppShell() {
 }
 
 export default function App() {
+  const [isMenuLoading, setIsMenuLoading] = useState(true);
+  const [menuLoadError, setMenuLoadError] = useState<string | null>(null);
+  const [menuLoadAttempt, setMenuLoadAttempt] = useState(0);
+  const [continueWithFallback, setContinueWithFallback] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadMenu = async () => {
+      setIsMenuLoading(true);
+      setMenuLoadError(null);
+      try {
+        await hydrateMenuCatalogFromSupabase();
+        syncPresetCatalogFromMenu(MENU_CATEGORIES, BREAKFAST_PRESET_META_BY_ID);
+      } catch (error) {
+        console.error('Menu hydration failed, using local fallback catalog.', error);
+        if (active) {
+          setMenuLoadError(error instanceof Error ? error.message : 'Unable to load menu from Supabase.');
+        }
+      } finally {
+        if (active) {
+          setIsMenuLoading(false);
+        }
+      }
+    };
+
+    loadMenu();
+    return () => {
+      active = false;
+    };
+  }, [menuLoadAttempt]);
+
+  if (isMenuLoading) {
+    return (
+      <div className="min-h-screen grid place-items-center bg-[linear-gradient(160deg,#f8f7f2_0%,#f2f5ea_50%,#f8f7f2_100%)] px-6 text-center">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/65">Cultiv</p>
+          <h1 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">Loading live menu</h1>
+          <p className="mt-2 text-sm text-foreground/60">Fetching menu and customization options from Supabase.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (menuLoadError && !continueWithFallback) {
+    return (
+      <div className="min-h-screen grid place-items-center bg-[linear-gradient(160deg,#f8f7f2_0%,#f2f5ea_50%,#f8f7f2_100%)] px-6 text-center">
+        <div className="w-full max-w-xl rounded-3xl border border-primary/15 bg-white/90 p-6 shadow-[0_20px_48px_rgba(20,35,10,0.16)]">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/65">Menu Sync Error</p>
+          <h1 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">Could not load Supabase menu</h1>
+          <p className="mt-2 text-sm text-foreground/62">{menuLoadError}</p>
+          <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={() => setMenuLoadAttempt((value) => value + 1)}
+              className="rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground"
+            >
+              Retry
+            </button>
+            <button
+              type="button"
+              onClick={() => setContinueWithFallback(true)}
+              className="rounded-full border border-primary/20 bg-white px-4 py-2.5 text-sm font-medium text-foreground/72"
+            >
+              Continue with local menu
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <AuthProvider>
       <Router>

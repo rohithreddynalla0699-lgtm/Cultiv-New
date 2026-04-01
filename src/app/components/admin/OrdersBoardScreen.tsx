@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { SectionHeader } from './SectionHeader';
 import { OrderCard } from './OrderCard';
 import { useAuth } from '../../contexts/AuthContext';
@@ -91,29 +92,39 @@ export function OrdersBoardScreen() {
               <span className="rounded-full bg-background px-3 py-1 text-xs font-semibold text-foreground/58">{groupedOrders[column.status]?.length ?? 0}</span>
             </div>
             <div className="space-y-4">
-              {(groupedOrders[column.status] ?? []).map((order) => {
-                const boardStatus = getAdminOrderBoardStatus(order);
-                return (
-                  <OrderCard
-                    key={order.id}
-                    orderId={order.id}
-                    customerName={order.fullName}
-                    storeName={activeStoreScope === 'all' ? getStoreName(getOrderStoreId(order)) : undefined}
-                    placedTime={new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    waitingMinutes={getWaitingMinutes(order.createdAt)}
-                    itemsSummary={getOrderItemsSummary(order)}
-                    totalPayable={order.total}
-                    rewardUsed={getRewardSummary(order) ?? undefined}
-                    status={boardStatus}
-                    pickupEstimate={order.fulfillmentWindow}
-                    note={orderNotes[order.id]}
-                    source={order.source}
-                    onPrimaryAction={getPrimaryAction(order.id, boardStatus)}
-                    onNoteSave={(value) => saveOrderNote(order.id, value)}
-                    isTransitioning={transitioningOrderIds.has(order.id)}
-                  />
-                );
-              })}
+              <AnimatePresence mode="popLayout">
+                {(groupedOrders[column.status] ?? []).map((order) => {
+                  const boardStatus = getAdminOrderBoardStatus(order);
+                  return (
+                    <motion.div
+                      key={order.id}
+                      layout
+                      initial={{ opacity: 0, x: -8, y: -8 }}
+                      animate={{ opacity: 1, x: 0, y: 0 }}
+                      exit={{ opacity: 0, x: 8, y: 0 }}
+                      transition={{ type: 'spring', stiffness: 380, damping: 30, duration: 0.2 }}
+                    >
+                      <OrderCard
+                        orderId={order.id}
+                        customerName={order.fullName}
+                        storeName={activeStoreScope === 'all' ? getStoreName(getOrderStoreId(order)) : undefined}
+                        placedTime={new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        waitingMinutes={getWaitingMinutes(order.createdAt)}
+                        itemsSummary={getOrderItemsSummary(order)}
+                        totalPayable={order.total}
+                        rewardUsed={getRewardSummary(order) ?? undefined}
+                        status={boardStatus}
+                        pickupEstimate={order.fulfillmentWindow}
+                        note={orderNotes[order.id]}
+                        source={order.source}
+                        onPrimaryAction={getPrimaryAction(order.id, boardStatus)}
+                        onNoteSave={(value) => saveOrderNote(order.id, value)}
+                        isTransitioning={transitioningOrderIds.has(order.id)}
+                      />
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
             </div>
           </section>
         ))}
@@ -132,29 +143,39 @@ export function OrdersBoardScreen() {
                 <div className="rounded-[18px] border border-primary/10 bg-white/60 px-4 py-3 text-sm text-foreground/50">No orders in this stage.</div>
               ) : (
                 <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                  {columnOrders.map((order) => {
-                    const boardStatus = getAdminOrderBoardStatus(order);
-                    return (
-                      <OrderCard
-                        key={order.id}
-                        orderId={order.id}
-                        customerName={order.fullName}
-                        storeName={activeStoreScope === 'all' ? getStoreName(getOrderStoreId(order)) : undefined}
-                        placedTime={new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        waitingMinutes={getWaitingMinutes(order.createdAt)}
-                        itemsSummary={getOrderItemsSummary(order)}
-                        totalPayable={order.total}
-                        rewardUsed={getRewardSummary(order) ?? undefined}
-                        status={boardStatus}
-                        pickupEstimate={order.fulfillmentWindow}
-                        note={orderNotes[order.id]}
-                        source={order.source}
-                        onPrimaryAction={getPrimaryAction(order.id, boardStatus)}
-                        onNoteSave={(value) => saveOrderNote(order.id, value)}
-                        isTransitioning={transitioningOrderIds.has(order.id)}
-                      />
-                    );
-                  })}
+                  <AnimatePresence mode="popLayout">
+                    {columnOrders.map((order) => {
+                      const boardStatus = getAdminOrderBoardStatus(order);
+                      return (
+                        <motion.div
+                          key={order.id}
+                          layout
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -8 }}
+                          transition={{ type: 'spring', stiffness: 380, damping: 30, duration: 0.2 }}
+                        >
+                          <OrderCard
+                            orderId={order.id}
+                            customerName={order.fullName}
+                            storeName={activeStoreScope === 'all' ? getStoreName(getOrderStoreId(order)) : undefined}
+                            placedTime={new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            waitingMinutes={getWaitingMinutes(order.createdAt)}
+                            itemsSummary={getOrderItemsSummary(order)}
+                            totalPayable={order.total}
+                            rewardUsed={getRewardSummary(order) ?? undefined}
+                            status={boardStatus}
+                            pickupEstimate={order.fulfillmentWindow}
+                            note={orderNotes[order.id]}
+                            source={order.source}
+                            onPrimaryAction={getPrimaryAction(order.id, boardStatus)}
+                            onNoteSave={(value) => saveOrderNote(order.id, value)}
+                            isTransitioning={transitioningOrderIds.has(order.id)}
+                          />
+                        </motion.div>
+                      );
+                    })}
+                  </AnimatePresence>
                 </div>
               )}
             </section>

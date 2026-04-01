@@ -1,30 +1,33 @@
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowRight, Clock3, MapPin, Navigation2 } from 'lucide-react';
 import { CardStagger, CardStaggerItem, HoverLift, SectionReveal } from '../core/motion/cultivMotion';
+import { getSelectedStore, loadStores, requestOpenStoreSelector, subscribeSelectedStore, type StoreLocatorStore } from '../data/storeLocator';
 
 interface HomeStoreSectionProps {
   onOrderClick: () => void;
 }
 
-const STORES = [
-  {
-    name: 'Siddipet Central',
-    tag: 'Most ordered',
-    detail: 'Pickup in 18–28 min',
-  },
-  {
-    name: 'Komati Cheruvu Side',
-    tag: 'Closest pickup',
-    detail: 'Ideal for lunch pickup and after-work bowls',
-  },
-  {
-    name: 'Prashanth Nagar',
-    tag: 'Expanding soon',
-    detail: 'Scaffolded next-zone service for nearby neighborhoods',
-  },
-] as const;
-
 export function HomeStoreSection({ onOrderClick }: HomeStoreSectionProps) {
+  const [stores, setStores] = useState<StoreLocatorStore[]>(() => loadStores());
+
+  useEffect(() => {
+    const unsubscribe = subscribeSelectedStore(() => {
+      setStores(loadStores());
+    });
+    return unsubscribe;
+  }, []);
+
+  const selectedStore = getSelectedStore(stores);
+  const storeCards = useMemo(
+    () => stores.map((store) => ({
+      name: store.name,
+      tag: store.id === selectedStore.id ? 'Selected now' : (store.isActive ? 'Available today' : 'Coming soon'),
+      detail: `${store.city} • ${store.pin}`,
+    })),
+    [selectedStore.id, stores],
+  );
+
   return (
     <SectionReveal id="locations" className="relative overflow-hidden bg-background py-20 md:py-24">
       <div className="absolute inset-0 bg-[linear-gradient(180deg,#f6f5ef_0%,#eff4e8_45%,#f7f6f1_100%)]" />
@@ -40,28 +43,39 @@ export function HomeStoreSection({ onOrderClick }: HomeStoreSectionProps) {
                 <div className="flex flex-wrap items-center justify-between gap-4">
                   <div>
                     <p className="text-xs uppercase tracking-[0.18em] text-primary/60">Selected store</p>
-                    <h3 className="mt-2 text-2xl font-semibold tracking-tight">Siddipet Central</h3>
+                    <h3 className="mt-2 text-2xl font-semibold tracking-tight">{selectedStore.name}</h3>
                     <div className="mt-3 flex flex-wrap gap-2 text-xs text-foreground/60">
-                      <span className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5"><MapPin className="h-3.5 w-3.5 text-primary" /> Central district</span>
+                      <span className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5"><MapPin className="h-3.5 w-3.5 text-primary" /> {selectedStore.city} • {selectedStore.pin}</span>
                       <span className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5"><Clock3 className="h-3.5 w-3.5 text-primary" /> 11 AM – 9 PM</span>
                     </div>
                   </div>
-                  <motion.button
-                    type="button"
-                    onClick={onOrderClick}
-                    whileHover={HoverLift.whileHover}
-                    whileTap={{ scale: 0.98 }}
-                    className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-medium text-primary-foreground"
-                  >
-                    Order from this store
-                    <ArrowRight className="h-4 w-4" />
-                  </motion.button>
+                  <div className="flex items-center gap-2">
+                    <motion.button
+                      type="button"
+                      onClick={() => requestOpenStoreSelector()}
+                      whileHover={HoverLift.whileHover}
+                      whileTap={{ scale: 0.98 }}
+                      className="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-white px-4 py-2.5 text-sm font-medium text-foreground/84"
+                    >
+                      Change store
+                    </motion.button>
+                    <motion.button
+                      type="button"
+                      onClick={onOrderClick}
+                      whileHover={HoverLift.whileHover}
+                      whileTap={{ scale: 0.98 }}
+                      className="inline-flex items-center gap-2 rounded-full bg-primary px-5 py-3 text-sm font-medium text-primary-foreground"
+                    >
+                      Order from this store
+                      <ArrowRight className="h-4 w-4" />
+                    </motion.button>
+                  </div>
                 </div>
               </div>
             </div>
 
             <CardStagger className="grid gap-4">
-              {STORES.map((store) => (
+              {storeCards.map((store) => (
                 <motion.div
                   key={store.name}
                   variants={CardStaggerItem}

@@ -1,6 +1,6 @@
 // AuthContext — localStorage-backed auth, order management, loyalty tracking, and address storage.
 
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type {
   Address,
   AuthActionResult,
@@ -25,6 +25,8 @@ import type {
   WalkInLinkInput,
 } from '../types/platform';
 import { setDraftCartScope } from '../data/cartDraft';
+import { BOWL_BUILDER_STEPS, BREAKFAST_CUSTOMIZE_STEPS } from '../data/menuData';
+import { fetchOperationalOrdersFromSupabase, updateSupabaseOrderStatus } from '../data/orderRepository';
 import {
   DISCOUNT_REWARD_VALUES,
   FREE_ITEM_REWARD_VALUES,
@@ -34,6 +36,8 @@ import {
 } from '../config/rewardsCatalog';
 import { DEFAULT_ORDER_STORE_ID } from '../constants/admin';
 import { PRICE_EPSILON, REWARD_MAX_DISCOUNT_RATIO, REWARD_MIN_ORDER_SUBTOTAL } from '../constants/business';
+// @ts-ignore - Supabase client is defined in JS module.
+import { supabase } from '../../lib/supabase';
 
 interface AuthRecord extends User {
   password: string;
@@ -257,6 +261,173 @@ const buildStatusTimeline = (orderType: 'pickup' | 'walk-in', createdAt: string)
     description: STATUS_CONTENT[status].description,
     at: new Date(new Date(createdAt).getTime() + index * 12 * 60_000).toISOString(),
   }));
+};
+
+const hasValidOrderItems = (items: Array<{
+  title: string;
+  category: string;
+  quantity: number;
+  price: number;
+}>) => items.every((item) => (
+  Boolean(item.title?.trim())
+  && Boolean(item.category?.trim())
+  && Number.isFinite(item.quantity)
+  && item.quantity > 0
+  && Number.isFinite(item.price)
+  && item.price >= 0
+));
+
+type SupabaseOrderType = 'online' | 'walk_in' | 'phone';
+type SupabaseSourceChannel = 'app' | 'walk-in' | 'phone';
+
+const SELECTION_STEP_CATALOG = [...BOWL_BUILDER_STEPS, ...BREAKFAST_CUSTOMIZE_STEPS];
+
+const normalizeSelectionToken = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
+const toSnapshotGroupId = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+const SELECTION_STEP_BY_TITLE = Object.fromEntries(
+  SELECTION_STEP_CATALOG.map((step) => [normalizeSelectionToken(step.title), step]),
+) as Record<string, (typeof SELECTION_STEP_CATALOG)[number]>;
+
+const OPTION_META_BY_GROUP_AND_NAME = Object.fromEntries(
+  SELECTION_STEP_CATALOG.flatMap((step) =>
+    step.ingredients.map((ingredient) => [
+      `${step.id}::${normalizeSelectionToken(ingredient.name)}`,
+      {
+        optionItemId: ingredient.id,
+        optionItemName: ingredient.name,
+        groupId: step.id,
+        groupName: step.title,
+        priceModifier: ingredient.price,
+      },
+    ]),
+  ),
+) as Record<string, {
+  optionItemId: string;
+  optionItemName: string;
+  groupId: string;
+  groupName: string;
+  priceModifier: number;
+}>;
+
+const resolveSupabaseOrderType = (orderType: 'pickup' | 'walk-in', source: SupabaseSourceChannel): SupabaseOrderType => {
+  if (source === 'phone') return 'phone';
+  return orderType === 'walk-in' ? 'walk_in' : 'online';
+};
+
+const resolveSnapshotGroupMeta = (sectionLabel: string) => {
+  const step = SELECTION_STEP_BY_TITLE[normalizeSelectionToken(sectionLabel)];
+  if (step) {
+    return {
+      groupId: step.id,
+      groupName: step.title,
+    };
+  }
+
+  return {
+    groupId: toSnapshotGroupId(sectionLabel),
+    groupName: sectionLabel,
+  };
+};
+
+const buildSelectionSnapshotRows = (orderItemId: string, selections: OrderItem['selections']) => {
+  return selections.flatMap((selection) => {
+    const groupMeta = resolveSnapshotGroupMeta(selection.section);
+
+    return selection.choices.map((choice) => {
+      const optionMeta = OPTION_META_BY_GROUP_AND_NAME[
+        `${groupMeta.groupId}::${normalizeSelectionToken(choice)}`
+      ];
+
+      return {
+        order_item_id: orderItemId,
+        option_item_id: optionMeta?.optionItemId ?? null,
+        group_id_snapshot: groupMeta.groupId,
+        group_name_snapshot: groupMeta.groupName,
+        option_item_name_snapshot: optionMeta?.optionItemName ?? choice,
+        price_modifier_snapshot: optionMeta?.priceModifier ?? 0,
+      };
+    });
+  });
+};
+
+const persistOrderToSupabase = async (order: Order): Promise<boolean> => {
+  try {
+    const sourceChannel: SupabaseSourceChannel = order.source;
+
+    const { data: orderInsert, error: orderError } = await supabase
+      .from('orders')
+      .insert({
+        order_type: resolveSupabaseOrderType(order.orderType, sourceChannel),
+        source_channel: sourceChannel,
+        status: order.status,
+        store_id: order.storeId ?? DEFAULT_ORDER_STORE_ID,
+        customer_name: order.fullName,
+        customer_phone: order.phone,
+        customer_email: order.email,
+        payment_method: order.paymentMethod ?? null,
+        notes: null,
+        subtotal: Math.round(order.subtotal),
+        discount_amount: Math.round(order.rewardDiscount),
+        total: Math.round(order.total),
+      })
+      .select('id')
+      .single();
+
+    if (orderError || !orderInsert?.id) {
+      throw new Error(orderError?.message ?? 'Could not create orders row.');
+    }
+
+    const supabaseOrderId = orderInsert.id as string;
+
+    try {
+      for (const item of order.items) {
+        const lineTotal = Math.round(item.price * item.quantity);
+        const { data: itemInsert, error: itemError } = await supabase
+          .from('order_items')
+          .insert({
+            order_id: supabaseOrderId,
+            menu_item_id: null,
+            item_name_snapshot: item.title,
+            category_snapshot: item.category,
+            unit_price_snapshot: Math.round(item.price),
+            quantity: item.quantity,
+            line_total: lineTotal,
+          })
+          .select('id')
+          .single();
+
+        if (itemError || !itemInsert?.id) {
+          throw new Error(itemError?.message ?? 'Could not create order_items row.');
+        }
+
+        const selectionRows = buildSelectionSnapshotRows(itemInsert.id as string, item.selections);
+        if (selectionRows.length > 0) {
+          const { error: selectionError } = await supabase
+            .from('order_item_selections')
+            .insert(selectionRows);
+
+          if (selectionError) {
+            throw new Error(selectionError.message);
+          }
+        }
+      }
+
+      return true;
+    } catch (error) {
+      await supabase.from('orders').delete().eq('id', supabaseOrderId);
+      throw error;
+    }
+  } catch (error) {
+    console.error('Supabase order persistence failed. Falling back to local-only persistence.', error);
+    return false;
+  }
 };
 
 const deriveTier = (totalSpend: number) => {
@@ -616,6 +787,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [phoneChangeVerifications, setPhoneChangeVerifications] = useState<PhoneChangeVerificationRecord[]>(() => readStorage(STORAGE_KEYS.phoneChangeVerifications, seedState.phoneChangeVerifications));
   const [rejectedGuestClaimIds, setRejectedGuestClaimIds] = useState<string[]>(() => readStorage(STORAGE_KEYS.rejectedGuestClaims, []));
   const [pendingGuestOrderClaims, setPendingGuestOrderClaims] = useState<Order[]>([]);
+  const [supabaseSharedOrders, setSupabaseSharedOrders] = useState<Order[]>([]);
+  const [supabaseReadSuccessful, setSupabaseReadSuccessful] = useState(false);
+  const [supabaseReadDegraded, setSupabaseReadDegraded] = useState(false);
+  const [supabaseRefreshTick, setSupabaseRefreshTick] = useState(0);
   const usersRef = useRef(users);
   const ordersRef = useRef(allOrders);
 
@@ -728,11 +903,46 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     writeStorage(STORAGE_KEYS.rejectedGuestClaims, rejectedGuestClaimIds);
   }, [rejectedGuestClaimIds]);
 
+  const refreshSharedOrdersFromSupabase = useCallback(async () => {
+    try {
+      const nextOrders = await fetchOperationalOrdersFromSupabase();
+      const hasRecentLocalOrders = allOrders.some((order) => Date.now() - new Date(order.createdAt).getTime() < 24 * 60 * 60 * 1000);
+      if (nextOrders.length === 0 && hasRecentLocalOrders) {
+        console.warn('Supabase returned zero orders while recent local orders exist. Using local fallback for safety.');
+        setSupabaseReadDegraded(true);
+        return;
+      }
+      setSupabaseSharedOrders(nextOrders);
+      setSupabaseReadSuccessful(true);
+      setSupabaseReadDegraded(false);
+    } catch (error) {
+      console.error('Supabase admin order read failed, using local fallback.', error);
+      setSupabaseReadDegraded(true);
+    }
+  }, [allOrders]);
+
+  useEffect(() => {
+    let active = true;
+
+    const syncOrders = async () => {
+      if (!active) return;
+      await refreshSharedOrdersFromSupabase();
+    };
+
+    syncOrders();
+    const intervalId = window.setInterval(syncOrders, 15000);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [refreshSharedOrdersFromSupabase, supabaseRefreshTick]);
+
   const userRecord = users.find((entry) => entry.id === currentUserId) ?? null;
   const user = userRecord ? ({ ...userRecord, password: undefined } as unknown as User) : null;
   const guestOrders = allOrders.filter((order) => !order.userId && order.source === 'app');
   const orders = user ? allOrders.filter((order) => order.userId === user.id) : guestOrders;
-  const sharedOrders = allOrders;
+  const sharedOrders = (supabaseReadSuccessful && !supabaseReadDegraded) ? supabaseSharedOrders : allOrders;
   const activeOrders = orders.filter((order) => order.status !== 'completed');
   const loyaltyProfile = user ? loyaltyProfiles[user.id] ?? null : null;
 
@@ -1043,6 +1253,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       throw new Error('Order must include at least one item.');
     }
 
+    if (!hasValidOrderItems(input.items.map((item) => ({
+      title: item.title,
+      category: item.category,
+      quantity: item.quantity,
+      price: item.price,
+    })))) {
+      throw new Error('Order contains invalid line items.');
+    }
+
     const computedSubtotal = input.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
     if (Math.abs(computedSubtotal - input.subtotal) > PRICE_EPSILON) {
       throw new Error('Order subtotal mismatch.');
@@ -1141,6 +1360,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
     setAllOrders((previous) => [newOrder, ...previous]);
+    const persistedToSupabase = await persistOrderToSupabase(newOrder);
+    if (persistedToSupabase) {
+      setSupabaseRefreshTick((value) => value + 1);
+    } else {
+      setSupabaseReadDegraded(true);
+    }
     if (linkedUserId) {
       if (usedRewardIds.length > 0) {
         setLoyaltyProfiles((previous) => {
@@ -1171,6 +1396,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       throw new Error('Add at least one item before billing.');
     }
 
+    if (!hasValidOrderItems(input.items.map((item) => ({
+      title: item.title,
+      category: item.category,
+      quantity: item.quantity,
+      price: item.price,
+    })))) {
+      throw new Error('Invalid item details in counter billing cart.');
+    }
+
     const normalizedPhone = normalizePhone(input.phone);
     if (normalizedPhone.length !== 10) {
       throw new Error('Enter a valid 10-digit phone number.');
@@ -1193,6 +1427,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }));
     const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
     const total = subtotal + input.tipAmount;
+    if (!Number.isFinite(total) || total < 0) {
+      throw new Error('Computed billing total is invalid.');
+    }
 
     const newOrder: Order = {
       id: orderId,
@@ -1217,6 +1454,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
     setAllOrders((previous) => [newOrder, ...previous]);
+    const persistedToSupabase = await persistOrderToSupabase(newOrder);
+    if (persistedToSupabase) {
+      setSupabaseRefreshTick((value) => value + 1);
+    } else {
+      setSupabaseReadDegraded(true);
+    }
     return newOrder;
   };
 
@@ -1285,6 +1528,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
     setAllOrders((previous) => [linkedOrder, ...previous]);
+    const persistedToSupabase = await persistOrderToSupabase(linkedOrder);
+    if (persistedToSupabase) {
+      setSupabaseRefreshTick((value) => value + 1);
+    } else {
+      setSupabaseReadDegraded(true);
+    }
     syncLoyaltyForOrder(candidate.id, linkedOrder.total, linkedOrder.category);
 
     return {
@@ -1580,9 +1829,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const getOrderById = (orderId: string) => orders.find((order) => order.id === orderId);
 
   const updateOrderStatus = async (orderId: string, status: OrderStatus): Promise<AuthActionResult> => {
-    const existingOrder = allOrders.find((entry) => entry.id === orderId);
+    const existingOrder = sharedOrders.find((entry) => entry.id === orderId) ?? allOrders.find((entry) => entry.id === orderId);
     if (!existingOrder) {
       return { success: false, message: 'Order not found.' };
+    }
+
+    const supportedStatuses: OrderStatus[] = ['placed', 'preparing', 'ready_for_pickup', 'completed'];
+    if (!supportedStatuses.includes(status)) {
+      return { success: false, message: 'Unsupported order status.' };
+    }
+
+    if (!supportedStatuses.includes(existingOrder.status)) {
+      return { success: false, message: 'Order has an unsupported current status.' };
     }
 
     if (existingOrder.status === 'completed') {
@@ -1599,9 +1857,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return { success: false, message: 'Use the next step in the order workflow.' };
     }
 
+    let supabasePersisted = false;
+    try {
+      await updateSupabaseOrderStatus(orderId, status);
+      supabasePersisted = true;
+      setSupabaseReadSuccessful(true);
+      setSupabaseReadDegraded(false);
+      setSupabaseRefreshTick((value) => value + 1);
+    } catch (error) {
+      console.error('Supabase status update failed, using local fallback update.', error);
+      setSupabaseReadDegraded(true);
+    }
+
     setAllOrders((previous) => previous.map((entry) => (
       entry.id === orderId ? { ...entry, status } : entry
     )));
+
+    if (!supabasePersisted) {
+      return { success: true, message: 'Order status updated locally (Supabase fallback).' };
+    }
 
     return { success: true, message: 'Order status updated.' };
   };
