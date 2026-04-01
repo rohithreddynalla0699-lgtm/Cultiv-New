@@ -1,0 +1,2056 @@
+{
+  "users": [
+    {
+      "id": "user-seed-1",
+      "fullName": "Aarav Menon",
+      "phone": "9876543210",
+      "email": "member@cultiv.app",
+      "password": "h$frv0tg",
+      "createdAt": "2025-12-01T23:20:08.771Z",
+      "savedAddresses": [
+        {
+          "id": "address-seed-1",
+          "userId": "user-seed-1",
+          "label": "Home",
+          "addressLine": "12 Palm Grove Road",
+          "landmark": "Near Indiranagar Metro",
+          "city": "Bengaluru",
+          "pincode": "560038",
+          "isDefault": true
+        }
+      ],
+      "preferences": {
+        "favoriteCategory": "Rice Bowls",
+        "preferredOrderType": "pickup",
+        "preferredProtein": "Chicken",
+        "dietaryPreference": "High-protein balance",
+        "familyMealUsage": true,
+        "kidsMealUsage": true
+      },
+      "paymentProfile": {
+        "preferredMethod": "upi",
+        "savedMethods": [
+          {
+            "id": "payment-seed-1",
+            "type": "upi",
+            "label": "Primary UPI",
+            "upiId": "aarav@upi",
+            "billingName": "Aarav Menon",
+            "isDefault": true
+          },
+          {
+            "id": "payment-seed-2",
+            "type": "card",
+            "label": "Visa ending 4821",
+            "last4": "4821",
+            "billingName": "Aarav Menon",
+            "isDefault": false
+          }
+        ],
+        "upiId": "aarav@upi"
+      },
+      "defaultAddressId": "address-seed-1",
+      "emailLocked": true,
+      "phoneEditable": false
+    }
+  ],
+  "orders": [
+    {
+      "id": "order-cd5aigd8",
+      "userId": "user-seed-1",
+      "storeId": "store-hyderabad",
+      "category": "Central Ordering",
+      "items": [
+        {
+          "id": "sync-item-1-0",
+          "category": "Rice Bowls",
+          "title": "Sync Bowl 1",
+          "selections": [
+            {
+              "section": "Rice",
+              "choices": [
+                "Brown Rice"
+              ]
+            }
+          ],
+          "quantity": 1,
+          "price": 209,
+          "orderId": "order-cd5aigd8"
+        }
+      ],
+      "orderType": "pickup",
+      "subtotal": 209,
+      "rewardDiscount": 0,
+      "total": 209,
+      "status": "preparing",
+      "createdAt": "2026-03-31T23:21:55.842Z",
+      "phone": "9876543210",
+      "fullName": "Sync Proof User",
+      "email": "member@cultiv.app",
+      "source": "app",
+      "fulfillmentWindow": "04:39 pm - 04:49 pm",
+      "statusTimeline": [
+        {
+          "status": "placed",
+          "label": "Order Placed",
+          "description": "Your order is in the CULTIV queue.",
+          "at": "2026-03-31T23:21:55.842Z"
+        },
+        {
+          "status": "preparing",
+          "label": "Preparing",
+          "description": "Fresh ingredients are being assembled.",
+          "at": "2026-03-31T23:33:55.842Z"
+        },
+        {
+          "status": "ready_for_pickup",
+          "label": "Ready for Pickup",
+          "description": "Your order is ready at the counter.",
+          "at": "2026-03-31T23:45:55.842Z"
+        },
+        {
+          "status": "completed",
+          "label": "Completed",
+          "description": "Your order has been fulfilled.",
+          "at": "2026-03-31T23:57:55.842Z"
+        }
+      ]
+    },
+    {
+      "id": "order-ja9us761",
+      "userId": "user-seed-1",
+      "storeId": "store-hyderabad",
+      "category": "Central Ordering",
+      "items": [
+        {
+          "id": "sync-item-1-0",
+          "category": "Rice Bowls",
+          "title": "Sync Bowl 1",
+          "selections": [
+            {
+              "section": "Rice",
+              "choices": [
+                "Brown Rice"
+              ]
+            }
+          ],
+          "quantity": 1,
+          "price": 209,
+          "orderId": "order-ja9us761"
+        }
+      ],
+      "orderType": "pickup",
+      "subtotal": 209,
+      "rewardDiscount": 0,
+      "total": 209,
+      "status": "placed",
+      "createdAt": "2026-03-31T23:21:03.508Z",
+      "phone": "9876543210",
+      "fullName": "Sync Proof User",
+      "email": "member@cultiv.app",
+      "source": "app",
+      "fulfillmentWindow": "04:39 pm - 04:49 pm",
+      "statusTimeline": [
+        {
+          "status": "placed",
+          "label": "Order Placed",
+          "description": "Your order is in the CULTIV queue.",
+          "at": "2026-03-31T23:21:03.508Z"
+        },
+        {
+          "status": "preparing",
+          "label": "Preparing",
+          "description": "Fresh ingredients are being assembled.",
+          "at": "2026-03-31T23:33:03.508Z"
+        },
+        {
+          "status": "ready_for_pickup",
+          "label": "Ready for Pickup",
+          "description": "Your order is ready at the counter.",
+          "at": "2026-03-31T23:45:03.508Z"
+        },
+        {
+          "status": "completed",
+          "label": "Completed",
+          "description": "Your order has been fulfilled.",
+          "at": "2026-03-31T23:57:03.508Z"
+        }
+      ]
+    },
+    {
+      "id": "order-seed-1",
+      "userId": "user-seed-1",
+      "storeId": "store-siddipet",
+      "category": "Rice Bowls",
+      "items": [
+        {
+          "id": "item-seed-1",
+          "orderId": "order-seed-1",
+          "category": "Rice Bowls",
+          "title": "Brown Rice Bowl",
+          "selections": [
+            {
+              "section": "Rice",
+              "choices": [
+                "Brown Rice"
+              ]
+            },
+            {
+              "section": "Protein",
+              "choices": [
+                "Chicken (Meat-Based)"
+              ]
+            },
+            {
+              "section": "Toppings",
+              "choices": [
+                "Roasted Chilli Corn Salsa",
+                "Green Chilli Salsa"
+              ]
+            }
+          ],
+          "quantity": 1,
+          "price": 209
+        }
+      ],
+      "orderType": "pickup",
+      "subtotal": 209,
+      "rewardDiscount": 0,
+      "total": 209,
+      "status": "preparing",
+      "createdAt": "2026-03-31T22:45:08.771Z",
+      "phone": "9876543210",
+      "fullName": "Aarav Menon",
+      "email": "member@cultiv.app",
+      "source": "app",
+      "fulfillmentWindow": "04:38 pm - 04:48 pm",
+      "statusTimeline": [
+        {
+          "status": "placed",
+          "label": "Order Placed",
+          "description": "Your order is in the CULTIV queue.",
+          "at": "2026-03-31T22:45:08.778Z"
+        },
+        {
+          "status": "preparing",
+          "label": "Preparing",
+          "description": "Fresh ingredients are being assembled.",
+          "at": "2026-03-31T22:57:08.778Z"
+        },
+        {
+          "status": "ready_for_pickup",
+          "label": "Ready for Pickup",
+          "description": "Your order is ready at the counter.",
+          "at": "2026-03-31T23:09:08.778Z"
+        },
+        {
+          "status": "completed",
+          "label": "Completed",
+          "description": "Your order has been fulfilled.",
+          "at": "2026-03-31T23:21:08.778Z"
+        }
+      ]
+    },
+    {
+      "id": "order-seed-2",
+      "userId": "user-seed-1",
+      "storeId": "store-hyderabad",
+      "category": "High Protein",
+      "items": [
+        {
+          "id": "item-seed-2",
+          "orderId": "order-seed-2",
+          "category": "High Protein",
+          "title": "High Protein Bowl",
+          "selections": [
+            {
+              "section": "Rice",
+              "choices": [
+                "White Rice"
+              ]
+            },
+            {
+              "section": "Protein",
+              "choices": [
+                "Chicken (Meat-Based)",
+                "Plant Protein"
+              ]
+            }
+          ],
+          "quantity": 1,
+          "price": 269
+        }
+      ],
+      "orderType": "pickup",
+      "subtotal": 269,
+      "rewardDiscount": 0,
+      "total": 269,
+      "status": "completed",
+      "createdAt": "2026-03-23T23:20:08.778Z",
+      "phone": "9876543210",
+      "fullName": "Aarav Menon",
+      "email": "member@cultiv.app",
+      "source": "app",
+      "fulfillmentWindow": "07:10 PM - 07:30 PM",
+      "statusTimeline": [
+        {
+          "status": "placed",
+          "label": "Order Placed",
+          "description": "Your order is in the CULTIV queue.",
+          "at": "2026-03-23T23:20:08.778Z"
+        },
+        {
+          "status": "preparing",
+          "label": "Preparing",
+          "description": "Fresh ingredients are being assembled.",
+          "at": "2026-03-23T23:32:08.778Z"
+        },
+        {
+          "status": "ready_for_pickup",
+          "label": "Ready for Pickup",
+          "description": "Your order is ready at the counter.",
+          "at": "2026-03-23T23:44:08.778Z"
+        },
+        {
+          "status": "completed",
+          "label": "Completed",
+          "description": "Your order has been fulfilled.",
+          "at": "2026-03-23T23:56:08.778Z"
+        }
+      ]
+    },
+    {
+      "id": "order-seed-3",
+      "userId": "user-seed-1",
+      "storeId": "store-siddipet",
+      "category": "Kids Meals",
+      "items": [
+        {
+          "id": "item-seed-3",
+          "orderId": "order-seed-3",
+          "category": "Kids Meals",
+          "title": "Mild Kids Bowl",
+          "selections": [
+            {
+              "section": "Base",
+              "choices": [
+                "Soft Rice"
+              ]
+            },
+            {
+              "section": "Protein",
+              "choices": [
+                "Egg"
+              ]
+            },
+            {
+              "section": "Treat",
+              "choices": [
+                "Fresh Fruit"
+              ]
+            }
+          ],
+          "quantity": 1,
+          "price": 99
+        }
+      ],
+      "orderType": "walk-in",
+      "subtotal": 99,
+      "rewardDiscount": 0,
+      "total": 99,
+      "status": "completed",
+      "createdAt": "2026-03-13T23:20:08.778Z",
+      "phone": "9876543210",
+      "fullName": "Aarav Menon",
+      "email": "member@cultiv.app",
+      "source": "walk-in",
+      "fulfillmentWindow": "01:20 PM - 01:30 PM",
+      "statusTimeline": [
+        {
+          "status": "placed",
+          "label": "Order Placed",
+          "description": "Your order is in the CULTIV queue.",
+          "at": "2026-03-13T23:20:08.778Z"
+        },
+        {
+          "status": "preparing",
+          "label": "Preparing",
+          "description": "Fresh ingredients are being assembled.",
+          "at": "2026-03-13T23:32:08.778Z"
+        },
+        {
+          "status": "ready_for_pickup",
+          "label": "Ready for Pickup",
+          "description": "Your order is ready at the counter.",
+          "at": "2026-03-13T23:44:08.778Z"
+        },
+        {
+          "status": "completed",
+          "label": "Completed",
+          "description": "Your order has been fulfilled.",
+          "at": "2026-03-13T23:56:08.778Z"
+        }
+      ]
+    }
+  ],
+  "_updatedAt": "2026-03-31T23:21:59.636Z",
+  "_sourceClientId": "021a20e9-2655-4db5-a439-aea993254fef",
+  "stores": [
+    {
+      "id": "store-siddipet",
+      "name": "Siddipet Central",
+      "city": "Siddipet",
+      "code": "SID-CEN",
+      "pin": "240101",
+      "isActive": true,
+      "createdAt": "2026-03-31T23:21:02.135Z"
+    },
+    {
+      "id": "store-hyderabad",
+      "name": "Banjara Hills",
+      "city": "Hyderabad",
+      "code": "HYD-BAN",
+      "pin": "240202",
+      "isActive": true,
+      "createdAt": "2026-03-31T23:21:02.135Z"
+    }
+  ],
+  "employees": [
+    {
+      "id": "emp-1",
+      "name": "Riya Sharma",
+      "role": "manager",
+      "storeId": "store-siddipet",
+      "phone": "9876500011",
+      "isActive": true,
+      "createdAt": "2025-10-02T16:00:00.000Z",
+      "status": "on_shift",
+      "shifts": [
+        {
+          "id": "shift-1",
+          "employeeId": "emp-1",
+          "storeId": "store-siddipet",
+          "loginAt": "2026-03-31T16:02:00.000Z",
+          "totalHoursWorked": 7.33
+        },
+        {
+          "id": "shift-1b",
+          "employeeId": "emp-1",
+          "storeId": "store-siddipet",
+          "loginAt": "2026-03-30T16:00:00.000Z",
+          "logoutAt": "2026-03-31T00:06:00.000Z",
+          "totalHoursWorked": 8.1
+        }
+      ]
+    },
+    {
+      "id": "emp-2",
+      "name": "Aman Verma",
+      "role": "kitchen",
+      "storeId": "store-siddipet",
+      "phone": "9876500012",
+      "isActive": true,
+      "createdAt": "2025-11-29T17:00:00.000Z",
+      "status": "on_shift",
+      "shifts": [
+        {
+          "id": "shift-2",
+          "employeeId": "emp-2",
+          "storeId": "store-siddipet",
+          "loginAt": "2026-03-31T17:15:00.000Z",
+          "totalHoursWorked": 6.12
+        }
+      ]
+    },
+    {
+      "id": "emp-3",
+      "name": "Neha Patel",
+      "role": "counter",
+      "storeId": "store-hyderabad",
+      "phone": "9876500013",
+      "isActive": true,
+      "createdAt": "2025-12-26T17:00:00.000Z",
+      "status": "off_shift",
+      "shifts": [
+        {
+          "id": "shift-3",
+          "employeeId": "emp-3",
+          "storeId": "store-hyderabad",
+          "loginAt": "2026-03-29T16:00:00.000Z",
+          "logoutAt": "2026-03-30T00:00:00.000Z",
+          "totalHoursWorked": 8
+        }
+      ]
+    },
+    {
+      "id": "emp-4",
+      "name": "Sana Khan",
+      "role": "kitchen",
+      "storeId": "store-hyderabad",
+      "phone": "9876500014",
+      "isActive": false,
+      "createdAt": "2026-01-20T17:00:00.000Z",
+      "status": "off_shift",
+      "shifts": [
+        {
+          "id": "shift-4",
+          "employeeId": "emp-4",
+          "storeId": "store-hyderabad",
+          "loginAt": "2026-03-26T18:00:00.000Z",
+          "logoutAt": "2026-03-26T23:30:00.000Z",
+          "totalHoursWorked": 5.5
+        }
+      ]
+    }
+  ],
+  "inventory": [
+    {
+      "id": "store-siddipet__white_basmati_rice",
+      "code": "white_basmati_rice",
+      "storeId": "store-siddipet",
+      "name": "White Basmati Rice",
+      "category": "Rice",
+      "quantity": 12,
+      "unit": "kg",
+      "threshold": 5,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__brown_rice",
+      "code": "brown_rice",
+      "storeId": "store-siddipet",
+      "name": "Brown Rice",
+      "category": "Rice",
+      "quantity": 4,
+      "unit": "kg",
+      "threshold": 3,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__classic_chicken",
+      "code": "classic_chicken",
+      "storeId": "store-siddipet",
+      "name": "Classic Chicken",
+      "category": "Proteins",
+      "quantity": 2,
+      "unit": "kg",
+      "threshold": 3,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__spicy_chicken",
+      "code": "spicy_chicken",
+      "storeId": "store-siddipet",
+      "name": "Spicy Chicken",
+      "category": "Proteins",
+      "quantity": 5,
+      "unit": "kg",
+      "threshold": 3,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__rajma",
+      "code": "rajma",
+      "storeId": "store-siddipet",
+      "name": "Rajma",
+      "category": "Proteins",
+      "quantity": 3,
+      "unit": "kg",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__channa",
+      "code": "channa",
+      "storeId": "store-siddipet",
+      "name": "Channa",
+      "category": "Proteins",
+      "quantity": 2,
+      "unit": "kg",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__eggs",
+      "code": "eggs",
+      "storeId": "store-siddipet",
+      "name": "Eggs",
+      "category": "Proteins",
+      "quantity": 0,
+      "unit": "trays",
+      "threshold": 2,
+      "status": "out_of_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__cheese",
+      "code": "cheese",
+      "storeId": "store-siddipet",
+      "name": "Cheese",
+      "category": "Proteins",
+      "quantity": 3,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__onion",
+      "code": "onion",
+      "storeId": "store-siddipet",
+      "name": "Onion",
+      "category": "Veggies",
+      "quantity": 4,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__cucumber",
+      "code": "cucumber",
+      "storeId": "store-siddipet",
+      "name": "Cucumber",
+      "category": "Veggies",
+      "quantity": 3,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__lettuce",
+      "code": "lettuce",
+      "storeId": "store-siddipet",
+      "name": "Lettuce",
+      "category": "Veggies",
+      "quantity": 3,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__capsicum",
+      "code": "capsicum",
+      "storeId": "store-siddipet",
+      "name": "Capsicum",
+      "category": "Veggies",
+      "quantity": 2,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__green_cabbage",
+      "code": "green_cabbage",
+      "storeId": "store-siddipet",
+      "name": "Green Cabbage",
+      "category": "Veggies",
+      "quantity": 2,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__red_cabbage",
+      "code": "red_cabbage",
+      "storeId": "store-siddipet",
+      "name": "Red Cabbage",
+      "category": "Veggies",
+      "quantity": 2,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__carrots",
+      "code": "carrots",
+      "storeId": "store-siddipet",
+      "name": "Carrots",
+      "category": "Veggies",
+      "quantity": 3,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__tomato",
+      "code": "tomato",
+      "storeId": "store-siddipet",
+      "name": "Tomato",
+      "category": "Veggies",
+      "quantity": 3,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__lemon",
+      "code": "lemon",
+      "storeId": "store-siddipet",
+      "name": "Lemon",
+      "category": "Veggies",
+      "quantity": 2,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__sweet_corn",
+      "code": "sweet_corn",
+      "storeId": "store-siddipet",
+      "name": "Sweet Corn",
+      "category": "Veggies",
+      "quantity": 4,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__small_chilli",
+      "code": "small_chilli",
+      "storeId": "store-siddipet",
+      "name": "Small Chilli",
+      "category": "Veggies",
+      "quantity": 1,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__big_chilli",
+      "code": "big_chilli",
+      "storeId": "store-siddipet",
+      "name": "Big Chilli",
+      "category": "Veggies",
+      "quantity": 2,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__dried_red_chilli",
+      "code": "dried_red_chilli",
+      "storeId": "store-siddipet",
+      "name": "Dried Red Chilli",
+      "category": "Veggies",
+      "quantity": 1,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__avocado",
+      "code": "avocado",
+      "storeId": "store-siddipet",
+      "name": "Avocado",
+      "category": "Veggies",
+      "quantity": 2,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__ginger",
+      "code": "ginger",
+      "storeId": "store-siddipet",
+      "name": "Ginger",
+      "category": "Veggies",
+      "quantity": 1,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__yogurt",
+      "code": "yogurt",
+      "storeId": "store-siddipet",
+      "name": "Yogurt",
+      "category": "Breakfast",
+      "quantity": 4,
+      "unit": "boxes",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__chia_seeds",
+      "code": "chia_seeds",
+      "storeId": "store-siddipet",
+      "name": "Chia Seeds",
+      "category": "Breakfast",
+      "quantity": 2,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__banana",
+      "code": "banana",
+      "storeId": "store-siddipet",
+      "name": "Banana",
+      "category": "Breakfast",
+      "quantity": 2,
+      "unit": "boxes",
+      "threshold": 1,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__apple",
+      "code": "apple",
+      "storeId": "store-siddipet",
+      "name": "Apple",
+      "category": "Breakfast",
+      "quantity": 2,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__mixed_berries",
+      "code": "mixed_berries",
+      "storeId": "store-siddipet",
+      "name": "Mixed Berries",
+      "category": "Breakfast",
+      "quantity": 1,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__mango",
+      "code": "mango",
+      "storeId": "store-siddipet",
+      "name": "Mango",
+      "category": "Breakfast",
+      "quantity": 2,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__granola",
+      "code": "granola",
+      "storeId": "store-siddipet",
+      "name": "Granola",
+      "category": "Breakfast",
+      "quantity": 2,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__honey",
+      "code": "honey",
+      "storeId": "store-siddipet",
+      "name": "Honey",
+      "category": "Breakfast",
+      "quantity": 3,
+      "unit": "bottles",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__watermelon",
+      "code": "watermelon",
+      "storeId": "store-siddipet",
+      "name": "Watermelon",
+      "category": "Breakfast",
+      "quantity": 2,
+      "unit": "pcs",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__water_bottles",
+      "code": "water_bottles",
+      "storeId": "store-siddipet",
+      "name": "Water Bottles",
+      "category": "Drinks",
+      "quantity": 3,
+      "unit": "cases",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__coke",
+      "code": "coke",
+      "storeId": "store-siddipet",
+      "name": "Coke",
+      "category": "Drinks",
+      "quantity": 2,
+      "unit": "cases",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__regular_bowl",
+      "code": "regular_bowl",
+      "storeId": "store-siddipet",
+      "name": "Regular Bowl",
+      "category": "Packaging",
+      "quantity": 120,
+      "unit": "pcs",
+      "threshold": 50,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__regular_bowl_lid",
+      "code": "regular_bowl_lid",
+      "storeId": "store-siddipet",
+      "name": "Regular Bowl Lid",
+      "category": "Packaging",
+      "quantity": 118,
+      "unit": "pcs",
+      "threshold": 50,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__breakfast_bowl",
+      "code": "breakfast_bowl",
+      "storeId": "store-siddipet",
+      "name": "Breakfast Bowl",
+      "category": "Packaging",
+      "quantity": 30,
+      "unit": "pcs",
+      "threshold": 40,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__breakfast_bowl_lid",
+      "code": "breakfast_bowl_lid",
+      "storeId": "store-siddipet",
+      "name": "Breakfast Bowl Lid",
+      "category": "Packaging",
+      "quantity": 30,
+      "unit": "pcs",
+      "threshold": 40,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__paper_cup",
+      "code": "paper_cup",
+      "storeId": "store-siddipet",
+      "name": "Paper Cup",
+      "category": "Packaging",
+      "quantity": 0,
+      "unit": "pcs",
+      "threshold": 50,
+      "status": "out_of_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__paper_cup_lid",
+      "code": "paper_cup_lid",
+      "storeId": "store-siddipet",
+      "name": "Paper Cup Lid",
+      "category": "Packaging",
+      "quantity": 46,
+      "unit": "pcs",
+      "threshold": 50,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__spoon",
+      "code": "spoon",
+      "storeId": "store-siddipet",
+      "name": "Spoon",
+      "category": "Packaging",
+      "quantity": 140,
+      "unit": "pcs",
+      "threshold": 100,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__paper_bag",
+      "code": "paper_bag",
+      "storeId": "store-siddipet",
+      "name": "Paper Bag",
+      "category": "Packaging",
+      "quantity": 60,
+      "unit": "pcs",
+      "threshold": 50,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-siddipet__tissue_pack",
+      "code": "tissue_pack",
+      "storeId": "store-siddipet",
+      "name": "Tissue Pack",
+      "category": "Packaging",
+      "quantity": 18,
+      "unit": "packs",
+      "threshold": 20,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-hyderabad__white_basmati_rice",
+      "code": "white_basmati_rice",
+      "storeId": "store-hyderabad",
+      "name": "White Basmati Rice",
+      "category": "Rice",
+      "quantity": 10,
+      "unit": "kg",
+      "threshold": 5,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-hyderabad__brown_rice",
+      "code": "brown_rice",
+      "storeId": "store-hyderabad",
+      "name": "Brown Rice",
+      "category": "Rice",
+      "quantity": 2,
+      "unit": "kg",
+      "threshold": 3,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-hyderabad__classic_chicken",
+      "code": "classic_chicken",
+      "storeId": "store-hyderabad",
+      "name": "Classic Chicken",
+      "category": "Proteins",
+      "quantity": 4,
+      "unit": "kg",
+      "threshold": 3,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-hyderabad__spicy_chicken",
+      "code": "spicy_chicken",
+      "storeId": "store-hyderabad",
+      "name": "Spicy Chicken",
+      "category": "Proteins",
+      "quantity": 2,
+      "unit": "kg",
+      "threshold": 3,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-hyderabad__rajma",
+      "code": "rajma",
+      "storeId": "store-hyderabad",
+      "name": "Rajma",
+      "category": "Proteins",
+      "quantity": 2,
+      "unit": "kg",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-hyderabad__channa",
+      "code": "channa",
+      "storeId": "store-hyderabad",
+      "name": "Channa",
+      "category": "Proteins",
+      "quantity": 1,
+      "unit": "kg",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-hyderabad__eggs",
+      "code": "eggs",
+      "storeId": "store-hyderabad",
+      "name": "Eggs",
+      "category": "Proteins",
+      "quantity": 2,
+      "unit": "trays",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-hyderabad__cheese",
+      "code": "cheese",
+      "storeId": "store-hyderabad",
+      "name": "Cheese",
+      "category": "Proteins",
+      "quantity": 1,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-hyderabad__onion",
+      "code": "onion",
+      "storeId": "store-hyderabad",
+      "name": "Onion",
+      "category": "Veggies",
+      "quantity": 3,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-hyderabad__cucumber",
+      "code": "cucumber",
+      "storeId": "store-hyderabad",
+      "name": "Cucumber",
+      "category": "Veggies",
+      "quantity": 3,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-hyderabad__lettuce",
+      "code": "lettuce",
+      "storeId": "store-hyderabad",
+      "name": "Lettuce",
+      "category": "Veggies",
+      "quantity": 2,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-hyderabad__capsicum",
+      "code": "capsicum",
+      "storeId": "store-hyderabad",
+      "name": "Capsicum",
+      "category": "Veggies",
+      "quantity": 2,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-hyderabad__green_cabbage",
+      "code": "green_cabbage",
+      "storeId": "store-hyderabad",
+      "name": "Green Cabbage",
+      "category": "Veggies",
+      "quantity": 2,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-hyderabad__red_cabbage",
+      "code": "red_cabbage",
+      "storeId": "store-hyderabad",
+      "name": "Red Cabbage",
+      "category": "Veggies",
+      "quantity": 1,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-hyderabad__carrots",
+      "code": "carrots",
+      "storeId": "store-hyderabad",
+      "name": "Carrots",
+      "category": "Veggies",
+      "quantity": 2,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-hyderabad__tomato",
+      "code": "tomato",
+      "storeId": "store-hyderabad",
+      "name": "Tomato",
+      "category": "Veggies",
+      "quantity": 3,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.004Z"
+    },
+    {
+      "id": "store-hyderabad__lemon",
+      "code": "lemon",
+      "storeId": "store-hyderabad",
+      "name": "Lemon",
+      "category": "Veggies",
+      "quantity": 2,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-hyderabad__sweet_corn",
+      "code": "sweet_corn",
+      "storeId": "store-hyderabad",
+      "name": "Sweet Corn",
+      "category": "Veggies",
+      "quantity": 1,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-hyderabad__small_chilli",
+      "code": "small_chilli",
+      "storeId": "store-hyderabad",
+      "name": "Small Chilli",
+      "category": "Veggies",
+      "quantity": 1,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-hyderabad__big_chilli",
+      "code": "big_chilli",
+      "storeId": "store-hyderabad",
+      "name": "Big Chilli",
+      "category": "Veggies",
+      "quantity": 1,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-hyderabad__dried_red_chilli",
+      "code": "dried_red_chilli",
+      "storeId": "store-hyderabad",
+      "name": "Dried Red Chilli",
+      "category": "Veggies",
+      "quantity": 1,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-hyderabad__avocado",
+      "code": "avocado",
+      "storeId": "store-hyderabad",
+      "name": "Avocado",
+      "category": "Veggies",
+      "quantity": 2,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-hyderabad__ginger",
+      "code": "ginger",
+      "storeId": "store-hyderabad",
+      "name": "Ginger",
+      "category": "Veggies",
+      "quantity": 1,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-hyderabad__yogurt",
+      "code": "yogurt",
+      "storeId": "store-hyderabad",
+      "name": "Yogurt",
+      "category": "Breakfast",
+      "quantity": 2,
+      "unit": "boxes",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-hyderabad__chia_seeds",
+      "code": "chia_seeds",
+      "storeId": "store-hyderabad",
+      "name": "Chia Seeds",
+      "category": "Breakfast",
+      "quantity": 1,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-hyderabad__banana",
+      "code": "banana",
+      "storeId": "store-hyderabad",
+      "name": "Banana",
+      "category": "Breakfast",
+      "quantity": 1,
+      "unit": "boxes",
+      "threshold": 1,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-hyderabad__apple",
+      "code": "apple",
+      "storeId": "store-hyderabad",
+      "name": "Apple",
+      "category": "Breakfast",
+      "quantity": 1,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-hyderabad__mixed_berries",
+      "code": "mixed_berries",
+      "storeId": "store-hyderabad",
+      "name": "Mixed Berries",
+      "category": "Breakfast",
+      "quantity": 0,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "out_of_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-hyderabad__mango",
+      "code": "mango",
+      "storeId": "store-hyderabad",
+      "name": "Mango",
+      "category": "Breakfast",
+      "quantity": 1,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-hyderabad__granola",
+      "code": "granola",
+      "storeId": "store-hyderabad",
+      "name": "Granola",
+      "category": "Breakfast",
+      "quantity": 1,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-hyderabad__honey",
+      "code": "honey",
+      "storeId": "store-hyderabad",
+      "name": "Honey",
+      "category": "Breakfast",
+      "quantity": 1,
+      "unit": "bottles",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-hyderabad__watermelon",
+      "code": "watermelon",
+      "storeId": "store-hyderabad",
+      "name": "Watermelon",
+      "category": "Breakfast",
+      "quantity": 2,
+      "unit": "pcs",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-hyderabad__water_bottles",
+      "code": "water_bottles",
+      "storeId": "store-hyderabad",
+      "name": "Water Bottles",
+      "category": "Drinks",
+      "quantity": 1,
+      "unit": "cases",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-hyderabad__coke",
+      "code": "coke",
+      "storeId": "store-hyderabad",
+      "name": "Coke",
+      "category": "Drinks",
+      "quantity": 4,
+      "unit": "cases",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-hyderabad__regular_bowl",
+      "code": "regular_bowl",
+      "storeId": "store-hyderabad",
+      "name": "Regular Bowl",
+      "category": "Packaging",
+      "quantity": 52,
+      "unit": "pcs",
+      "threshold": 50,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-hyderabad__regular_bowl_lid",
+      "code": "regular_bowl_lid",
+      "storeId": "store-hyderabad",
+      "name": "Regular Bowl Lid",
+      "category": "Packaging",
+      "quantity": 48,
+      "unit": "pcs",
+      "threshold": 50,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-hyderabad__breakfast_bowl",
+      "code": "breakfast_bowl",
+      "storeId": "store-hyderabad",
+      "name": "Breakfast Bowl",
+      "category": "Packaging",
+      "quantity": 42,
+      "unit": "pcs",
+      "threshold": 40,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-hyderabad__breakfast_bowl_lid",
+      "code": "breakfast_bowl_lid",
+      "storeId": "store-hyderabad",
+      "name": "Breakfast Bowl Lid",
+      "category": "Packaging",
+      "quantity": 30,
+      "unit": "pcs",
+      "threshold": 40,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-hyderabad__paper_cup",
+      "code": "paper_cup",
+      "storeId": "store-hyderabad",
+      "name": "Paper Cup",
+      "category": "Packaging",
+      "quantity": 65,
+      "unit": "pcs",
+      "threshold": 50,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-hyderabad__paper_cup_lid",
+      "code": "paper_cup_lid",
+      "storeId": "store-hyderabad",
+      "name": "Paper Cup Lid",
+      "category": "Packaging",
+      "quantity": 40,
+      "unit": "pcs",
+      "threshold": 50,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-hyderabad__spoon",
+      "code": "spoon",
+      "storeId": "store-hyderabad",
+      "name": "Spoon",
+      "category": "Packaging",
+      "quantity": 100,
+      "unit": "pcs",
+      "threshold": 100,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-hyderabad__paper_bag",
+      "code": "paper_bag",
+      "storeId": "store-hyderabad",
+      "name": "Paper Bag",
+      "category": "Packaging",
+      "quantity": 35,
+      "unit": "pcs",
+      "threshold": 50,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-hyderabad__tissue_pack",
+      "code": "tissue_pack",
+      "storeId": "store-hyderabad",
+      "name": "Tissue Pack",
+      "category": "Packaging",
+      "quantity": 25,
+      "unit": "packs",
+      "threshold": 20,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__white_basmati_rice",
+      "code": "white_basmati_rice",
+      "storeId": "store-warangal",
+      "name": "White Basmati Rice",
+      "category": "Rice",
+      "quantity": 6,
+      "unit": "kg",
+      "threshold": 5,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__brown_rice",
+      "code": "brown_rice",
+      "storeId": "store-warangal",
+      "name": "Brown Rice",
+      "category": "Rice",
+      "quantity": 3,
+      "unit": "kg",
+      "threshold": 3,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__classic_chicken",
+      "code": "classic_chicken",
+      "storeId": "store-warangal",
+      "name": "Classic Chicken",
+      "category": "Proteins",
+      "quantity": 3,
+      "unit": "kg",
+      "threshold": 3,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__spicy_chicken",
+      "code": "spicy_chicken",
+      "storeId": "store-warangal",
+      "name": "Spicy Chicken",
+      "category": "Proteins",
+      "quantity": 3,
+      "unit": "kg",
+      "threshold": 3,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__rajma",
+      "code": "rajma",
+      "storeId": "store-warangal",
+      "name": "Rajma",
+      "category": "Proteins",
+      "quantity": 2,
+      "unit": "kg",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__channa",
+      "code": "channa",
+      "storeId": "store-warangal",
+      "name": "Channa",
+      "category": "Proteins",
+      "quantity": 2,
+      "unit": "kg",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__eggs",
+      "code": "eggs",
+      "storeId": "store-warangal",
+      "name": "Eggs",
+      "category": "Proteins",
+      "quantity": 2,
+      "unit": "trays",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__cheese",
+      "code": "cheese",
+      "storeId": "store-warangal",
+      "name": "Cheese",
+      "category": "Proteins",
+      "quantity": 2,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__onion",
+      "code": "onion",
+      "storeId": "store-warangal",
+      "name": "Onion",
+      "category": "Veggies",
+      "quantity": 5,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__cucumber",
+      "code": "cucumber",
+      "storeId": "store-warangal",
+      "name": "Cucumber",
+      "category": "Veggies",
+      "quantity": 5,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__lettuce",
+      "code": "lettuce",
+      "storeId": "store-warangal",
+      "name": "Lettuce",
+      "category": "Veggies",
+      "quantity": 5,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__capsicum",
+      "code": "capsicum",
+      "storeId": "store-warangal",
+      "name": "Capsicum",
+      "category": "Veggies",
+      "quantity": 5,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__green_cabbage",
+      "code": "green_cabbage",
+      "storeId": "store-warangal",
+      "name": "Green Cabbage",
+      "category": "Veggies",
+      "quantity": 5,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__red_cabbage",
+      "code": "red_cabbage",
+      "storeId": "store-warangal",
+      "name": "Red Cabbage",
+      "category": "Veggies",
+      "quantity": 5,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__carrots",
+      "code": "carrots",
+      "storeId": "store-warangal",
+      "name": "Carrots",
+      "category": "Veggies",
+      "quantity": 5,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__tomato",
+      "code": "tomato",
+      "storeId": "store-warangal",
+      "name": "Tomato",
+      "category": "Veggies",
+      "quantity": 5,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__lemon",
+      "code": "lemon",
+      "storeId": "store-warangal",
+      "name": "Lemon",
+      "category": "Veggies",
+      "quantity": 5,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__sweet_corn",
+      "code": "sweet_corn",
+      "storeId": "store-warangal",
+      "name": "Sweet Corn",
+      "category": "Veggies",
+      "quantity": 5,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__small_chilli",
+      "code": "small_chilli",
+      "storeId": "store-warangal",
+      "name": "Small Chilli",
+      "category": "Veggies",
+      "quantity": 4,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__big_chilli",
+      "code": "big_chilli",
+      "storeId": "store-warangal",
+      "name": "Big Chilli",
+      "category": "Veggies",
+      "quantity": 4,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__dried_red_chilli",
+      "code": "dried_red_chilli",
+      "storeId": "store-warangal",
+      "name": "Dried Red Chilli",
+      "category": "Veggies",
+      "quantity": 4,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__avocado",
+      "code": "avocado",
+      "storeId": "store-warangal",
+      "name": "Avocado",
+      "category": "Veggies",
+      "quantity": 5,
+      "unit": "bags",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__ginger",
+      "code": "ginger",
+      "storeId": "store-warangal",
+      "name": "Ginger",
+      "category": "Veggies",
+      "quantity": 4,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__yogurt",
+      "code": "yogurt",
+      "storeId": "store-warangal",
+      "name": "Yogurt",
+      "category": "Breakfast",
+      "quantity": 5,
+      "unit": "boxes",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__chia_seeds",
+      "code": "chia_seeds",
+      "storeId": "store-warangal",
+      "name": "Chia Seeds",
+      "category": "Breakfast",
+      "quantity": 4,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__banana",
+      "code": "banana",
+      "storeId": "store-warangal",
+      "name": "Banana",
+      "category": "Breakfast",
+      "quantity": 4,
+      "unit": "boxes",
+      "threshold": 1,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__apple",
+      "code": "apple",
+      "storeId": "store-warangal",
+      "name": "Apple",
+      "category": "Breakfast",
+      "quantity": 4,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__mixed_berries",
+      "code": "mixed_berries",
+      "storeId": "store-warangal",
+      "name": "Mixed Berries",
+      "category": "Breakfast",
+      "quantity": 4,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__mango",
+      "code": "mango",
+      "storeId": "store-warangal",
+      "name": "Mango",
+      "category": "Breakfast",
+      "quantity": 4,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__granola",
+      "code": "granola",
+      "storeId": "store-warangal",
+      "name": "Granola",
+      "category": "Breakfast",
+      "quantity": 4,
+      "unit": "bags",
+      "threshold": 1,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__honey",
+      "code": "honey",
+      "storeId": "store-warangal",
+      "name": "Honey",
+      "category": "Breakfast",
+      "quantity": 5,
+      "unit": "bottles",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__watermelon",
+      "code": "watermelon",
+      "storeId": "store-warangal",
+      "name": "Watermelon",
+      "category": "Breakfast",
+      "quantity": 5,
+      "unit": "pcs",
+      "threshold": 2,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__water_bottles",
+      "code": "water_bottles",
+      "storeId": "store-warangal",
+      "name": "Water Bottles",
+      "category": "Drinks",
+      "quantity": 2,
+      "unit": "cases",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__coke",
+      "code": "coke",
+      "storeId": "store-warangal",
+      "name": "Coke",
+      "category": "Drinks",
+      "quantity": 2,
+      "unit": "cases",
+      "threshold": 2,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__regular_bowl",
+      "code": "regular_bowl",
+      "storeId": "store-warangal",
+      "name": "Regular Bowl",
+      "category": "Packaging",
+      "quantity": 60,
+      "unit": "pcs",
+      "threshold": 50,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__regular_bowl_lid",
+      "code": "regular_bowl_lid",
+      "storeId": "store-warangal",
+      "name": "Regular Bowl Lid",
+      "category": "Packaging",
+      "quantity": 60,
+      "unit": "pcs",
+      "threshold": 50,
+      "status": "in_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__breakfast_bowl",
+      "code": "breakfast_bowl",
+      "storeId": "store-warangal",
+      "name": "Breakfast Bowl",
+      "category": "Packaging",
+      "quantity": 40,
+      "unit": "pcs",
+      "threshold": 40,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__breakfast_bowl_lid",
+      "code": "breakfast_bowl_lid",
+      "storeId": "store-warangal",
+      "name": "Breakfast Bowl Lid",
+      "category": "Packaging",
+      "quantity": 40,
+      "unit": "pcs",
+      "threshold": 40,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__paper_cup",
+      "code": "paper_cup",
+      "storeId": "store-warangal",
+      "name": "Paper Cup",
+      "category": "Packaging",
+      "quantity": 50,
+      "unit": "pcs",
+      "threshold": 50,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__paper_cup_lid",
+      "code": "paper_cup_lid",
+      "storeId": "store-warangal",
+      "name": "Paper Cup Lid",
+      "category": "Packaging",
+      "quantity": 50,
+      "unit": "pcs",
+      "threshold": 50,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__spoon",
+      "code": "spoon",
+      "storeId": "store-warangal",
+      "name": "Spoon",
+      "category": "Packaging",
+      "quantity": 100,
+      "unit": "pcs",
+      "threshold": 100,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__paper_bag",
+      "code": "paper_bag",
+      "storeId": "store-warangal",
+      "name": "Paper Bag",
+      "category": "Packaging",
+      "quantity": 50,
+      "unit": "pcs",
+      "threshold": 50,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    },
+    {
+      "id": "store-warangal__tissue_pack",
+      "code": "tissue_pack",
+      "storeId": "store-warangal",
+      "name": "Tissue Pack",
+      "category": "Packaging",
+      "quantity": 20,
+      "unit": "packs",
+      "threshold": 20,
+      "status": "low_stock",
+      "updatedAt": "2026-03-31T23:21:04.005Z"
+    }
+  ]
+}

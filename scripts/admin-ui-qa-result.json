@@ -1,0 +1,38 @@
+{
+  "login": {
+    "ownerLogin": "pass"
+  },
+  "orders": {
+    "cardCount": 0,
+    "primaryActionsPresent": "warn",
+    "notesCollapsedDefault": "fail",
+    "waitingVisible": "fail",
+    "quickTransitionsAttempted": 0
+  },
+  "inventory": {
+    "lowStockQueueVisible": "fail",
+    "lowStockCardCount": 0,
+    "quickRestockButtons": "fail",
+    "allInventorySectionVisible": "fail",
+    "thresholdSecondaryVisible": "fail"
+  },
+  "employees": {
+    "shiftButtons": "fail",
+    "hoursVisible": "pass",
+    "historyCollapsible": "pass",
+    "historyToggleInteraction": "pass"
+  },
+  "summary": {
+    "priorityCardsVisible": "pass",
+    "compactChartVisible": "pass"
+  },
+  "nav": {
+    "contextBar": "pass",
+    "storeSwitchClear": "pass"
+  },
+  "tablet": {
+    "primaryButtonHeight": null,
+    "cardsVisible": "warn"
+  },
+  "notes": []
+}
