@@ -162,6 +162,7 @@ function AppShell() {
               path="/"
               element={<HomePage onOrderClick={() => navigate('/order')} onCategorySelect={openCategoryWorkspace} />}
             />
+            <Route path="/about" element={<About />} />
             <Route path="/menu" element={<Menu />} />
             <Route path="/menu/:slug" element={<MenuCategoryRedirect />} />
             <Route path="/order" element={<OrderPage />} />
