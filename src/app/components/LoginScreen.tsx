@@ -6,7 +6,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { AuthShell } from './AuthShell';
-import { ErrorShake, LoadingPulse } from '../core/motion/cultivMotion';
+import { ErrorShake } from '../core/motion/cultivMotion';
 import type { AuthRedirectState } from '../types/navigation';
 
 export function LoginScreen() {

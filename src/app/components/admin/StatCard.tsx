@@ -9,7 +9,7 @@ interface StatCardProps {
 
 export function StatCard({ label, value, hint, icon }: StatCardProps) {
   return (
-    <div className="rounded-[28px] border border-primary/12 bg-[linear-gradient(160deg,rgba(255,255,255,0.94),rgba(241,246,236,0.82))] p-5 shadow-[0_18px_48px_rgba(45,80,22,0.1)]">
+    <div className="rounded-[28px] border border-primary/12 bg-[linear-gradient(160deg,rgba(255,255,255,0.94),rgba(241,246,236,0.82))] p-5 shadow-[0_18px_48px_rgba(45,80,22,0.1)] transition-all duration-150 hover:-translate-y-0.5 hover:shadow-[0_24px_54px_rgba(45,80,22,0.13)]">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary/58">{label}</p>

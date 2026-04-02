@@ -13,16 +13,10 @@ export const SELECTED_STORE_STORAGE_KEY = 'cultiv_selected_store_id_v1';
 const STORE_CHANGED_EVENT = 'cultiv:store-changed';
 const OPEN_SELECTOR_EVENT = 'cultiv:open-store-selector';
 
-const KNOWN_STORE_PIN_BY_ID: Record<string, string> = {
-  'store-siddipet': '502103',
-  'store-hyderabad': '500034',
-  'store-warangal': '506002',
-};
-
 const FALLBACK_STORES: StoreLocatorStore[] = [
-  { id: 'store-siddipet', name: 'Siddipet Central', city: 'Siddipet', pin: '502103', isActive: true },
-  { id: 'store-hyderabad', name: 'Banjara Hills', city: 'Hyderabad', pin: '500034', isActive: true },
-  { id: 'store-warangal', name: 'Warangal North', city: 'Warangal', pin: '506002', isActive: false },
+  { id: 'store-siddipet', name: 'Siddipet Central', city: 'Siddipet', pin: '', isActive: true },
+  { id: 'store-hyderabad', name: 'Banjara Hills', city: 'Hyderabad', pin: '', isActive: true },
+  { id: 'store-warangal', name: 'Warangal North', city: 'Warangal', pin: '', isActive: false },
 ];
 
 function isBrowser() {
@@ -47,7 +41,7 @@ export function loadStores(): StoreLocatorStore[] {
         id: store.id as string,
         name: store.name as string,
         city: store.city ?? 'Store City',
-        pin: KNOWN_STORE_PIN_BY_ID[store.id as string] ?? store.pin ?? '000000',
+        pin: typeof store.pin === 'string' ? store.pin : '',
         isActive: store.isActive ?? true,
       }));
 

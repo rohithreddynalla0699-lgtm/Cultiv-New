@@ -103,7 +103,7 @@ const STORAGE_KEYS = {
   rejectedGuestClaims: 'cultiv_rejected_guest_claims_v1',
 } as const;
 
-const SYNC_URL: string | undefined = (import.meta as Record<string, unknown> & { env: Record<string, string> }).env.VITE_SYNC_SERVER_URL;
+const SYNC_URL: string | undefined = (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_SYNC_SERVER_URL;
 const AUTH_SYNC_CLIENT_ID = typeof crypto !== 'undefined' ? crypto.randomUUID() : Math.random().toString(36).slice(2);
 
 const STATUS_CONTENT: Record<OrderStatus, { label: string; description: string }> = {
@@ -237,7 +237,7 @@ const writeStorage = (key: string, value: unknown) => {
   localStorage.setItem(key, JSON.stringify(value));
 };
 
-const buildFulfillmentWindow = (orderType: 'pickup' | 'walk-in') => {
+const buildFulfillmentWindow = () => {
   const now = Date.now();
   const startOffset = 18;
   const endOffset = 28;
@@ -252,7 +252,7 @@ const buildFulfillmentWindow = (orderType: 'pickup' | 'walk-in') => {
   return `${format(start)} - ${format(end)}`;
 };
 
-const buildStatusTimeline = (orderType: 'pickup' | 'walk-in', createdAt: string) => {
+const buildStatusTimeline = (createdAt: string) => {
   const steps: OrderStatus[] = ['placed', 'preparing', 'ready_for_pickup', 'completed'];
 
   return steps.map((status, index) => ({
@@ -657,8 +657,8 @@ const buildSeedState = () => {
       fullName: 'Aarav Menon',
       email: 'member@cultiv.app',
       source: 'app',
-      fulfillmentWindow: buildFulfillmentWindow('pickup'),
-      statusTimeline: buildStatusTimeline('pickup', new Date(Date.now() - 35 * 60_000).toISOString()),
+      fulfillmentWindow: buildFulfillmentWindow(),
+      statusTimeline: buildStatusTimeline(new Date(Date.now() - 35 * 60_000).toISOString()),
     },
     {
       id: 'order-seed-2',
@@ -690,7 +690,7 @@ const buildSeedState = () => {
       email: 'member@cultiv.app',
       source: 'app',
       fulfillmentWindow: '07:10 PM - 07:30 PM',
-      statusTimeline: buildStatusTimeline('pickup', daysAgo(8)),
+      statusTimeline: buildStatusTimeline(daysAgo(8)),
     },
     {
       id: 'order-seed-3',
@@ -723,7 +723,7 @@ const buildSeedState = () => {
       email: 'member@cultiv.app',
       source: 'walk-in',
       fulfillmentWindow: '01:20 PM - 01:30 PM',
-      statusTimeline: buildStatusTimeline('walk-in', daysAgo(18)),
+      statusTimeline: buildStatusTimeline(daysAgo(18)),
     },
   ];
 
@@ -1355,8 +1355,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       fullName: trimmedName,
       email: normalizedEmail,
       source: input.source ?? 'app',
-      fulfillmentWindow: buildFulfillmentWindow(input.orderType),
-      statusTimeline: buildStatusTimeline(input.orderType, createdAt),
+      fulfillmentWindow: buildFulfillmentWindow(),
+      statusTimeline: buildStatusTimeline(createdAt),
     };
 
     setAllOrders((previous) => [newOrder, ...previous]);
@@ -1440,7 +1440,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       subtotal,
       rewardDiscount: 0,
       total,
-      status: 'placed',
+      status: 'completed',
       createdAt,
       phone: normalizedPhone,
       fullName: displayName,
@@ -1449,8 +1449,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       paymentMethod: input.paymentMethod,
       tipPercentage: input.tipPercentage,
       tipAmount: input.tipAmount,
-      fulfillmentWindow: buildFulfillmentWindow('pickup'),
-      statusTimeline: buildStatusTimeline('walk-in', createdAt),
+      fulfillmentWindow: buildFulfillmentWindow(),
+      statusTimeline: buildStatusTimeline(createdAt),
     };
 
     setAllOrders((previous) => [newOrder, ...previous]);
@@ -1524,7 +1524,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       email: normalizeEmail(candidate.email),
       source: 'walk-in',
       fulfillmentWindow: 'In-store linked successfully',
-      statusTimeline: buildStatusTimeline('walk-in', createdAt),
+      statusTimeline: buildStatusTimeline(createdAt),
     };
 
     setAllOrders((previous) => [linkedOrder, ...previous]);

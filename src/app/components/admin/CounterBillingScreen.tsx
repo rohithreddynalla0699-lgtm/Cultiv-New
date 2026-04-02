@@ -6,6 +6,7 @@ import {
   Minus,
   Plus,
 } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAdminDashboard } from '../../contexts/AdminDashboardContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -620,7 +621,7 @@ export function CounterBillingScreen() {
       setSuccessState({ orderId: createdOrder.id });
       setMessage({
         tone: 'success',
-        text: `Payment successful. ${createdOrder.id} sent to kitchen and Orders Board.`,
+        text: `Payment successful. ${createdOrder.id} logged as completed for reporting/history.`,
       });
 
       if (successTimerRef.current) {
@@ -647,7 +648,12 @@ export function CounterBillingScreen() {
   };
 
   return (
-    <div className="flex flex-col gap-3">
+    <motion.div
+      className="flex flex-col gap-3"
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.16, ease: 'easeOut' }}
+    >
       {permissions.canSwitchStores && activeStoreScope === 'all' ? (
         <div className="rounded-2xl border border-[#E9D0A0] bg-[#FFF9F0] px-4 py-3 text-sm text-[#8B5A12]">
           Select one store scope in the context bar before taking counter payment.
@@ -697,7 +703,7 @@ export function CounterBillingScreen() {
                     {section.items.map((item) => {
                       const preset = PRESETS_BY_ITEM_ID[item.id];
                       return (
-                        <article key={item.id} className="rounded-[14px] border border-primary/10 bg-white p-3.5 shadow-sm transition-shadow hover:shadow-md">
+                        <article key={item.id} className="rounded-[14px] border border-primary/10 bg-white p-3.5 shadow-sm transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md">
                           <div className="flex items-start justify-between gap-2">
                             <p className="text-sm font-semibold leading-snug text-foreground">{item.name}</p>
                             <p className="shrink-0 text-sm font-bold text-primary">₹{item.price}</p>
@@ -731,7 +737,7 @@ export function CounterBillingScreen() {
             <div className="rounded-2xl border border-[#8AD39B] bg-[#ECF9EF] px-4 py-4 text-[#0F6B2D]">
               <p className="text-sm font-semibold">ORDER #{successState.orderId.toUpperCase()}</p>
               <p className="mt-1 text-base font-semibold">Payment Successful</p>
-              <p className="mt-1 text-sm font-medium">Sent to Kitchen</p>
+              <p className="mt-1 text-sm font-medium">Marked Completed (Handed Over)</p>
             </div>
           ) : null}
 
@@ -950,6 +956,6 @@ export function CounterBillingScreen() {
           </div>
         </div>
       ) : null}
-    </div>
+    </motion.div>
   );
 }

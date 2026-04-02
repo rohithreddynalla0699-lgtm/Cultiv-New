@@ -178,4 +178,21 @@
     font-weight: var(--font-weight-normal);
     line-height: 1.5;
   }
+
+  /* Admin/store-ops interaction polish: clear click affordance and subtle press feedback. */
+  .admin-ops-shell :is(button, [role='button'], a[href], select, summary) {
+    cursor: pointer;
+  }
+
+  .admin-ops-shell :is(button, [role='button'], a[href]) {
+    transition: transform 0.12s ease, box-shadow 0.16s ease, background-color 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+  }
+
+  .admin-ops-shell :is(button, [role='button'], a[href]):active {
+    transform: scale(0.985);
+  }
+
+  .admin-ops-shell button:disabled {
+    cursor: not-allowed;
+  }
 }

@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Clock, Package, ReceiptText, Store, Smartphone } from 'lucide-react';
+import { ArrowLeft, Package, ReceiptText, Store, Smartphone } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Logo } from './Logo';
 import { CardStagger, CardStaggerItem, HoverLift, PageReveal } from '../core/motion/cultivMotion';

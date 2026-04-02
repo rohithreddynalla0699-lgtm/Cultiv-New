@@ -290,8 +290,11 @@ export function Header({ onOrderClick: _onOrderClick }: HeaderProps) {
 
               <AnimatePresence>
                 {showUserMenu && (
-                  <motion.div 
-                    {...DropdownSlide}
+                  <motion.div
+                    initial="hidden"
+                    animate="visible"
+                    exit="exit"
+                    variants={DropdownSlide}
                     className="absolute right-0 top-full mt-3 w-56 rounded-2xl bg-card shadow-lg border border-border py-2 z-50"
                   >
                     <Link

@@ -1,5 +1,6 @@
 import { BarChart3, ClipboardList, Package2, ShoppingBag, Users } from 'lucide-react';
 import { useMemo } from 'react';
+import { motion } from 'framer-motion';
 import { StatCard } from './StatCard';
 import { SectionHeader } from './SectionHeader';
 import { useAuth } from '../../contexts/AuthContext';
@@ -36,7 +37,12 @@ export function AdminSummaryScreen() {
   const scopeLabel = activeStore ? activeStore.name : 'All stores';
 
   return (
-    <div className="space-y-6">
+    <motion.div
+      className="space-y-6"
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.16, ease: 'easeOut' }}
+    >
       <SectionHeader eyebrow="Admin Summary" title="Keep operations in view." description={`A calm overview of order pace, shift coverage, and stock pressure for ${scopeLabel}.`} action={<div className="rounded-full bg-white/88 px-4 py-2 text-sm font-medium text-foreground/68">{scopeLabel}</div>} />
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -49,7 +55,7 @@ export function AdminSummaryScreen() {
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1.3fr_0.7fr]">
-        <div className="rounded-[28px] border border-primary/12 bg-white/88 p-5 shadow-[0_18px_48px_rgba(45,80,22,0.08)]">
+        <div className="rounded-[28px] border border-primary/12 bg-white/88 p-5 shadow-[0_18px_48px_rgba(45,80,22,0.08)] transition-all duration-150 hover:shadow-[0_22px_52px_rgba(45,80,22,0.12)]">
           <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary/58">Orders by hour</p>
           <div className="mt-5 flex items-end gap-2 rounded-2xl bg-[#F7FAF3] p-4">
             {hourlySeries.map((point) => (
@@ -65,7 +71,7 @@ export function AdminSummaryScreen() {
         </div>
 
         <div className="space-y-4">
-          <div className="rounded-[28px] border border-primary/12 bg-white/88 p-5 shadow-[0_18px_48px_rgba(45,80,22,0.08)]">
+          <div className="rounded-[28px] border border-primary/12 bg-white/88 p-5 shadow-[0_18px_48px_rgba(45,80,22,0.08)] transition-all duration-150 hover:shadow-[0_22px_52px_rgba(45,80,22,0.12)]">
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary/58">Low stock watch</p>
             <div className="mt-4 space-y-3">
               {lowStockItems.slice(0, 5).map((item) => (
@@ -77,7 +83,7 @@ export function AdminSummaryScreen() {
             </div>
           </div>
 
-          <div className="rounded-[28px] border border-primary/12 bg-white/88 p-5 shadow-[0_18px_48px_rgba(45,80,22,0.08)]">
+          <div className="rounded-[28px] border border-primary/12 bg-white/88 p-5 shadow-[0_18px_48px_rgba(45,80,22,0.08)] transition-all duration-150 hover:shadow-[0_22px_52px_rgba(45,80,22,0.12)]">
             <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary/58">On shift</p>
             <div className="mt-4 space-y-3">
               {onShiftEmployees.slice(0, 5).map((employee) => (
@@ -90,6 +96,6 @@ export function AdminSummaryScreen() {
           </div>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }

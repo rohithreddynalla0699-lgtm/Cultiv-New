@@ -1,5 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ADMIN_ACCESS_PIN, DEFAULT_ORDER_STORE_ID } from '../constants/admin';
+import {
+  ADMIN_INTERNAL_AUTH_HEALTH_URL,
+  ADMIN_INTERNAL_AUTH_MESSAGES,
+  ADMIN_INTERNAL_AUTH_SYNC_URL,
+  ADMIN_INTERNAL_AUTH_TIMEOUTS,
+  ADMIN_INTERNAL_AUTH_URL,
+} from '../config/adminInternalAuth';
+import { DEFAULT_ORDER_STORE_ID } from '../constants/admin';
+import { requestInternalAuth } from '../services/adminInternalAuth';
 import { INVENTORY_MASTER_LIST } from '../constants/inventoryCatalog';
 import type {
   AdminOrderNoteMap,
@@ -15,6 +23,7 @@ import type {
   StoreRecord,
   StoreScope,
 } from '../types/admin';
+import type { InternalAuthRequestPayload, InternalAuthVerificationResult, InternalLoginResult, ServerStatus } from '../types/adminInternalAuth';
 
 interface AdminDashboardContextType {
   stores: StoreRecord[];
@@ -25,10 +34,11 @@ interface AdminDashboardContextType {
   orderNotes: AdminOrderNoteMap;
   session: InternalAccessSession | null;
   permissions: AdminPermissions;
+  serverStatus: ServerStatus;
   activeStoreScope: StoreScope;
   activeStore: StoreRecord | null;
-  loginAsAdmin: (pin: string) => { success: boolean; message: string };
-  loginAsStore: (storeId: string, pin: string) => { success: boolean; message: string };
+  loginAsAdmin: (pin: string) => Promise<InternalLoginResult>;
+  loginAsStore: (storeId: string, pin: string) => Promise<InternalLoginResult>;
   logoutInternalAccess: () => void;
   setActiveStoreScope: (scope: StoreScope) => void;
   addStore: (input: StoreInput) => { success: boolean; message: string };
@@ -74,7 +84,7 @@ const seedStores: StoreRecord[] = [
     name: 'Siddipet Central',
     city: 'Siddipet',
     code: 'SID-CEN',
-    pin: '502103',
+    pin: '',
     isActive: true,
     createdAt: daysAgo(210),
   },
@@ -83,7 +93,7 @@ const seedStores: StoreRecord[] = [
     name: 'Banjara Hills',
     city: 'Hyderabad',
     code: 'HYD-BAN',
-    pin: '500034',
+    pin: '',
     isActive: true,
     createdAt: daysAgo(135),
   },
@@ -92,7 +102,7 @@ const seedStores: StoreRecord[] = [
     name: 'Warangal North',
     city: 'Warangal',
     code: 'WRG-NTH',
-    pin: '506002',
+    pin: '',
     isActive: false,
     createdAt: daysAgo(48),
   },
@@ -347,8 +357,17 @@ const seedInventory: InventoryItem[] = [
 const AdminDashboardContext = createContext<AdminDashboardContextType | undefined>(undefined);
 
 // ── Optional sync server layer ────────────────────────────────────────────────
-const SYNC_URL: string | undefined = (import.meta as Record<string, unknown> & { env: Record<string, string> }).env.VITE_SYNC_SERVER_URL;
+const SYNC_URL = ADMIN_INTERNAL_AUTH_SYNC_URL;
 const CLIENT_ID = typeof crypto !== 'undefined' ? crypto.randomUUID() : Math.random().toString(36).slice(2);
+const INTERNAL_AUTH_URL = ADMIN_INTERNAL_AUTH_URL;
+
+if (typeof window !== 'undefined' && !SYNC_URL) {
+  const runtimeWindow = window as Window & { __cultivSyncEnvWarningShown?: boolean };
+  if (!runtimeWindow.__cultivSyncEnvWarningShown) {
+    console.warn(ADMIN_INTERNAL_AUTH_MESSAGES.missingSyncUrlWarning);
+    runtimeWindow.__cultivSyncEnvWarningShown = true;
+  }
+}
 
 const createId = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
 
@@ -462,6 +481,7 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
   const [storedScope, setStoredScope] = useState<StoreScope>(() => readStorage(STORAGE_KEYS.activeStoreScope, 'all'));
   const [showIdleWarning, setShowIdleWarning] = useState(false);
   const [idleCountdown, setIdleCountdown] = useState(60);
+  const [serverStatus, setServerStatus] = useState<ServerStatus>('unknown');
   const resetIdleTimerRef = useRef<() => void>(() => {});
 
   useEffect(() => {
@@ -516,14 +536,14 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
   useEffect(() => {
     if (!session) return;
 
-    let warningTimeoutId: ReturnType<typeof window.setTimeout>;
-    let logoutTimeoutId: ReturnType<typeof window.setTimeout>;
-    let countdownIntervalId: ReturnType<typeof window.setInterval>;
+    let warningTimeoutId: number | undefined;
+    let logoutTimeoutId: number | undefined;
+    let countdownIntervalId: number | undefined;
 
     const clearAll = () => {
-      window.clearTimeout(warningTimeoutId);
-      window.clearTimeout(logoutTimeoutId);
-      window.clearInterval(countdownIntervalId);
+      if (warningTimeoutId !== undefined) window.clearTimeout(warningTimeoutId);
+      if (logoutTimeoutId !== undefined) window.clearTimeout(logoutTimeoutId);
+      if (countdownIntervalId !== undefined) window.clearInterval(countdownIntervalId);
     };
 
     const scheduleLogout = () => {
@@ -565,6 +585,49 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
   useEffect(() => { storesRef.current = stores; });
   useEffect(() => { employeesRef.current = employees; });
   useEffect(() => { inventoryRef.current = inventory; });
+
+  useEffect(() => {
+    let active = true;
+
+    if (!SYNC_URL) {
+      setServerStatus('unknown');
+      return () => {
+        active = false;
+      };
+    }
+
+    const checkHealth = async () => {
+      try {
+        if (!ADMIN_INTERNAL_AUTH_HEALTH_URL) {
+          if (!active) return;
+          setServerStatus('unknown');
+          return;
+        }
+
+        const response = await fetch(ADMIN_INTERNAL_AUTH_HEALTH_URL, { signal: AbortSignal.timeout(ADMIN_INTERNAL_AUTH_TIMEOUTS.healthMs) });
+        const bodyText = await response.text();
+        let body: { ok?: boolean } | null = null;
+        try {
+          body = JSON.parse(bodyText) as { ok?: boolean };
+        } catch {
+          body = null;
+        }
+
+        if (!active) return;
+        setServerStatus(response.ok && body?.ok === true ? 'online' : 'offline');
+      } catch {
+        if (!active) return;
+        setServerStatus('offline');
+      }
+    };
+
+    checkHealth();
+    const intervalId = window.setInterval(checkHealth, ADMIN_INTERNAL_AUTH_TIMEOUTS.healthPollMs);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   // Initial load from server (overrides localStorage if server has data)
   useEffect(() => {
@@ -634,26 +697,70 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
 
   const getStoreName = (storeId: string) => stores.find((store) => store.id === storeId)?.name ?? 'Unknown store';
 
-  const loginAsAdmin = (pin: string) => {
-    if (pin.trim() !== ADMIN_ACCESS_PIN) {
-      return { success: false, message: 'Owner PIN did not match.' };
+  const verifyInternalAccess = async (payload: InternalAuthRequestPayload): Promise<InternalAuthVerificationResult> => {
+    if (!INTERNAL_AUTH_URL) {
+      return {
+        ok: false,
+        message: ADMIN_INTERNAL_AUTH_MESSAGES.missingSyncUrl,
+        reason: 'validation' as const,
+      };
     }
-    setSession({ role: 'admin', loggedInAt: nowIso() });
-    setStoredScope('all');
-    return { success: true, message: 'Owner access enabled.' };
+
+    try {
+      const result = await requestInternalAuth(
+        INTERNAL_AUTH_URL,
+        payload,
+        ADMIN_INTERNAL_AUTH_TIMEOUTS.requestMs,
+        {
+          accessGranted: ADMIN_INTERNAL_AUTH_MESSAGES.accessGranted,
+          verificationFailed: ADMIN_INTERNAL_AUTH_MESSAGES.verificationFailed,
+        },
+      );
+      setServerStatus('online');
+      return result;
+    } catch {
+      setServerStatus('offline');
+      return {
+        ok: false,
+        message: ADMIN_INTERNAL_AUTH_MESSAGES.unreachableServer,
+        reason: 'validation' as const,
+      };
+    }
   };
 
-  const loginAsStore = (storeId: string, pin: string) => {
+  const loginAsAdmin = async (pin: string) => {
+    const result = await verifyInternalAccess({ mode: 'owner', pin });
+    if (!result.ok || result.role !== 'admin') {
+      return {
+        success: false,
+        message: result.message,
+        reason: result.reason ?? 'invalid_credentials',
+      };
+    }
+
+    setSession({ role: 'admin', loggedInAt: nowIso() });
+    setStoredScope('all');
+    return { success: true, message: result.message };
+  };
+
+  const loginAsStore = async (storeId: string, pin: string) => {
     const store = stores.find((entry) => entry.id === storeId);
     if (!store || !store.isActive) {
-      return { success: false, message: 'Select an active store.' };
+      return { success: false, message: 'Select an active store.', reason: 'validation' as const };
     }
-    if (store.pin !== pin.trim()) {
-      return { success: false, message: 'Store PIN did not match.' };
+
+    const result = await verifyInternalAccess({ mode: 'store', storeId, pin });
+    if (!result.ok || result.role !== 'store') {
+      return {
+        success: false,
+        message: result.message,
+        reason: result.reason ?? 'invalid_credentials',
+      };
     }
+
     setSession({ role: 'store', storeId: store.id, loggedInAt: nowIso() });
     setStoredScope(store.id);
-    return { success: true, message: `${store.name} workspace is ready.` };
+    return { success: true, message: result.message };
   };
 
   const logoutInternalAccess = () => {
@@ -877,6 +984,7 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     orderNotes,
     session,
     permissions,
+    serverStatus,
     activeStoreScope,
     activeStore,
     loginAsAdmin,

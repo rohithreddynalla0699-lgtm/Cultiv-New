@@ -27,7 +27,7 @@ export function EmployeeShiftCard({ employee, storeName, todayHours, weekHours, 
   const isPrimaryDisabled = !(canStartShift || canEndShift);
 
   return (
-    <div className="rounded-[22px] border border-primary/12 bg-white/92 p-4 shadow-[0_12px_30px_rgba(45,80,22,0.08)]">
+    <div className="rounded-[22px] border border-primary/12 bg-white/92 p-4 shadow-[0_12px_30px_rgba(45,80,22,0.08)] transition-all duration-150 hover:-translate-y-0.5 hover:shadow-[0_16px_34px_rgba(45,80,22,0.12)]">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-base font-semibold tracking-[-0.02em] text-foreground">{employee.name}</p>

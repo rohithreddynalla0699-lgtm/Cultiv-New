@@ -73,12 +73,17 @@ export function OrdersBoardScreen() {
   };
 
   return (
-    <div className="space-y-6">
+    <motion.div
+      className="space-y-6"
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.16, ease: 'easeOut' }}
+    >
       <SectionHeader eyebrow="Orders Board" title="Move pickup orders through the line." description="Track walk-in and online orders in one board with clear source badges and fast status actions." action={<div className="rounded-full bg-white/88 px-4 py-2 text-sm font-medium text-foreground/68">{activeStore?.name ?? 'All stores'}</div>} />
 
       <div className="flex flex-wrap gap-2">
         {(['all', 'active', 'ready', 'completed'] as const).map((filter) => (
-          <button key={filter} type="button" onClick={() => setActiveFilter(filter)} className={`rounded-full px-4 py-2 text-sm font-medium ${activeFilter === filter ? 'bg-primary text-primary-foreground' : 'bg-white/85 text-foreground/70'}`}>
+          <button key={filter} type="button" onClick={() => setActiveFilter(filter)} className={`rounded-full px-4 py-2 text-sm font-medium transition-all ${activeFilter === filter ? 'bg-primary text-primary-foreground shadow-[0_6px_16px_rgba(45,80,22,0.18)]' : 'bg-white/85 text-foreground/70 hover:bg-white hover:text-foreground'}`}>
             {filter === 'all' ? 'All' : filter === 'active' ? 'Active' : filter === 'ready' ? 'Ready' : 'Completed'}
           </button>
         ))}
@@ -99,10 +104,10 @@ export function OrdersBoardScreen() {
                     <motion.div
                       key={order.id}
                       layout
-                      initial={{ opacity: 0, x: -8, y: -8 }}
+                      initial={{ opacity: 0, x: -4, y: -4 }}
                       animate={{ opacity: 1, x: 0, y: 0 }}
-                      exit={{ opacity: 0, x: 8, y: 0 }}
-                      transition={{ type: 'spring', stiffness: 380, damping: 30, duration: 0.2 }}
+                      exit={{ opacity: 0, x: 4, y: 0 }}
+                      transition={{ duration: 0.14, ease: 'easeOut' }}
                     >
                       <OrderCard
                         orderId={order.id}
@@ -150,10 +155,10 @@ export function OrdersBoardScreen() {
                         <motion.div
                           key={order.id}
                           layout
-                          initial={{ opacity: 0, y: 8 }}
+                          initial={{ opacity: 0, y: 4 }}
                           animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -8 }}
-                          transition={{ type: 'spring', stiffness: 380, damping: 30, duration: 0.2 }}
+                          exit={{ opacity: 0, y: -4 }}
+                          transition={{ duration: 0.14, ease: 'easeOut' }}
                         >
                           <OrderCard
                             orderId={order.id}
@@ -182,6 +187,6 @@ export function OrdersBoardScreen() {
           );
         })}
       </div>
-    </div>
+    </motion.div>
   );
 }

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronLeft, ChevronRight, Minus, Plus, ShoppingBag } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { PageReveal, ListItemReveal, CounterPulse } from '../core/motion/cultivMotion';
+import { PageReveal } from '../core/motion/cultivMotion';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import {
   BOWL_BUILDER_STEPS,
@@ -37,11 +37,9 @@ import {
   SIGNATURE_BASE_PRICE_BY_BLEND,
   TABLE_BUILD_TYPE_BY_ITEM_ID,
   resolveProteinBlend,
-  type PresetConfig,
 } from '../data/bowlConfigurations';
 import { AuthPromptBeforeCheckout } from './AuthPromptBeforeCheckout';
 import { useAuth } from '../contexts/AuthContext';
-import { DEFAULT_ORDER_STORE_ID } from '../constants/admin';
 import { DISCOUNT_REWARD_VALUES, FREE_ITEM_REWARD_DETAILS } from '../config/rewardsCatalog';
 import type { OrderPageLocationState, OrdersSuccessLocationState } from '../types/navigation';
 import { getSelectedStore, loadSelectedStoreId, loadStores, requestOpenStoreSelector, subscribeSelectedStore, type StoreLocatorStore } from '../data/storeLocator';

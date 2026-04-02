@@ -1,6 +1,7 @@
 import { X } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Navigate } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useAdminDashboard } from '../../contexts/AdminDashboardContext';
 import type { StoreInput, StoreRecord } from '../../types/admin';
 import { SectionHeader } from './SectionHeader';
@@ -62,7 +63,12 @@ export function StoresScreen() {
   };
 
   return (
-    <div className="space-y-6">
+    <motion.div
+      className="space-y-6"
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.16, ease: 'easeOut' }}
+    >
       <SectionHeader
         eyebrow="Stores"
         title="Manage stores quickly."
@@ -105,9 +111,22 @@ export function StoresScreen() {
         </div>
       </div>
 
-      {editorOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4">
-          <div className="w-full max-w-lg rounded-[28px] border border-primary/12 bg-white p-5 shadow-[0_26px_70px_rgba(16,24,16,0.22)]">
+      <AnimatePresence>
+        {editorOpen ? (
+          <motion.div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.14 }}
+          >
+            <motion.div
+              className="w-full max-w-lg rounded-[28px] border border-primary/12 bg-white p-5 shadow-[0_26px_70px_rgba(16,24,16,0.22)]"
+              initial={{ opacity: 0, y: 6, scale: 0.99 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 6, scale: 0.99 }}
+              transition={{ duration: 0.16, ease: 'easeOut' }}
+            >
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/58">Store Editor</p>
@@ -145,9 +164,10 @@ export function StoresScreen() {
                 <button type="button" onClick={closeEditor} className="rounded-2xl border border-primary/16 bg-white px-4 py-3 text-sm font-medium text-foreground/72">Cancel</button>
               </div>
             </div>
-          </div>
-        </div>
-      ) : null}
-    </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </motion.div>
   );
 }

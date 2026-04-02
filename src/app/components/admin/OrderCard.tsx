@@ -14,7 +14,7 @@ interface OrderCardProps {
   status: 'new' | 'preparing' | 'ready' | 'picked_up';
   pickupEstimate: string;
   note?: string;
-  source?: 'app' | 'walk-in';
+  source?: 'app' | 'walk-in' | 'phone';
   onPrimaryAction?: () => void;
   onNoteSave?: (value: string) => void;
   isTransitioning?: boolean;
@@ -56,16 +56,22 @@ export function OrderCard({
     : urgencyLevel === 'attention'
       ? 'border-[#D68E2E]'
       : 'border-primary/12';
+  const sourceLabel = source === 'walk-in' ? 'Walk-In' : source === 'phone' ? 'Phone' : 'Website';
+  const sourceClassName = source === 'walk-in'
+    ? 'bg-[#DDF1E8] text-[#1F6A49]'
+    : source === 'phone'
+      ? 'bg-[#E8EFFD] text-[#244A95]'
+      : 'bg-[#ECECE7] text-[#5E5E57]';
 
   return (
-    <article className={`rounded-[22px] border bg-white/92 p-3.5 shadow-[0_12px_30px_rgba(45,80,22,0.08)] ${cardBorderClass}`}>
+    <article className={`rounded-[22px] border bg-white/92 p-3.5 shadow-[0_12px_30px_rgba(45,80,22,0.08)] transition-all duration-150 hover:-translate-y-0.5 hover:shadow-[0_16px_34px_rgba(45,80,22,0.12)] ${cardBorderClass}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={status} />
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-primary/56">#{orderId.slice(-6)}</p>
-            <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] ${source === 'walk-in' ? 'bg-[#DDF1E8] text-[#1F6A49]' : 'bg-[#ECECE7] text-[#5E5E57]'}`}>
-              {source === 'walk-in' ? 'Walk-In' : 'Website'}
+            <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] ${sourceClassName}`}>
+              {sourceLabel}
             </span>
           </div>
           <h3 className="mt-1.5 text-base font-semibold tracking-[-0.02em] text-foreground">{customerName}</h3>
