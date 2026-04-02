@@ -3,6 +3,7 @@
 import { BrowserRouter as Router, Navigate, Routes, Route, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { useAuth } from './contexts/AuthContext';
+import { StoreSessionProvider } from './contexts/StoreSessionContext';
 import { Header } from './components/Header';
 import { Hero } from './components/Hero';
 import { Footer } from './components/Footer';
@@ -19,6 +20,8 @@ import { loadDraftCart, subscribeDraftCart } from './data/cartDraft';
 import { BREAKFAST_PRESET_META_BY_ID, MENU_CATEGORIES, hydrateMenuCatalogFromSupabase } from './data/menuData';
 import { syncPresetCatalogFromMenu } from './data/bowlConfigurations';
 import { resolveCategorySlugFromLabel } from './utils/categoryRouting';
+import { StoreRouteGuard } from './components/store/StoreRouteGuard';
+import { StoreShiftScreen } from './components/store/StoreShiftScreen';
 import type { HomeOrderLaunchState, HomeScrollLocationState } from './types/navigation';
 
 const Menu = lazy(() => import('./components/Menu').then((module) => ({ default: module.Menu })));
@@ -32,11 +35,14 @@ const CareersScreen = lazy(() => import('./components/CareersScreen').then((modu
 const ForgotPasswordScreen = lazy(() => import('./components/ForgotPasswordScreen').then((module) => ({ default: module.ForgotPasswordScreen })));
 const ResetPasswordScreen = lazy(() => import('./components/ResetPasswordScreen').then((module) => ({ default: module.ResetPasswordScreen })));
 const OrderDetailScreen = lazy(() => import('./components/OrderDetailScreen').then((module) => ({ default: module.OrderDetailScreen })));
+const AdminAccessScreen = lazy(() => import('./components/admin/AdminAccessScreen').then((module) => ({ default: module.AdminAccessScreen })));
 const AdminDashboardLayout = lazy(() => import('./components/admin/AdminDashboardLayout').then((module) => ({ default: module.AdminDashboardLayout })));
 const AdminSummaryScreen = lazy(() => import('./components/admin/AdminSummaryScreen').then((module) => ({ default: module.AdminSummaryScreen })));
 const OrdersBoardScreen = lazy(() => import('./components/admin/OrdersBoardScreen').then((module) => ({ default: module.OrdersBoardScreen })));
 const CounterBillingScreen = lazy(() => import('./components/admin/CounterBillingScreen').then((module) => ({ default: module.CounterBillingScreen })));
 const InventoryScreen = lazy(() => import('./components/admin/InventoryScreen').then((module) => ({ default: module.InventoryScreen })));
+const MenuManagementScreen = lazy(() => import('./components/admin/MenuManagementScreen').then((module) => ({ default: module.MenuManagementScreen })));
+const ReportsScreen = lazy(() => import('./components/admin/ReportsScreen').then((module) => ({ default: module.ReportsScreen })));
 const EmployeesScreen = lazy(() => import('./components/admin/EmployeesScreen').then((module) => ({ default: module.EmployeesScreen })));
 const StoresScreen = lazy(() => import('./components/admin/StoresScreen').then((module) => ({ default: module.StoresScreen })));
 const AdminDashboardProvider = lazy(() => import('./contexts/AdminDashboardContext').then((module) => ({ default: module.AdminDashboardProvider })));
@@ -121,8 +127,11 @@ function AppShell() {
   useEffect(() => subscribeDraftCart(() => setDraftCartLines(loadDraftCart())), []);
 
   const isAdminRoute = location.pathname.startsWith('/admin');
-  const hideGlobalShell = location.pathname === '/login' || location.pathname === '/signup' || location.pathname === '/forgot-password' || location.pathname === '/reset-password' || isAdminRoute;
-  const hideFloatingCartOnRoute = location.pathname === '/order' || isAdminRoute;
+  const isStoreRoute = location.pathname.startsWith('/store');
+  const isShiftRoute = location.pathname.startsWith('/shift');
+  const isOperationsRoute = location.pathname.startsWith('/operations');
+  const hideGlobalShell = location.pathname === '/login' || location.pathname === '/signup' || location.pathname === '/forgot-password' || location.pathname === '/reset-password' || isAdminRoute || isStoreRoute || isShiftRoute || isOperationsRoute;
+  const hideFloatingCartOnRoute = location.pathname === '/order' || isAdminRoute || isStoreRoute || isShiftRoute || isOperationsRoute;
 
   const floatingCartItems = draftCartLines.reduce((sum, line) => sum + line.quantity, 0);
   const floatingCartTotal = draftCartLines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);
@@ -177,13 +186,34 @@ function AppShell() {
             <Route path="/orders/:orderId" element={<OrderDetailScreen />} />
             <Route path="/rewards" element={<RewardsScreen />} />
             <Route path="/careers" element={<CareersScreen />} />
+            <Route path="/operations" element={<AdminDashboardProvider><AdminAccessScreen adminSuccessPath="/admin/summary" storeSuccessPath="/store/orders" /></AdminDashboardProvider>} />
+            <Route path="/shift" element={<Navigate to="/store/shift" replace />} />
+            <Route
+              path="/store"
+              element={(
+                <AdminDashboardProvider>
+                  <StoreRouteGuard>
+                    <AdminDashboardLayout />
+                  </StoreRouteGuard>
+                </AdminDashboardProvider>
+              )}
+            >
+              <Route index element={<Navigate to="orders" replace />} />
+              <Route path="orders" element={<OrdersBoardScreen />} />
+              <Route path="pos" element={<CounterBillingScreen />} />
+              <Route path="inventory" element={<InventoryScreen />} />
+              <Route path="shift" element={<StoreShiftScreen />} />
+            </Route>
             <Route path="/admin" element={<AdminDashboardProvider><AdminDashboardLayout /></AdminDashboardProvider>}>
               <Route index element={<Navigate to="summary" replace />} />
+              <Route path="dashboard" element={<Navigate to="/admin/summary" replace />} />
               <Route path="summary" element={<AdminSummaryScreen />} />
               <Route path="orders" element={<OrdersBoardScreen />} />
               <Route path="counter-billing" element={<CounterBillingScreen />} />
               <Route path="inventory" element={<InventoryScreen />} />
               <Route path="employees" element={<EmployeesScreen />} />
+              <Route path="menu" element={<MenuManagementScreen />} />
+              <Route path="reports" element={<ReportsScreen />} />
               <Route path="stores" element={<StoresScreen />} />
             </Route>
           </Routes>
@@ -391,9 +421,11 @@ export default function App() {
 
   return (
     <AuthProvider>
-      <Router>
-        <AppShell />
-      </Router>
+      <StoreSessionProvider>
+        <Router>
+          <AppShell />
+        </Router>
+      </StoreSessionProvider>
     </AuthProvider>
   );
 }

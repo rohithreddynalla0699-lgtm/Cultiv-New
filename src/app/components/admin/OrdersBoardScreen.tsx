@@ -1,57 +1,100 @@
-import { useMemo, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
-import { SectionHeader } from './SectionHeader';
-import { OrderCard } from './OrderCard';
+import { useEffect, useMemo, useState } from 'react';
+import { motion } from 'framer-motion';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAdminDashboard } from '../../contexts/AdminDashboardContext';
-import { getAdminOrderBoardStatus, getOrderItemsSummary, getOrderStoreId, getRewardSummary, isOrderActive } from '../../utils/adminOrders';
-import type { AdminOrderBoardStatus } from '../../types/admin';
-
-type OrderFilter = 'all' | 'active' | 'ready' | 'completed';
-
-const BOARD_COLUMNS: Array<{ status: AdminOrderBoardStatus; label: string }> = [
-  { status: 'new', label: 'New' },
-  { status: 'preparing', label: 'Preparing' },
-  { status: 'ready', label: 'Ready' },
-  { status: 'picked_up', label: 'Picked Up' },
-];
+import { useStoreSession } from '../../hooks/useStoreSession';
+import { ordersService } from '../../services/ordersService';
+import { OrdersBoardHeader } from './orders-board/OrdersBoardHeader';
+import { OrdersKanban } from './orders-board/OrdersKanban';
+import { CancelOrderDialog } from './orders-board/CancelOrderDialog';
+import { OrderNotesDrawer } from './orders-board/OrderNotesDrawer';
+import { Navigate } from 'react-router-dom';
+import type {
+  OrdersBoardDateFilter,
+  OrdersBoardOrder,
+  OrdersBoardOrderTypeFilter,
+} from '../../types/ordersBoard';
 
 export function OrdersBoardScreen() {
   const { sharedOrders, updateOrderStatus } = useAuth();
-  const { orderNotes, saveOrderNote, activeStoreScope, activeStore, getStoreName } = useAdminDashboard();
-  const [activeFilter, setActiveFilter] = useState<OrderFilter>('all');
-  const [transitioningOrderIds, setTransitioningOrderIds] = useState<Set<string>>(new Set());
+  const { touchActivity } = useStoreSession();
+  const {
+    session,
+    stores,
+    orderNotes,
+    saveOrderNote,
+    activeStoreScope,
+    permissions,
+    setActiveStoreScope,
+  } = useAdminDashboard();
 
-  const filteredOrders = useMemo(() => sharedOrders.filter((order) => {
-    if (activeStoreScope !== 'all' && getOrderStoreId(order) !== activeStoreScope) {
-      return false;
-    }
-    const boardStatus = getAdminOrderBoardStatus(order);
-    if (activeFilter === 'active') return isOrderActive(order);
-    if (activeFilter === 'ready') return boardStatus === 'ready';
-    if (activeFilter === 'completed') return boardStatus === 'picked_up';
-    return true;
-  }), [activeFilter, activeStoreScope, sharedOrders]);
+  const [orderType, setOrderType] = useState<OrdersBoardOrderTypeFilter>('all');
+  const [dateFilter, setDateFilter] = useState<OrdersBoardDateFilter>('today');
+  const [customDate, setCustomDate] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [mutatingOrderIds, setMutatingOrderIds] = useState<Set<string>>(new Set());
+  const [optimisticStatusByOrderId, setOptimisticStatusByOrderId] = useState<Record<string, 'preparing' | 'ready_for_pickup' | 'completed'>>({});
+  const [feedbackMessage, setFeedbackMessage] = useState<{ tone: 'success' | 'error' | 'info'; text: string } | null>(null);
+  const [selectedOrderForNotes, setSelectedOrderForNotes] = useState<OrdersBoardOrder | null>(null);
+  const [selectedOrderForCancel, setSelectedOrderForCancel] = useState<OrdersBoardOrder | null>(null);
+  const [isSavingNote, setIsSavingNote] = useState(false);
 
-  const groupedOrders = useMemo(() => Object.fromEntries(BOARD_COLUMNS.map((column) => [
-    column.status,
-    filteredOrders.filter((order) => getAdminOrderBoardStatus(order) === column.status),
-  ])), [filteredOrders]);
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setRefreshTick((previous) => previous + 1);
+    }, 30000);
+    return () => window.clearInterval(interval);
+  }, []);
 
-  const getWaitingMinutes = (createdAt: string) => {
-    const createdAtMs = new Date(createdAt).getTime();
-    const deltaMs = Date.now() - createdAtMs;
-    return Math.max(0, Math.floor(deltaMs / 60000));
-  };
+  useEffect(() => {
+    const onActivity = () => {
+      void touchActivity();
+    };
 
-  const transitionOrder = async (orderId: string, status: 'preparing' | 'ready_for_pickup' | 'completed') => {
-    if (transitioningOrderIds.has(orderId)) return;
+    document.addEventListener('click', onActivity);
+    document.addEventListener('keydown', onActivity);
 
-    setTransitioningOrderIds((previous) => new Set(previous).add(orderId));
+    return () => {
+      document.removeEventListener('click', onActivity);
+      document.removeEventListener('keydown', onActivity);
+    };
+  }, [touchActivity]);
+
+  const mergedOrders = useMemo(() => (
+    sharedOrders.map((order) => ({
+      ...order,
+      status: optimisticStatusByOrderId[order.id] ?? order.status,
+    }))
+  ), [optimisticStatusByOrderId, sharedOrders]);
+
+  const boardState = useMemo(() => ordersService.getOrders({
+    orders: mergedOrders,
+    notesByOrderId: orderNotes,
+    filters: {
+      storeId: activeStoreScope,
+      orderType,
+      dateFilter,
+      customDate,
+      searchQuery,
+    },
+  }), [activeStoreScope, customDate, dateFilter, mergedOrders, orderNotes, orderType, refreshTick, searchQuery]);
+
+  const permissionsForBoard = useMemo(() => {
+    return ordersService.getPermissions(session?.role);
+  }, [session?.role]);
+
+  if (!permissions.canAccessOrders) {
+    return <Navigate to="/operations" replace />;
+  }
+
+  const withMutationGuard = async (orderId: string, work: () => Promise<void>) => {
+    if (mutatingOrderIds.has(orderId)) return;
+    setMutatingOrderIds((previous) => new Set(previous).add(orderId));
     try {
-      await updateOrderStatus(orderId, status);
+      await work();
     } finally {
-      setTransitioningOrderIds((previous) => {
+      setMutatingOrderIds((previous) => {
         const next = new Set(previous);
         next.delete(orderId);
         return next;
@@ -59,18 +102,98 @@ export function OrdersBoardScreen() {
     }
   };
 
-  const getPrimaryAction = (orderId: string, boardStatus: AdminOrderBoardStatus) => {
-    if (boardStatus === 'new') {
-      return () => void transitionOrder(orderId, 'preparing');
-    }
-    if (boardStatus === 'preparing') {
-      return () => void transitionOrder(orderId, 'ready_for_pickup');
-    }
-    if (boardStatus === 'ready') {
-      return () => void transitionOrder(orderId, 'completed');
-    }
-    return undefined;
+  const handlePrimaryAction = async (order: OrdersBoardOrder) => {
+    void touchActivity();
+    const nextStatus = ordersService.getNextStatus(order.boardStatus);
+    if (!nextStatus || !permissionsForBoard.canAdvanceOrderStatus) return;
+
+    await withMutationGuard(order.id, async () => {
+      setOptimisticStatusByOrderId((previous) => ({ ...previous, [order.id]: nextStatus }));
+
+      const result = await ordersService.updateStatus({
+        orderId: order.id,
+        status: nextStatus,
+        updateOrderStatus,
+      });
+
+      if (!result.success) {
+        setOptimisticStatusByOrderId((previous) => {
+          const next = { ...previous };
+          delete next[order.id];
+          return next;
+        });
+        const isConflict = /workflow|step|already|changed/i.test(result.message);
+        setFeedbackMessage({
+          tone: 'error',
+          text: isConflict
+            ? 'Order was already updated by another teammate. Board has been refreshed.'
+            : result.message,
+        });
+        return;
+      }
+
+      setFeedbackMessage({ tone: 'success', text: result.message });
+      setOptimisticStatusByOrderId((previous) => {
+        const next = { ...previous };
+        delete next[order.id];
+        return next;
+      });
+    });
   };
+
+  const handleCancelOrder = async () => {
+    void touchActivity();
+    if (!selectedOrderForCancel || !permissionsForBoard.canCancelOrder) return;
+
+    await withMutationGuard(selectedOrderForCancel.id, async () => {
+      setOptimisticStatusByOrderId((previous) => ({ ...previous, [selectedOrderForCancel.id]: 'completed' }));
+
+      const result = await ordersService.cancelOrder({
+        orderId: selectedOrderForCancel.id,
+        updateOrderStatus,
+      });
+
+      if (!result.success) {
+        setOptimisticStatusByOrderId((previous) => {
+          const next = { ...previous };
+          delete next[selectedOrderForCancel.id];
+          return next;
+        });
+        setFeedbackMessage({ tone: 'error', text: result.message });
+        return;
+      }
+
+      saveOrderNote(selectedOrderForCancel.id, `Cancelled by ${session?.role ?? 'staff'} at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+      setSelectedOrderForCancel(null);
+      setFeedbackMessage({
+        tone: 'info',
+        text: 'Order cancelled and moved out of active queue.',
+      });
+      setOptimisticStatusByOrderId((previous) => {
+        const next = { ...previous };
+        delete next[selectedOrderForCancel.id];
+        return next;
+      });
+    });
+  };
+
+  const handleSaveNote = async (nextValue: string) => {
+    void touchActivity();
+    if (!selectedOrderForNotes) return;
+    setIsSavingNote(true);
+    try {
+      saveOrderNote(selectedOrderForNotes.id, nextValue.trim());
+      setFeedbackMessage({ tone: 'success', text: 'Order note saved.' });
+      setSelectedOrderForNotes(null);
+    } finally {
+      setIsSavingNote(false);
+    }
+  };
+
+  const syncLabel = useMemo(() => {
+    const now = new Date();
+    return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }, [refreshTick]);
 
   return (
     <motion.div
@@ -79,114 +202,72 @@ export function OrdersBoardScreen() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.16, ease: 'easeOut' }}
     >
-      <SectionHeader eyebrow="Orders Board" title="Move pickup orders through the line." description="Track walk-in and online orders in one board with clear source badges and fast status actions." action={<div className="rounded-full bg-white/88 px-4 py-2 text-sm font-medium text-foreground/68">{activeStore?.name ?? 'All stores'}</div>} />
+      <OrdersBoardHeader
+        activeStoreScope={activeStoreScope}
+        stores={stores}
+        canSwitchStoreScope={permissions.canSwitchStores}
+        orderType={orderType}
+        dateFilter={dateFilter}
+        customDate={customDate}
+        searchQuery={searchQuery}
+        lastSyncLabel={syncLabel}
+        onChangeStore={setActiveStoreScope}
+        onChangeOrderType={setOrderType}
+        onChangeDateFilter={setDateFilter}
+        onChangeCustomDate={setCustomDate}
+        onChangeSearchQuery={setSearchQuery}
+      />
 
-      <div className="flex flex-wrap gap-2">
-        {(['all', 'active', 'ready', 'completed'] as const).map((filter) => (
-          <button key={filter} type="button" onClick={() => setActiveFilter(filter)} className={`rounded-full px-4 py-2 text-sm font-medium transition-all ${activeFilter === filter ? 'bg-primary text-primary-foreground shadow-[0_6px_16px_rgba(45,80,22,0.18)]' : 'bg-white/85 text-foreground/70 hover:bg-white hover:text-foreground'}`}>
-            {filter === 'all' ? 'All' : filter === 'active' ? 'Active' : filter === 'ready' ? 'Ready' : 'Completed'}
-          </button>
-        ))}
-      </div>
+      {feedbackMessage ? (
+        <div
+          className={`rounded-lg border px-3 py-2 text-sm ${
+            feedbackMessage.tone === 'error'
+              ? 'border-red-200 bg-red-50 text-red-700'
+              : feedbackMessage.tone === 'success'
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                : 'border-blue-200 bg-blue-50 text-blue-700'
+          }`}
+        >
+          {feedbackMessage.text}
+        </div>
+      ) : null}
 
-      <div className="hidden gap-4 xl:grid xl:grid-cols-4">
-        {BOARD_COLUMNS.map((column) => (
-          <section key={column.status} className="rounded-[28px] border border-primary/12 bg-white/70 p-4">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-lg font-semibold tracking-[-0.02em] text-foreground">{column.label}</h2>
-              <span className="rounded-full bg-background px-3 py-1 text-xs font-semibold text-foreground/58">{groupedOrders[column.status]?.length ?? 0}</span>
-            </div>
-            <div className="space-y-4">
-              <AnimatePresence mode="popLayout">
-                {(groupedOrders[column.status] ?? []).map((order) => {
-                  const boardStatus = getAdminOrderBoardStatus(order);
-                  return (
-                    <motion.div
-                      key={order.id}
-                      layout
-                      initial={{ opacity: 0, x: -4, y: -4 }}
-                      animate={{ opacity: 1, x: 0, y: 0 }}
-                      exit={{ opacity: 0, x: 4, y: 0 }}
-                      transition={{ duration: 0.14, ease: 'easeOut' }}
-                    >
-                      <OrderCard
-                        orderId={order.id}
-                        customerName={order.fullName}
-                        storeName={activeStoreScope === 'all' ? getStoreName(getOrderStoreId(order)) : undefined}
-                        placedTime={new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        waitingMinutes={getWaitingMinutes(order.createdAt)}
-                        itemsSummary={getOrderItemsSummary(order)}
-                        totalPayable={order.total}
-                        rewardUsed={getRewardSummary(order) ?? undefined}
-                        status={boardStatus}
-                        pickupEstimate={order.fulfillmentWindow}
-                        note={orderNotes[order.id]}
-                        source={order.source}
-                        onPrimaryAction={getPrimaryAction(order.id, boardStatus)}
-                        onNoteSave={(value) => saveOrderNote(order.id, value)}
-                        isTransitioning={transitioningOrderIds.has(order.id)}
-                      />
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
-            </div>
-          </section>
-        ))}
-      </div>
+      {boardState.total === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border bg-background/80 px-4 py-6 text-center">
+          <h3 className="text-base font-semibold text-foreground">No orders found for this filter.</h3>
+          <p className="mt-1 text-sm text-foreground/60">Try switching date, store, order type, or search query.</p>
+        </div>
+      ) : (
+        <OrdersKanban
+          boardState={boardState}
+          canCancelOrder={permissionsForBoard.canCancelOrder}
+          mutatingOrderIds={mutatingOrderIds}
+          onPrimaryAction={(order) => {
+            void handlePrimaryAction(order);
+          }}
+          onOpenNotes={setSelectedOrderForNotes}
+          onCancelOrder={setSelectedOrderForCancel}
+        />
+      )}
 
-      <div className="space-y-8 xl:hidden">
-        {BOARD_COLUMNS.map((column) => {
-          const columnOrders = groupedOrders[column.status] ?? [];
-          return (
-            <section key={column.status} aria-label={`${column.label} orders`}>
-              <div className="mb-3 flex items-center gap-2">
-                <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-foreground/58">{column.label}</h2>
-                <span className="rounded-full bg-background px-2.5 py-0.5 text-xs font-semibold text-foreground/58">{columnOrders.length}</span>
-              </div>
-              {columnOrders.length === 0 ? (
-                <div className="rounded-[18px] border border-primary/10 bg-white/60 px-4 py-3 text-sm text-foreground/50">No orders in this stage.</div>
-              ) : (
-                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                  <AnimatePresence mode="popLayout">
-                    {columnOrders.map((order) => {
-                      const boardStatus = getAdminOrderBoardStatus(order);
-                      return (
-                        <motion.div
-                          key={order.id}
-                          layout
-                          initial={{ opacity: 0, y: 4 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -4 }}
-                          transition={{ duration: 0.14, ease: 'easeOut' }}
-                        >
-                          <OrderCard
-                            orderId={order.id}
-                            customerName={order.fullName}
-                            storeName={activeStoreScope === 'all' ? getStoreName(getOrderStoreId(order)) : undefined}
-                            placedTime={new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            waitingMinutes={getWaitingMinutes(order.createdAt)}
-                            itemsSummary={getOrderItemsSummary(order)}
-                            totalPayable={order.total}
-                            rewardUsed={getRewardSummary(order) ?? undefined}
-                            status={boardStatus}
-                            pickupEstimate={order.fulfillmentWindow}
-                            note={orderNotes[order.id]}
-                            source={order.source}
-                            onPrimaryAction={getPrimaryAction(order.id, boardStatus)}
-                            onNoteSave={(value) => saveOrderNote(order.id, value)}
-                            isTransitioning={transitioningOrderIds.has(order.id)}
-                          />
-                        </motion.div>
-                      );
-                    })}
-                  </AnimatePresence>
-                </div>
-              )}
-            </section>
-          );
-        })}
-      </div>
+      <OrderNotesDrawer
+        isOpen={Boolean(selectedOrderForNotes)}
+        orderId={selectedOrderForNotes?.displayId}
+        initialValue={selectedOrderForNotes?.note}
+        isSaving={isSavingNote}
+        onClose={() => setSelectedOrderForNotes(null)}
+        onSave={handleSaveNote}
+      />
+
+      <CancelOrderDialog
+        isOpen={Boolean(selectedOrderForCancel)}
+        orderId={selectedOrderForCancel?.displayId}
+        isSubmitting={Boolean(selectedOrderForCancel && mutatingOrderIds.has(selectedOrderForCancel.id))}
+        onClose={() => setSelectedOrderForCancel(null)}
+        onConfirm={() => {
+          void handleCancelOrder();
+        }}
+      />
     </motion.div>
   );
 }

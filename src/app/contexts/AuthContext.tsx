@@ -1478,7 +1478,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       throw new Error('Tip details are invalid.');
     }
 
-    const displayName = input.fullName?.trim() || 'Walk-in Customer';
+    const normalizedChannel = input.orderChannel ?? 'counter';
+    const displayName = input.fullName?.trim() || (normalizedChannel === 'phone' ? 'Phone Order' : 'Walk-in Customer');
     const createdAt = new Date().toISOString();
     const orderId = createId('walkin');
     const items: OrderItem[] = input.items.map((item) => ({
@@ -1501,16 +1502,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       storeId: input.storeId,
       category: items[0]?.category ?? 'Counter Billing',
       items,
-      orderType: 'walk-in',
+      orderType: normalizedChannel === 'walk_in' ? 'walk-in' : 'pickup',
       subtotal,
       rewardDiscount: 0,
       total,
-      status: 'completed',
+      status: 'placed',
       createdAt,
       phone: normalizedPhone,
       fullName: displayName,
       email: `walkin-${normalizedPhone}@cultiv.local`,
-      source: 'walk-in',
+      source: normalizedChannel === 'phone' ? 'phone' : 'walk-in',
       paymentMethod: input.paymentMethod,
       tipPercentage: input.tipPercentage,
       tipAmount: input.tipAmount,

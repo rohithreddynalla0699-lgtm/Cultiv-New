@@ -7,8 +7,8 @@ interface EmployeeShiftCardProps {
   todayHours: number;
   weekHours: number;
   monthHours: number;
-  onClockIn: () => void;
-  onClockOut: () => void;
+  onClockIn?: () => void;
+  onClockOut?: () => void;
   onEdit?: () => void;
 }
 
@@ -24,7 +24,8 @@ export function EmployeeShiftCard({ employee, storeName, todayHours, weekHours, 
   const canEndShift = employee.status === 'on_shift' && employee.isActive;
   const primaryActionLabel = canEndShift ? 'End Shift' : 'Start Shift';
   const primaryAction = canEndShift ? onClockOut : onClockIn;
-  const isPrimaryDisabled = !(canStartShift || canEndShift);
+  const canPerformShiftAction = Boolean(onClockIn && onClockOut);
+  const isPrimaryDisabled = !canPerformShiftAction || !(canStartShift || canEndShift);
 
   return (
     <div className="rounded-[22px] border border-primary/12 bg-white/92 p-4 shadow-[0_12px_30px_rgba(45,80,22,0.08)] transition-all duration-150 hover:-translate-y-0.5 hover:shadow-[0_16px_34px_rgba(45,80,22,0.12)]">
@@ -60,8 +61,14 @@ export function EmployeeShiftCard({ employee, storeName, todayHours, weekHours, 
         <span className="font-medium text-foreground/78">{activeShift ? new Date(activeShift.loginAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Off shift'}</span>
       </div>
 
-      <div className={`mt-3 grid gap-2 ${onEdit ? 'sm:grid-cols-[1fr_auto]' : 'sm:grid-cols-1'}`}>
-        <button data-testid={`employee-shift-btn-${employee.id}`} type="button" onClick={primaryAction} disabled={isPrimaryDisabled} className="rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">{primaryActionLabel}</button>
+      <div className={`mt-3 grid gap-2 ${canPerformShiftAction && onEdit ? 'sm:grid-cols-[1fr_auto]' : 'sm:grid-cols-1'}`}>
+        {canPerformShiftAction ? (
+          <button data-testid={`employee-shift-btn-${employee.id}`} type="button" onClick={primaryAction} disabled={isPrimaryDisabled} className="rounded-xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40">{primaryActionLabel}</button>
+        ) : (
+          <div className="rounded-xl border border-primary/12 bg-[#F7FAF3] px-4 py-2.5 text-sm text-foreground/66">
+            Shift actions are PIN-protected in Store Shift Terminal.
+          </div>
+        )}
         {onEdit ? <button type="button" onClick={onEdit} className="rounded-xl border border-primary/16 bg-white px-4 py-2.5 text-sm font-medium text-foreground/74">Edit</button> : null}
       </div>
     </div>

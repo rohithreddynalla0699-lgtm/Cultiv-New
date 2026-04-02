@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ADMIN_ACCESS_PIN, ADMIN_STORE_ACCESS_PIN_BY_ID, DEFAULT_ORDER_STORE_ID } from '../constants/admin';
+import { ADMIN_ACCESS_PIN, ADMIN_OPERATOR_PIN, ADMIN_STORE_ACCESS_PIN_BY_ID, DEFAULT_ORDER_STORE_ID } from '../constants/admin';
 import { CUSTOMER_STORE_METADATA } from '../data/storeLocator';
 import { INVENTORY_MASTER_LIST } from '../constants/inventoryCatalog';
 import type {
@@ -29,6 +29,7 @@ interface AdminDashboardContextType {
   activeStoreScope: StoreScope;
   activeStore: StoreRecord | null;
   setActiveStoreScope: (scope: StoreScope) => void;
+  loginAsOwner: (pin: string) => { success: boolean; message: string };
   loginAsAdmin: (pin: string) => { success: boolean; message: string };
   loginAsStore: (storeId: string, pin: string) => { success: boolean; message: string };
   logoutInternalAccess: () => void;
@@ -92,6 +93,7 @@ const seedEmployees: EmployeeRecord[] = [
     name: 'Riya Sharma',
     role: 'manager',
     storeId: 'store-siddipet',
+    pin: '510101',
     phone: '9876500011',
     isActive: true,
     createdAt: daysAgo(180),
@@ -119,6 +121,7 @@ const seedEmployees: EmployeeRecord[] = [
     name: 'Aman Verma',
     role: 'kitchen',
     storeId: 'store-siddipet',
+    pin: '510102',
     phone: '9876500012',
     isActive: true,
     createdAt: daysAgo(122),
@@ -138,6 +141,7 @@ const seedEmployees: EmployeeRecord[] = [
     name: 'Neha Patel',
     role: 'counter',
     storeId: 'store-hyderabad',
+    pin: '510103',
     phone: '9876500013',
     isActive: true,
     createdAt: daysAgo(95),
@@ -158,6 +162,7 @@ const seedEmployees: EmployeeRecord[] = [
     name: 'Sana Khan',
     role: 'kitchen',
     storeId: 'store-hyderabad',
+    pin: '510104',
     phone: '9876500014',
     isActive: false,
     createdAt: daysAgo(70),
@@ -367,11 +372,55 @@ const normalizeRole = (role: string): EmployeeRole => {
 
 const normalizeSession = (session: InternalAccessSession | null, stores: StoreRecord[]) => {
   if (!session) return null;
-  if (session.role === 'owner') {
+  if (session.role === 'owner' || session.role === 'admin') {
     return session;
   }
   const store = stores.find((entry) => entry.id === session.storeId && entry.isActive);
-  return store ? session : null;
+  if (!store) return null;
+  if (session.storeId === store.id) {
+    return session;
+  }
+  return {
+    ...session,
+    role: 'store',
+    storeId: store.id,
+  };
+};
+
+const ROLE_PERMISSIONS: Record<InternalAccessSession['role'], AdminPermissions> = {
+  owner: {
+    canManageStores: true,
+    canManageEmployees: true,
+    canManageMenu: true,
+    canViewReports: true,
+    canAccessOrders: true,
+    canAccessPos: true,
+    canAccessInventory: true,
+    canSwitchStores: true,
+    canViewAllStores: true,
+  },
+  admin: {
+    canManageStores: false,
+    canManageEmployees: true,
+    canManageMenu: true,
+    canViewReports: true,
+    canAccessOrders: true,
+    canAccessPos: true,
+    canAccessInventory: true,
+    canSwitchStores: true,
+    canViewAllStores: true,
+  },
+  store: {
+    canManageStores: false,
+    canManageEmployees: false,
+    canManageMenu: false,
+    canViewReports: false,
+    canAccessOrders: true,
+    canAccessPos: true,
+    canAccessInventory: true,
+    canSwitchStores: false,
+    canViewAllStores: false,
+  },
 };
 
 const normalizeStores = (stores: StoreRecord[]) => stores.map((store) => {
@@ -396,10 +445,15 @@ const normalizeStores = (stores: StoreRecord[]) => stores.map((store) => {
 
 const normalizeEmployees = (employees: EmployeeRecord[]) => employees.map((employee) => {
   const storeId = employee.storeId ?? DEFAULT_ORDER_STORE_ID;
+  const seedEmployee = seedEmployees.find((entry) => entry.id === employee.id);
+  const normalizedPin = isSixDigitPin(employee.pin ?? '')
+    ? employee.pin.trim()
+    : seedEmployee?.pin ?? '510999';
   return {
     ...employee,
     role: normalizeRole(employee.role),
     storeId,
+    pin: normalizedPin,
     phone: employee.phone?.trim() || undefined,
     isActive: employee.isActive ?? true,
     createdAt: employee.createdAt ?? nowIso(),
@@ -502,13 +556,28 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     }
   }, [session, stores]);
 
-  const loginAsAdmin = (pin: string) => {
+  const loginAsOwner = (pin: string) => {
     if (pin.trim() !== ADMIN_ACCESS_PIN) {
       return { success: false, message: 'Owner PIN did not match.' };
     }
-    setSession({ role: 'owner', loggedInAt: nowIso() });
+    const nextSession: InternalAccessSession = { role: 'owner', loggedInAt: nowIso() };
+    writeStorage(STORAGE_KEYS.session, nextSession);
+    writeStorage(STORAGE_KEYS.activeStoreScope, 'all');
+    setSession(nextSession);
     setStoredScope('all');
     return { success: true, message: 'Owner access enabled.' };
+  };
+
+  const loginAsAdmin = (pin: string) => {
+    if (pin.trim() !== ADMIN_OPERATOR_PIN) {
+      return { success: false, message: 'Admin PIN did not match.' };
+    }
+    const nextSession: InternalAccessSession = { role: 'admin', loggedInAt: nowIso() };
+    writeStorage(STORAGE_KEYS.session, nextSession);
+    writeStorage(STORAGE_KEYS.activeStoreScope, 'all');
+    setSession(nextSession);
+    setStoredScope('all');
+    return { success: true, message: 'Admin access enabled.' };
   };
 
   const loginAsStore = (storeId: string, pin: string) => {
@@ -519,22 +588,37 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     if (store.pin !== pin.trim()) {
       return { success: false, message: 'Store PIN did not match.' };
     }
-    setSession({ role: 'store', storeId: store.id, loggedInAt: nowIso() });
+    const nextSession: InternalAccessSession = { role: 'store', storeId: store.id, loggedInAt: nowIso() };
+    writeStorage(STORAGE_KEYS.session, nextSession);
+    writeStorage(STORAGE_KEYS.activeStoreScope, store.id);
+    setSession(nextSession);
     setStoredScope(store.id);
     return { success: true, message: `${store.name} workspace is ready.` };
   };
 
   const logoutInternalAccess = () => {
+    localStorage.removeItem(STORAGE_KEYS.session);
+    writeStorage(STORAGE_KEYS.activeStoreScope, 'all');
     setSession(null);
     setStoredScope('all');
   };
 
-  const permissions = useMemo<AdminPermissions>(() => ({
-    canManageStores: session?.role === 'owner',
-    canManageEmployees: session?.role === 'owner',
-    canSwitchStores: session?.role === 'owner',
-    canViewAllStores: session?.role === 'owner',
-  }), [session]);
+  const permissions = useMemo<AdminPermissions>(() => {
+    if (!session) {
+      return {
+        canManageStores: false,
+        canManageEmployees: false,
+        canManageMenu: false,
+        canViewReports: false,
+        canAccessOrders: false,
+        canAccessPos: false,
+        canAccessInventory: false,
+        canSwitchStores: false,
+        canViewAllStores: false,
+      };
+    }
+    return ROLE_PERMISSIONS[session.role];
+  }, [session]);
 
   const activeStoreScope = storedScope;
   const activeStore = activeStoreScope === 'all' ? null : stores.find((store) => store.id === activeStoreScope) ?? null;
@@ -612,10 +696,13 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     return { success: true, message: 'Store updated.' };
   };
 
-  const validateEmployeeInput = (input: EmployeeInput) => {
+  const validateEmployeeInput = (input: EmployeeInput, currentEmployeeId?: string) => {
     if (!input.name.trim()) return 'Employee name is required.';
     if (!stores.some((store) => store.id === input.storeId)) return 'Assign the employee to a valid store.';
+    if (!isSixDigitPin(input.pin)) return 'Employee PIN must be a valid 6-digit number.';
     if (input.phone && !/^\d{10}$/.test(input.phone.trim())) return 'Use a valid 10-digit phone or leave it empty.';
+    const duplicate = employees.find((employee) => employee.pin === input.pin.trim() && employee.id !== currentEmployeeId);
+    if (duplicate) return 'Employee PIN must be unique.';
     return '';
   };
 
@@ -629,6 +716,7 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
         name: input.name.trim(),
         role: input.role,
         storeId: input.storeId,
+        pin: input.pin.trim(),
         phone: input.phone?.trim() || undefined,
         isActive: input.isActive,
         createdAt: nowIso(),
@@ -642,7 +730,7 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
   };
 
   const updateEmployee = (employeeId: string, input: EmployeeInput) => {
-    const error = validateEmployeeInput(input);
+    const error = validateEmployeeInput(input, employeeId);
     if (error) return { success: false, message: error };
 
     setEmployees((previous) => previous.map((employee) => {
@@ -653,6 +741,7 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
         name: input.name.trim(),
         role: input.role,
         storeId: input.storeId,
+        pin: input.pin.trim(),
         phone: input.phone?.trim() || undefined,
         isActive: input.isActive,
       };
@@ -757,6 +846,7 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     activeStoreScope,
     activeStore,
     setActiveStoreScope,
+    loginAsOwner,
     loginAsAdmin,
     loginAsStore,
     logoutInternalAccess,

@@ -4,22 +4,39 @@ import { useNavigate } from 'react-router-dom';
 import { useAdminDashboard } from '../../contexts/AdminDashboardContext';
 import { Logo } from '../Logo';
 
-export function AdminAccessScreen() {
+interface AdminAccessScreenProps {
+  adminSuccessPath?: string;
+  storeSuccessPath?: string;
+}
+
+export function AdminAccessScreen({
+  adminSuccessPath = '/admin/summary',
+  storeSuccessPath = '/admin/summary',
+}: AdminAccessScreenProps) {
   const navigate = useNavigate();
-  const { stores, loginAsAdmin, loginAsStore } = useAdminDashboard();
-  const [mode, setMode] = useState<'owner' | 'store'>('owner');
+  const { stores, loginAsOwner, loginAsAdmin, loginAsStore } = useAdminDashboard();
+  const [mode, setMode] = useState<'owner' | 'admin' | 'store'>('owner');
+  const [ownerPin, setOwnerPin] = useState('');
   const [adminPin, setAdminPin] = useState('');
   const [storeId, setStoreId] = useState(stores.find((store) => store.isActive)?.id ?? '');
   const [storePin, setStorePin] = useState('');
-  const [message, setMessage] = useState('Choose owner access or open a store workspace.');
+  const [message, setMessage] = useState('Choose owner, admin, or store access and continue with a 6-digit PIN.');
 
   const activeStores = stores.filter((store) => store.isActive);
 
-  const handleAdminLogin = () => {
+  const handleOwnerLogin = () => {
+    const result = loginAsOwner(ownerPin);
+    setMessage(result.message);
+    if (result.success) {
+      navigate(adminSuccessPath, { replace: true });
+    }
+  };
+
+  const handleScopedAdminLogin = () => {
     const result = loginAsAdmin(adminPin);
     setMessage(result.message);
     if (result.success) {
-      navigate('/admin/summary', { replace: true });
+      navigate(adminSuccessPath, { replace: true });
     }
   };
 
@@ -27,7 +44,7 @@ export function AdminAccessScreen() {
     const result = loginAsStore(storeId, storePin);
     setMessage(result.message);
     if (result.success) {
-      navigate('/admin/summary', { replace: true });
+      navigate(storeSuccessPath, { replace: true });
     }
   };
 
@@ -45,12 +62,12 @@ export function AdminAccessScreen() {
             </div>
 
             <p className="mt-6 max-w-md text-sm leading-6 text-foreground/66">
-              Choose access mode and enter your 6-digit PIN.
+              Choose your operations access mode and continue with your 6-digit PIN.
             </p>
 
             <div className="mt-6 rounded-[28px] border border-primary/10 bg-white/86 p-5">
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/58">Access Modes</p>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
                 <button
                   type="button"
                   data-testid="mode-owner"
@@ -58,6 +75,14 @@ export function AdminAccessScreen() {
                   className={`rounded-2xl px-4 py-3 text-sm font-semibold ${mode === 'owner' ? 'bg-primary text-primary-foreground' : 'border border-primary/16 bg-white text-foreground/74'}`}
                 >
                   Owner Login
+                </button>
+                <button
+                  type="button"
+                  data-testid="mode-admin"
+                  onClick={() => setMode('admin')}
+                  className={`rounded-2xl px-4 py-3 text-sm font-semibold ${mode === 'admin' ? 'bg-primary text-primary-foreground' : 'border border-primary/16 bg-white text-foreground/74'}`}
+                >
+                  Admin Login
                 </button>
                 <button
                   type="button"
@@ -76,11 +101,11 @@ export function AdminAccessScreen() {
             <div className="rounded-[32px] border border-primary/12 bg-white/92 p-6 shadow-[0_20px_52px_rgba(45,80,22,0.12)] md:p-7">
               <div className="flex items-center gap-3">
                 <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/8 text-primary">
-                  {mode === 'owner' ? <ShieldCheck className="h-5 w-5" /> : <Building2 className="h-5 w-5" />}
+                  {mode === 'store' ? <Building2 className="h-5 w-5" /> : <ShieldCheck className="h-5 w-5" />}
                 </span>
                 <div>
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/58">{mode === 'owner' ? 'Owner Access' : 'Store Access'}</p>
-                  <p className="mt-1 text-lg font-semibold tracking-[-0.02em] text-foreground">{mode === 'owner' ? 'All stores, all controls' : 'One store, daily operations'}</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/58">{mode === 'store' ? 'Store Access' : 'Admin Access'}</p>
+                  <p className="mt-1 text-lg font-semibold tracking-[-0.02em] text-foreground">{mode === 'owner' ? 'Owner controls and multi-store oversight' : mode === 'admin' ? 'Administrative dashboard access' : 'One store, daily operations'}</p>
                 </div>
               </div>
 
@@ -88,9 +113,17 @@ export function AdminAccessScreen() {
                 <div className="mt-5 space-y-3">
                   <label className="block text-sm text-foreground/68">
                     <span className="mb-2 block font-medium">Owner PIN</span>
-                    <input data-testid="owner-pin-input" value={adminPin} onChange={(event) => setAdminPin(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6-digit owner PIN" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                    <input data-testid="owner-pin-input" value={ownerPin} onChange={(event) => setOwnerPin(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6-digit owner PIN" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
                   </label>
-                  <button data-testid="owner-login-button" type="button" onClick={handleAdminLogin} className="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground">Open owner panel</button>
+                  <button data-testid="owner-login-button" type="button" onClick={handleOwnerLogin} className="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground">Open owner panel</button>
+                </div>
+              ) : mode === 'admin' ? (
+                <div className="mt-5 space-y-3">
+                  <label className="block text-sm text-foreground/68">
+                    <span className="mb-2 block font-medium">Admin PIN</span>
+                    <input data-testid="admin-pin-input" value={adminPin} onChange={(event) => setAdminPin(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6-digit admin PIN" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                  </label>
+                  <button data-testid="admin-login-button" type="button" onClick={handleScopedAdminLogin} className="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground">Open admin dashboard</button>
                 </div>
               ) : (
                 <div className="mt-5 space-y-3">

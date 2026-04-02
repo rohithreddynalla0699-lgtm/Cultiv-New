@@ -34,6 +34,7 @@ export interface EmployeeRecord {
   name: string;
   role: EmployeeRole;
   storeId: string;
+  pin: string;
   phone?: string;
   isActive: boolean;
   createdAt: string;
@@ -45,6 +46,7 @@ export interface EmployeeInput {
   name: string;
   role: EmployeeRole;
   storeId: string;
+  pin: string;
   phone?: string;
   isActive: boolean;
 }
@@ -70,7 +72,9 @@ export interface AdminOrderNoteMap {
   [orderId: string]: string;
 }
 
-export type InternalAccessRole = 'owner' | 'store';
+export type StoreScope = 'all' | string;
+
+export type InternalAccessRole = 'owner' | 'admin' | 'store';
 
 export interface InternalAccessSession {
   role: InternalAccessRole;
@@ -81,6 +85,11 @@ export interface InternalAccessSession {
 export interface AdminPermissions {
   canManageStores: boolean;
   canManageEmployees: boolean;
+  canManageMenu: boolean;
+  canViewReports: boolean;
+  canAccessOrders: boolean;
+  canAccessPos: boolean;
+  canAccessInventory: boolean;
   canSwitchStores: boolean;
   canViewAllStores: boolean;
 }

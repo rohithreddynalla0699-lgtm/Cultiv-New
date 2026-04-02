@@ -186,10 +186,12 @@ export interface CreateCounterWalkInOrderInput {
 	storeId: string;
 	fullName?: string;
 	phone: string;
+	orderChannel?: 'counter' | 'walk_in' | 'phone';
 	items: CounterOrderItemInput[];
 	paymentMethod: CounterPaymentMethod;
 	tipPercentage: number;
 	tipAmount: number;
+	placedBy?: string;
 }
 
 export interface SavedAddressInput {

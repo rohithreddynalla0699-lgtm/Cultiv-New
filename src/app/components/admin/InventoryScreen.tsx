@@ -1,11 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { SectionHeader } from './SectionHeader';
 import { useAdminDashboard } from '../../contexts/AdminDashboardContext';
+import { useStoreSession } from '../../hooks/useStoreSession';
 import { StatusBadge } from './StatusBadge';
+import { Navigate } from 'react-router-dom';
 
 type InventoryStatusFilter = 'all' | 'low_stock' | 'out_of_stock';
 
 export function InventoryScreen() {
+  const { touchActivity } = useStoreSession();
   const {
     scopedInventory,
     addInventoryStock,
@@ -15,12 +18,27 @@ export function InventoryScreen() {
     activeStoreScope,
     activeStore,
     getStoreName,
+    permissions,
   } = useAdminDashboard();
   const [searchValue, setSearchValue] = useState('');
   const [statusFilter, setStatusFilter] = useState<InventoryStatusFilter>('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [adjustingItemId, setAdjustingItemId] = useState<string | null>(null);
   const [adjustValue, setAdjustValue] = useState(0);
+
+  useEffect(() => {
+    const onActivity = () => {
+      void touchActivity();
+    };
+
+    document.addEventListener('click', onActivity);
+    document.addEventListener('keydown', onActivity);
+
+    return () => {
+      document.removeEventListener('click', onActivity);
+      document.removeEventListener('keydown', onActivity);
+    };
+  }, [touchActivity]);
 
   const categories = useMemo(() => ['all', ...new Set(scopedInventory.map((item) => item.category))], [scopedInventory]);
 
@@ -45,6 +63,7 @@ export function InventoryScreen() {
   }), [categoryFilter, scopedInventory, searchValue, statusFilter]);
 
   const applyAdjustment = (itemId: string) => {
+    void touchActivity();
     if (adjustValue > 0) {
       addInventoryStock(itemId, adjustValue);
     } else if (adjustValue < 0) {
@@ -60,6 +79,10 @@ export function InventoryScreen() {
     hour: '2-digit',
     minute: '2-digit',
   });
+
+  if (!permissions.canAccessInventory) {
+    return <Navigate to="/operations" replace />;
+  }
 
   return (
     <div className="space-y-6">

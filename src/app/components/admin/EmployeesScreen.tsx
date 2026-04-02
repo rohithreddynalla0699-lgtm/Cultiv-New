@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import { SectionHeader } from './SectionHeader';
 import { EmployeeShiftCard } from './EmployeeShiftCard';
 import { useAdminDashboard } from '../../contexts/AdminDashboardContext';
@@ -16,6 +17,7 @@ const createEmptyEmployeeForm = (storeId: string): EmployeeInput => ({
   name: '',
   role: 'kitchen',
   storeId,
+  pin: '',
   phone: '',
   isActive: true,
 });
@@ -24,8 +26,6 @@ export function EmployeesScreen() {
   const {
     stores,
     scopedEmployees,
-    clockInEmployee,
-    clockOutEmployee,
     addEmployee,
     updateEmployee,
     permissions,
@@ -43,6 +43,10 @@ export function EmployeesScreen() {
   const visibleStores = useMemo(() => stores.filter((store) => store.isActive || store.id === form.storeId), [form.storeId, stores]);
   const historyCount = useMemo(() => scopedEmployees.reduce((sum, employee) => sum + employee.shifts.filter((shift) => activeStoreScope === 'all' || shift.storeId === activeStoreScope).length, 0), [activeStoreScope, scopedEmployees]);
 
+  if (!permissions.canManageEmployees) {
+    return <Navigate to="/operations" replace />;
+  }
+
   const openCreate = () => {
     setEditingEmployeeId(null);
     setForm(createEmptyEmployeeForm(defaultStoreId));
@@ -50,12 +54,13 @@ export function EmployeesScreen() {
     setMessage('Add an employee and assign their home store and role.');
   };
 
-  const openEdit = (employee: { id: string; name: string; role: EmployeeRole; storeId: string; phone?: string; isActive: boolean }) => {
+  const openEdit = (employee: { id: string; name: string; role: EmployeeRole; storeId: string; pin: string; phone?: string; isActive: boolean }) => {
     setEditingEmployeeId(employee.id);
     setForm({
       name: employee.name,
       role: employee.role,
       storeId: employee.storeId,
+      pin: employee.pin,
       phone: employee.phone ?? '',
       isActive: employee.isActive,
     });
@@ -92,7 +97,7 @@ export function EmployeesScreen() {
           </div>
 
           {editorOpen ? (
-            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-6">
               <label className="block text-sm text-foreground/68 xl:col-span-2">
                 <span className="mb-2 block font-medium">Employee Name</span>
                 <input data-testid="employee-form-name" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
@@ -108,6 +113,10 @@ export function EmployeesScreen() {
                 <select data-testid="employee-form-store" value={form.storeId} onChange={(event) => setForm((current) => ({ ...current, storeId: event.target.value }))} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary">
                   {visibleStores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}
                 </select>
+              </label>
+              <label className="block text-sm text-foreground/68">
+                <span className="mb-2 block font-medium">Shift PIN</span>
+                <input data-testid="employee-form-pin" value={form.pin} onChange={(event) => setForm((current) => ({ ...current, pin: event.target.value.replace(/\D/g, '').slice(0, 6) }))} placeholder="6-digit PIN" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
               <label className="block text-sm text-foreground/68">
                 <span className="mb-2 block font-medium">Phone</span>
@@ -148,8 +157,6 @@ export function EmployeesScreen() {
                 todayHours={todayHours}
                 weekHours={weekHours}
                 monthHours={monthHours}
-                onClockIn={() => clockInEmployee(employee.id)}
-                onClockOut={() => clockOutEmployee(employee.id)}
                 onEdit={permissions.canManageEmployees ? () => openEdit(employee) : undefined}
               />
 

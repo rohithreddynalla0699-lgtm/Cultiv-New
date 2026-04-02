@@ -1,32 +1,42 @@
-import { ClipboardList, LayoutDashboard, LogOut, Package2, ReceiptIndianRupee, Store, Users } from 'lucide-react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { BarChart3, ClipboardList, LayoutDashboard, LogOut, Package2, ReceiptIndianRupee, ScrollText, Store, Users } from 'lucide-react';
+import { NavLink, Navigate, Outlet } from 'react-router-dom';
 import { useLocation } from 'react-router-dom';
 import { useAdminDashboard } from '../../contexts/AdminDashboardContext';
 import { Logo } from '../Logo';
-import { AdminAccessScreen } from './AdminAccessScreen';
 
 export function AdminDashboardLayout() {
   const { session, stores, permissions, activeStoreScope, activeStore, setActiveStoreScope, logoutInternalAccess } = useAdminDashboard();
   const location = useLocation();
 
   if (!session) {
-    return <AdminAccessScreen />;
+    return <Navigate to="/operations" replace />;
   }
 
-  const navItems = [
-    { to: '/admin/summary', label: 'Summary', icon: LayoutDashboard },
-    { to: '/admin/orders', label: 'Orders', icon: ClipboardList },
-    { to: '/admin/counter-billing', label: 'Counter / Billing', icon: ReceiptIndianRupee },
-    { to: '/admin/inventory', label: 'Inventory', icon: Package2 },
-    { to: '/admin/employees', label: 'Employees', icon: Users },
-    ...(permissions.canManageStores ? [{ to: '/admin/stores', label: 'Stores', icon: Store }] : []),
-  ];
+  const isStoreWorkspace = session.role === 'store' || location.pathname.startsWith('/store');
+  const navItems = isStoreWorkspace
+    ? [
+        ...(permissions.canAccessOrders ? [{ to: '/store/orders', label: 'Orders', icon: ClipboardList }] : []),
+        ...(permissions.canAccessPos ? [{ to: '/store/pos', label: 'POS', icon: ReceiptIndianRupee }] : []),
+        ...(permissions.canAccessInventory ? [{ to: '/store/inventory', label: 'Inventory', icon: Package2 }] : []),
+        { to: '/store/shift', label: 'Shift Control', icon: Users },
+      ]
+    : [
+        { to: '/admin/summary', label: 'Summary', icon: LayoutDashboard },
+        ...(permissions.canAccessOrders ? [{ to: '/admin/orders', label: 'Orders', icon: ClipboardList }] : []),
+        ...(permissions.canAccessPos ? [{ to: '/admin/counter-billing', label: 'POS', icon: ReceiptIndianRupee }] : []),
+        ...(permissions.canAccessInventory ? [{ to: '/admin/inventory', label: 'Inventory', icon: Package2 }] : []),
+        ...(permissions.canManageEmployees ? [{ to: '/admin/employees', label: 'Employees', icon: Users }] : []),
+        ...(permissions.canManageMenu ? [{ to: '/admin/menu', label: 'Menu', icon: ScrollText }] : []),
+        ...(permissions.canViewReports ? [{ to: '/admin/reports', label: 'Reports', icon: BarChart3 }] : []),
+        ...(permissions.canManageStores ? [{ to: '/admin/stores', label: 'Stores', icon: Store }] : []),
+      ];
 
   const scopeLabel = session.role === 'owner'
     ? activeStore ? activeStore.name : 'All stores'
     : activeStore?.name ?? 'Store';
   const currentNav = navItems.find((item) => location.pathname.startsWith(item.to));
   const currentPage = currentNav?.label ?? 'Dashboard';
+  const roleLabel = session.role === 'owner' ? 'Owner' : session.role === 'admin' ? 'Admin' : 'Store';
 
   return (
     <>
@@ -62,7 +72,7 @@ export function AdminDashboardLayout() {
           <div className="mb-6 flex flex-col gap-3 rounded-[26px] border border-primary/10 bg-white/76 px-4 py-4 md:flex-row md:items-center md:justify-between">
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <span className="rounded-full bg-[#F7FAF3] px-3 py-1.5 font-medium text-foreground/72">Store: {scopeLabel}</span>
-              <span className="rounded-full bg-[#F7FAF3] px-3 py-1.5 font-medium text-foreground/72">Role: {session.role === 'owner' ? 'Owner' : 'Store'}</span>
+              <span className="rounded-full bg-[#F7FAF3] px-3 py-1.5 font-medium text-foreground/72">Role: {roleLabel}</span>
               <span className="rounded-full bg-[#F7FAF3] px-3 py-1.5 font-medium text-foreground/72">Page: {currentPage}</span>
             </div>
 
