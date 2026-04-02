@@ -1,6 +1,8 @@
 import { chromium } from 'playwright';
 
 const baseUrl = process.env.CULTIV_BASE_URL ?? 'http://127.0.0.1:5173';
+const STORE_ID = 'store-siddipet';
+const STORE_PIN = process.env.STORE_PIN_SIDDIPET ?? '111111';
 
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
@@ -18,10 +20,10 @@ const log = {
 };
 
 await page.goto(`${baseUrl}/admin/summary`, { waitUntil: 'domcontentloaded' });
-await page.getByRole('button', { name: 'Store Login' }).click();
-await page.getByRole('combobox').first().selectOption('store-siddipet');
-await page.getByPlaceholder('Store PIN').fill('240101');
-await page.getByRole('button', { name: 'Open store workspace' }).click();
+await page.getByTestId('mode-store').click();
+await page.getByTestId('store-select').selectOption(STORE_ID);
+await page.getByTestId('store-pin-input').fill(STORE_PIN);
+await page.getByTestId('store-login-button').click();
 await page.locator('text=Role: Store').first().waitFor({ timeout: 5000 });
 
 log.navTabPresent = (await page.getByRole('link', { name: 'Counter / Billing' }).count()) > 0;

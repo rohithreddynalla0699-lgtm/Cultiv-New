@@ -350,8 +350,8 @@ const buildSelectionSnapshotRows = (orderItemId: string, selections: OrderItem['
         option_item_id: optionMeta?.optionItemId ?? null,
         group_id_snapshot: groupMeta.groupId,
         group_name_snapshot: groupMeta.groupName,
-        option_item_name_snapshot: optionMeta?.optionItemName ?? choice,
-        price_modifier_snapshot: optionMeta?.priceModifier ?? 0,
+        option_name: optionMeta?.optionItemName ?? choice,
+        price_modifier: optionMeta?.priceModifier ?? 0,
       };
     });
   });
@@ -384,7 +384,7 @@ const generateOrderNumber = async () => {
 
   const { count, error } = await supabase
     .from('orders')
-    .select('id', { count: 'exact', head: true })
+    .select('order_id', { count: 'exact', head: true })
     .gte('created_at', startIso)
     .lt('created_at', endIso);
 
@@ -407,7 +407,7 @@ const persistOrderToSupabase = async (order: Order): Promise<boolean> => {
   try {
     const sourceChannel: SupabaseSourceChannel = order.source;
 
-    let orderInsert: { id: string } | null = null;
+    let orderInsert: { order_id: string } | null = null;
     let orderInsertError: { code?: string; message?: string } | null = null;
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -417,23 +417,23 @@ const persistOrderToSupabase = async (order: Order): Promise<boolean> => {
         .insert({
           order_type: resolveSupabaseOrderType(order.orderType, sourceChannel),
           source_channel: sourceChannel,
-          status: order.status,
+          order_status: order.status,
           store_id: order.storeId ?? DEFAULT_ORDER_STORE_ID,
           customer_name: order.fullName,
           customer_phone: order.phone,
           customer_email: order.email,
           payment_method: order.paymentMethod ?? null,
           notes: null,
-          subtotal: Math.round(order.subtotal),
+          subtotal_amount: Math.round(order.subtotal),
           discount_amount: Math.round(order.rewardDiscount),
-          total: Math.round(order.total),
+          total_amount: Math.round(order.total),
           order_number: orderNumber,
         })
-        .select('id')
+        .select('order_id')
         .single();
 
-      if (!error && data?.id) {
-        orderInsert = data as { id: string };
+      if (!error && data?.order_id) {
+        orderInsert = data as { order_id: string };
         orderInsertError = null;
         break;
       }
@@ -445,11 +445,11 @@ const persistOrderToSupabase = async (order: Order): Promise<boolean> => {
       }
     }
 
-    if (!orderInsert?.id) {
+    if (!orderInsert?.order_id) {
       throw new Error(orderInsertError?.message ?? 'Could not create orders row.');
     }
 
-    const supabaseOrderId = orderInsert.id as string;
+    const supabaseOrderId = orderInsert.order_id as string;
 
     try {
       for (const item of order.items) {
@@ -459,20 +459,20 @@ const persistOrderToSupabase = async (order: Order): Promise<boolean> => {
           .insert({
             order_id: supabaseOrderId,
             menu_item_id: resolveMenuItemId(item.id),
-            item_name_snapshot: item.title,
-            category_snapshot: item.category,
-            unit_price_snapshot: Math.round(item.price),
+            item_name: item.title,
+            item_category: item.category,
+            unit_price: Math.round(item.price),
             quantity: item.quantity,
             line_total: lineTotal,
           })
-          .select('id')
+          .select('order_item_id')
           .single();
 
-        if (itemError || !itemInsert?.id) {
+        if (itemError || !itemInsert?.order_item_id) {
           throw new Error(itemError?.message ?? 'Could not create order_items row.');
         }
 
-        const selectionRows = buildSelectionSnapshotRows(itemInsert.id as string, item.selections);
+        const selectionRows = buildSelectionSnapshotRows(itemInsert.order_item_id as string, item.selections);
         if (selectionRows.length > 0) {
           const { error: selectionError } = await supabase
             .from('order_item_selections')
@@ -486,7 +486,7 @@ const persistOrderToSupabase = async (order: Order): Promise<boolean> => {
 
       return true;
     } catch (error) {
-      await supabase.from('orders').delete().eq('id', supabaseOrderId);
+      await supabase.from('orders').delete().eq('order_id', supabaseOrderId);
       throw error;
     }
   } catch (error) {

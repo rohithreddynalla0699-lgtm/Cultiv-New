@@ -3,11 +3,11 @@ import { chromium } from 'playwright';
 const BASE = process.env.BASE_URL ?? 'http://127.0.0.1:4174';
 const CUSTOMER_EMAIL = 'member@cultiv.app';
 const CUSTOMER_PHONE = '9876543210';
-
-const ADMIN_PIN = '240620';
+const ADMIN_OWNER_PIN = process.env.ADMIN_OWNER_PIN ?? '240620';
 const STORE_PIN_BY_ID = {
-  'store-siddipet': '240101',
-  'store-hyderabad': '240202',
+  'store-siddipet': process.env.STORE_PIN_SIDDIPET ?? '111111',
+  'store-hyderabad': process.env.STORE_PIN_HYDERABAD ?? '222222',
+  'store-warangal': process.env.STORE_PIN_WARANGAL ?? '333333',
 };
 
 const results = [];
@@ -22,14 +22,14 @@ const readOrders = async (page) => page.evaluate(() => {
   return raw ? JSON.parse(raw) : [];
 });
 
-const seedAdminStores = async (page) => page.evaluate(() => {
+const seedAdminStores = async (page) => page.evaluate((storePins) => {
   localStorage.setItem('cultiv_admin_stores_v1', JSON.stringify([
     {
       id: 'store-siddipet',
       name: 'Siddipet Central',
       city: 'Siddipet',
       code: 'SID-CEN',
-      pin: '240101',
+      pin: storePins['store-siddipet'],
       isActive: true,
       createdAt: new Date().toISOString(),
     },
@@ -38,12 +38,12 @@ const seedAdminStores = async (page) => page.evaluate(() => {
       name: 'Banjara Hills',
       city: 'Hyderabad',
       code: 'HYD-BAN',
-      pin: '240202',
+      pin: storePins['store-hyderabad'],
       isActive: true,
       createdAt: new Date().toISOString(),
     },
   ]));
-});
+}, STORE_PIN_BY_ID);
 
 const getCustomerId = async (page) => page.evaluate((email) => {
   const raw = localStorage.getItem('cultiv_users_v2');
@@ -113,7 +113,7 @@ const createWebsiteOrder = async (page, idx, { doubleClick = false, storeId = nu
 };
 
 const ensureAdminAccessGate = async (page) => {
-  await page.goto(`${BASE}/admin/summary`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}/admin/summary`, { waitUntil: 'domcontentloaded' });
 
   const signOutVisible = await page.getByTestId('admin-signout').count();
   if (signOutVisible > 0) {
@@ -121,12 +121,12 @@ const ensureAdminAccessGate = async (page) => {
     await page.waitForTimeout(250);
   }
 
-  await page.goto(`${BASE}/admin/summary`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}/admin/summary`, { waitUntil: 'domcontentloaded' });
 };
 
 const loginAdminOwner = async (page) => {
   await ensureAdminAccessGate(page);
-  await page.getByTestId('owner-pin-input').fill(ADMIN_PIN);
+  await page.getByTestId('owner-pin-input').fill(ADMIN_OWNER_PIN);
   await page.getByTestId('owner-login-button').click();
   await page.waitForSelector('[data-testid="admin-store-scope"]', { timeout: 5000 });
 };

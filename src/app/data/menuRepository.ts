@@ -1,10 +1,10 @@
 // menuRepository.ts — Supabase-backed menu fetch for runtime hydration.
 
 // @ts-ignore - Supabase client is defined in JS module.
-import { supabase } from '../../lib/supabase';
+import { isSupabaseConfigured, supabase } from '../../lib/supabase';
 
 export interface MenuItemRow {
-  id: string;
+  menu_item_id: string;
   category_slug: string;
   subcategory_slug: string | null;
   name: string;
@@ -14,7 +14,7 @@ export interface MenuItemRow {
 }
 
 export interface OptionGroupRow {
-  id: string;
+  option_group_id: string;
   name: string;
   selection_type: 'single' | 'multiple';
   is_required: boolean;
@@ -24,8 +24,8 @@ export interface OptionGroupRow {
 }
 
 export interface OptionItemRow {
-  id: string;
-  group_id: string;
+  option_item_id: string;
+  option_group_id: string;
   name: string;
   price_modifier: number;
   is_available: boolean;
@@ -33,8 +33,8 @@ export interface OptionItemRow {
 }
 
 export interface ItemOptionGroupMapRow {
-  item_id: string;
-  group_id: string;
+  menu_item_id: string;
+  option_group_id: string;
   sort_order: number;
 }
 
@@ -45,7 +45,93 @@ export interface MenuRepositoryPayload {
   itemOptionGroupMap: ItemOptionGroupMapRow[];
 }
 
+type RawRow = Record<string, unknown>;
+
+const asString = (value: unknown): string => (typeof value === 'string' ? value : '');
+const asNullableString = (value: unknown): string | null => (typeof value === 'string' ? value : null);
+const asNumber = (value: unknown, fallback = 0): number => {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+const asNullableNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined) return null;
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+const asBoolean = (value: unknown, fallback = false): boolean => (typeof value === 'boolean' ? value : fallback);
+
+function pickString(row: RawRow, candidates: string[]): string {
+  for (const key of candidates) {
+    const value = row[key];
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value;
+    }
+  }
+  return '';
+}
+
+function normalizeMenuItemRow(row: RawRow): MenuItemRow | null {
+  const menuItemId = pickString(row, ['menu_item_id', 'id']);
+  if (!menuItemId) return null;
+
+  return {
+    menu_item_id: menuItemId,
+    category_slug: asString(row.category_slug),
+    subcategory_slug: asNullableString(row.subcategory_slug),
+    name: asString(row.name),
+    base_price: asNumber(row.base_price),
+    is_available: asBoolean(row.is_available, true),
+    sort_order: asNumber(row.sort_order),
+  };
+}
+
+function normalizeOptionGroupRow(row: RawRow): OptionGroupRow | null {
+  const optionGroupId = pickString(row, ['option_group_id', 'id']);
+  if (!optionGroupId) return null;
+
+  return {
+    option_group_id: optionGroupId,
+    name: asString(row.name),
+    selection_type: asString(row.selection_type) === 'multiple' ? 'multiple' : 'single',
+    is_required: asBoolean(row.is_required, false),
+    min_select: asNumber(row.min_select),
+    max_select: asNullableNumber(row.max_select),
+    sort_order: asNumber(row.sort_order),
+  };
+}
+
+function normalizeOptionItemRow(row: RawRow): OptionItemRow | null {
+  const optionItemId = pickString(row, ['option_item_id', 'id']);
+  const optionGroupId = pickString(row, ['option_group_id', 'group_id']);
+  if (!optionItemId || !optionGroupId) return null;
+
+  return {
+    option_item_id: optionItemId,
+    option_group_id: optionGroupId,
+    name: asString(row.name),
+    price_modifier: asNumber(row.price_modifier),
+    is_available: asBoolean(row.is_available, true),
+    sort_order: asNumber(row.sort_order),
+  };
+}
+
+function normalizeItemOptionGroupMapRow(row: RawRow): ItemOptionGroupMapRow | null {
+  const menuItemId = pickString(row, ['menu_item_id', 'item_id']);
+  const optionGroupId = pickString(row, ['option_group_id', 'group_id']);
+  if (!menuItemId || !optionGroupId) return null;
+
+  return {
+    menu_item_id: menuItemId,
+    option_group_id: optionGroupId,
+    sort_order: asNumber(row.sort_order),
+  };
+}
+
 export async function fetchMenuRepositoryPayload(): Promise<MenuRepositoryPayload> {
+  if (!isSupabaseConfigured) {
+    throw new Error('Supabase is not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.local and restart the app.');
+  }
+
   const [
     menuItemsResult,
     optionGroupsResult,
@@ -54,23 +140,23 @@ export async function fetchMenuRepositoryPayload(): Promise<MenuRepositoryPayloa
   ] = await Promise.all([
     supabase
       .from('menu_items')
-      .select('id, category_slug, subcategory_slug, name, base_price, is_available, sort_order')
+      .select('*')
       .eq('is_available', true)
       .order('sort_order', { ascending: true })
       .order('name', { ascending: true }),
     supabase
       .from('option_groups')
-      .select('id, name, selection_type, is_required, min_select, max_select, sort_order')
+      .select('*')
       .order('sort_order', { ascending: true }),
     supabase
       .from('option_items')
-      .select('id, group_id, name, price_modifier, is_available, sort_order')
+      .select('*')
       .eq('is_available', true)
       .order('sort_order', { ascending: true })
       .order('name', { ascending: true }),
     supabase
       .from('item_option_group_map')
-      .select('item_id, group_id, sort_order')
+      .select('*')
       .order('sort_order', { ascending: true }),
   ]);
 
@@ -87,10 +173,26 @@ export async function fetchMenuRepositoryPayload(): Promise<MenuRepositoryPayloa
     throw new Error(`Failed to fetch item_option_group_map: ${itemOptionGroupMapResult.error.message}`);
   }
 
+  const menuItems = ((menuItemsResult.data ?? []) as RawRow[])
+    .map(normalizeMenuItemRow)
+    .filter((row): row is MenuItemRow => row !== null);
+
+  const optionGroups = ((optionGroupsResult.data ?? []) as RawRow[])
+    .map(normalizeOptionGroupRow)
+    .filter((row): row is OptionGroupRow => row !== null);
+
+  const optionItems = ((optionItemsResult.data ?? []) as RawRow[])
+    .map(normalizeOptionItemRow)
+    .filter((row): row is OptionItemRow => row !== null);
+
+  const itemOptionGroupMap = ((itemOptionGroupMapResult.data ?? []) as RawRow[])
+    .map(normalizeItemOptionGroupMapRow)
+    .filter((row): row is ItemOptionGroupMapRow => row !== null);
+
   return {
-    menuItems: (menuItemsResult.data ?? []) as MenuItemRow[],
-    optionGroups: (optionGroupsResult.data ?? []) as OptionGroupRow[],
-    optionItems: (optionItemsResult.data ?? []) as OptionItemRow[],
-    itemOptionGroupMap: (itemOptionGroupMapResult.data ?? []) as ItemOptionGroupMapRow[],
+    menuItems,
+    optionGroups,
+    optionItems,
+    itemOptionGroupMap,
   };
 }

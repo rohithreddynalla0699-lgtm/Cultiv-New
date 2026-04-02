@@ -23,7 +23,7 @@ export function HomeStoreSection({ onOrderClick }: HomeStoreSectionProps) {
     () => stores.map((store) => ({
       name: store.name,
       tag: store.id === selectedStore.id ? 'Selected now' : (store.isActive ? 'Available today' : 'Coming soon'),
-      detail: `${store.city} • ${store.pin}`,
+      detail: `${store.city} • ${store.zipCode}`,
     })),
     [selectedStore.id, stores],
   );
@@ -45,7 +45,7 @@ export function HomeStoreSection({ onOrderClick }: HomeStoreSectionProps) {
                     <p className="text-xs uppercase tracking-[0.18em] text-primary/60">Selected store</p>
                     <h3 className="mt-2 text-2xl font-semibold tracking-tight">{selectedStore.name}</h3>
                     <div className="mt-3 flex flex-wrap gap-2 text-xs text-foreground/60">
-                      <span className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5"><MapPin className="h-3.5 w-3.5 text-primary" /> {selectedStore.city} • {selectedStore.pin}</span>
+                      <span className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5"><MapPin className="h-3.5 w-3.5 text-primary" /> {selectedStore.city} • {selectedStore.zipCode}</span>
                       <span className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5"><Clock3 className="h-3.5 w-3.5 text-primary" /> 11 AM – 9 PM</span>
                     </div>
                   </div>

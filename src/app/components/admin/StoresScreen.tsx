@@ -32,7 +32,7 @@ export function StoresScreen() {
     setEditingStoreId(null);
     setForm(createEmptyStoreForm());
     setEditorOpen(true);
-    setMessage('Create a store with its own code and 6-digit PIN.');
+    setMessage('Create a store with a unique code and status.');
   };
 
   const openEdit = (store: StoreRecord) => {
@@ -152,8 +152,8 @@ export function StoresScreen() {
                 <input data-testid="store-form-code" value={form.code} onChange={(event) => setForm((current) => ({ ...current, code: event.target.value.toUpperCase() }))} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
               <label className="block text-sm text-foreground/68">
-                <span className="mb-2 block font-medium">6-digit PIN</span>
-                <input data-testid="store-form-pin" value={form.pin} onChange={(event) => setForm((current) => ({ ...current, pin: event.target.value.replace(/\D/g, '').slice(0, 6) }))} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                <span className="mb-2 block font-medium">Store PIN (6 digits)</span>
+                <input data-testid="store-form-pin" value={form.pin} onChange={(event) => setForm((current) => ({ ...current, pin: event.target.value.replace(/\D/g, '').slice(0, 6) }))} placeholder="000000" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
               <label className="flex items-center justify-between rounded-2xl border border-primary/12 bg-white/86 px-4 py-3 text-sm text-foreground/72">
                 <span className="font-medium">Store active</span>

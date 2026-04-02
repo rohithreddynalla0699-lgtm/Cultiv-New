@@ -11,6 +11,7 @@
 import { chromium } from 'playwright';
 
 const baseUrl = process.env.BASE_URL ?? 'http://127.0.0.1:4174';
+const ADMIN_OWNER_PIN = process.env.ADMIN_OWNER_PIN ?? '240620';
 
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
@@ -36,7 +37,7 @@ const results = {
 
 // ── Admin login ───────────────────────────────────────────────────────────────
 await page.goto(`${baseUrl}/admin/summary`, { waitUntil: 'domcontentloaded' });
-await page.getByTestId('owner-pin-input').fill('240620');
+await page.getByTestId('owner-pin-input').fill(ADMIN_OWNER_PIN);
 await page.getByTestId('owner-login-button').click();
 await page.waitForSelector('[data-testid="admin-store-scope"]', { timeout: 5000 });
 
@@ -57,7 +58,7 @@ results.storeFormOpens = await page.getByTestId('store-form-name').isVisible();
 await page.getByTestId('store-form-name').fill('QA Smoke Outlet');
 await page.getByTestId('store-form-city').fill('Testville');
 await page.getByTestId('store-form-code').fill('QSM-01');
-await page.getByTestId('store-form-pin').fill('123456');
+await page.getByTestId('store-form-pin').fill('444444');
 await page.getByTestId('store-form-submit').click();
 await page.waitForTimeout(400);
 results.storeAdded = (await page.locator('text=QA Smoke Outlet').count()) > 0;

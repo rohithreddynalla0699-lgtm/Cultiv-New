@@ -1557,7 +1557,7 @@ export function OrderPage() {
                       <div className="mt-1 flex items-center justify-between gap-3">
                         <div>
                           <p className="text-sm font-semibold text-foreground/88">{selectedStore.name}</p>
-                          <p className="text-xs text-foreground/55">{selectedStore.city} • {selectedStore.pin}</p>
+                          <p className="text-xs text-foreground/55">{selectedStore.city} • {selectedStore.zipCode}</p>
                         </div>
                         <button
                           type="button"

@@ -14,7 +14,6 @@
  *   PUT  /api/state   — replace full shared state (JSON body)
  *   GET  /api/events  — Server-Sent Events stream (live sync)
  *   GET  /api/health  — lightweight health response
- *   POST /api/internal-auth — verify owner/store PIN on server
  */
 
 import http from 'node:http';
@@ -25,13 +24,6 @@ import { fileURLToPath } from 'node:url';
 const PORT = Number(process.env.PORT ?? 3747);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_FILE = path.join(__dirname, 'db.json');
-const OWNER_PIN = String(process.env.ADMIN_OWNER_PIN ?? '240620').trim();
-const STORE_PIN_BY_ID = {
-  'store-siddipet': String(process.env.STORE_PIN_SIDDIPET ?? '502103').trim(),
-  'store-hyderabad': String(process.env.STORE_PIN_HYDERABAD ?? '500034').trim(),
-  'store-warangal': String(process.env.STORE_PIN_WARANGAL ?? '506002').trim(),
-};
-
 // ── Persistent state ──────────────────────────────────────────────────────────
 
 let sharedState = {};
@@ -103,13 +95,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // GET /api/internal-auth (method hint for manual browser checks)
-  if (req.method === 'GET' && pathname === '/api/internal-auth') {
-    res.writeHead(405, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: false, message: 'Use POST /api/internal-auth with JSON body.' }));
-    return;
-  }
-
   // PUT /api/state
   if (req.method === 'PUT' && pathname === '/api/state') {
     let body = '';
@@ -139,66 +124,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // POST /api/internal-auth
-  if (req.method === 'POST' && pathname === '/api/internal-auth') {
-    let body = '';
-    req.on('data', (chunk) => { body += chunk; });
-    req.on('end', () => {
-      try {
-        const payload = JSON.parse(body || '{}');
-        const mode = String(payload.mode ?? '').trim();
-        const pin = String(payload.pin ?? '').trim();
-        const isSixDigits = /^\d{6}$/.test(pin);
-
-        if (!isSixDigits) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ ok: false, message: 'Enter a valid 6-digit PIN.' }));
-          return;
-        }
-
-        if (mode === 'owner') {
-          if (pin !== OWNER_PIN) {
-            res.writeHead(401, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ok: false, message: 'Owner PIN did not match.' }));
-            return;
-          }
-
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ ok: true, role: 'admin', message: 'Owner access enabled.' }));
-          return;
-        }
-
-        if (mode === 'store') {
-          const storeId = String(payload.storeId ?? '').trim();
-          const expectedPin = STORE_PIN_BY_ID[storeId];
-
-          if (!expectedPin) {
-            res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ok: false, message: 'Select a valid store.' }));
-            return;
-          }
-
-          if (pin !== expectedPin) {
-            res.writeHead(401, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ ok: false, message: 'Store PIN did not match.' }));
-            return;
-          }
-
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ ok: true, role: 'store', storeId, message: 'Store workspace is ready.' }));
-          return;
-        }
-
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: false, message: 'Unsupported auth mode.' }));
-      } catch (err) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: false, message: err.message }));
-      }
-    });
-    return;
-  }
-
   // GET /api/events (SSE)
   if (req.method === 'GET' && pathname === '/api/events') {
     res.writeHead(200, {
@@ -220,7 +145,6 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
   console.log(`\n  CULTIV Sync Server  →  http://localhost:${PORT}`);
   console.log(`  SSE stream          →  http://localhost:${PORT}/api/events`);
-  console.log(`  Internal auth       →  http://localhost:${PORT}/api/internal-auth`);
   console.log(`\n  Set in .env.local:`);
   console.log(`    VITE_SYNC_SERVER_URL=http://localhost:${PORT}\n`);
 });

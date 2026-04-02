@@ -52,6 +52,22 @@
       "defaultAddressId": "address-seed-1",
       "emailLocked": true,
       "phoneEditable": false
+    },
+    {
+      "id": "user-r5ns5e0z",
+      "fullName": "Rohith Reddy Reddy Nalla",
+      "phone": "2038129131",
+      "email": "rohithreddynalla0699@gmail.com",
+      "password": "h$19o88th",
+      "createdAt": "2026-04-02T04:52:58.958Z",
+      "savedAddresses": [],
+      "preferences": {},
+      "paymentProfile": {
+        "preferredMethod": "upi",
+        "savedMethods": []
+      },
+      "emailLocked": true,
+      "phoneEditable": false
     }
   ],
   "orders": [
@@ -393,8 +409,8 @@
       ]
     }
   ],
-  "_updatedAt": "2026-04-02T01:20:53.638Z",
-  "_sourceClientId": "675828f4-50fe-45dc-8f7a-52c125ed8653",
+  "_updatedAt": "2026-04-02T07:40:30.646Z",
+  "_sourceClientId": "3446dadd-755e-4fa3-8b49-90d3e0fd44df",
   "stores": [
     {
       "id": "store-siddipet",
@@ -424,14 +440,15 @@
       "phone": "9876500011",
       "isActive": true,
       "createdAt": "2025-10-02T16:00:00.000Z",
-      "status": "on_shift",
+      "status": "off_shift",
       "shifts": [
         {
           "id": "shift-1",
           "employeeId": "emp-1",
           "storeId": "store-siddipet",
           "loginAt": "2026-03-31T16:02:00.000Z",
-          "totalHoursWorked": 33.31
+          "totalHoursWorked": 37.23,
+          "logoutAt": "2026-04-02T05:15:58.191Z"
         },
         {
           "id": "shift-1b",
@@ -451,14 +468,15 @@
       "phone": "9876500012",
       "isActive": true,
       "createdAt": "2025-11-29T17:00:00.000Z",
-      "status": "on_shift",
+      "status": "off_shift",
       "shifts": [
         {
           "id": "shift-2",
           "employeeId": "emp-2",
           "storeId": "store-siddipet",
           "loginAt": "2026-03-31T17:15:00.000Z",
-          "totalHoursWorked": 32.1
+          "totalHoursWorked": 36.02,
+          "logoutAt": "2026-04-02T05:15:59.892Z"
         }
       ]
     },

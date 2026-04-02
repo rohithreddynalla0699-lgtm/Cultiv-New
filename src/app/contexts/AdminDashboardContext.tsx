@@ -1,13 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import {
-  ADMIN_INTERNAL_AUTH_HEALTH_URL,
-  ADMIN_INTERNAL_AUTH_MESSAGES,
-  ADMIN_INTERNAL_AUTH_SYNC_URL,
-  ADMIN_INTERNAL_AUTH_TIMEOUTS,
-  ADMIN_INTERNAL_AUTH_URL,
-} from '../config/adminInternalAuth';
-import { DEFAULT_ORDER_STORE_ID } from '../constants/admin';
-import { requestInternalAuth } from '../services/adminInternalAuth';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { ADMIN_ACCESS_PIN, ADMIN_STORE_ACCESS_PIN_BY_ID, DEFAULT_ORDER_STORE_ID } from '../constants/admin';
+import { CUSTOMER_STORE_METADATA } from '../data/storeLocator';
 import { INVENTORY_MASTER_LIST } from '../constants/inventoryCatalog';
 import type {
   AdminOrderNoteMap,
@@ -16,31 +9,29 @@ import type {
   EmployeeRecord,
   EmployeeRole,
   EmployeeShift,
-  InternalAccessSession,
   InventoryItem,
   InventoryStatus,
+  InternalAccessSession,
   StoreInput,
   StoreRecord,
   StoreScope,
 } from '../types/admin';
-import type { InternalAuthRequestPayload, InternalAuthVerificationResult, InternalLoginResult, ServerStatus } from '../types/adminInternalAuth';
 
 interface AdminDashboardContextType {
+  session: InternalAccessSession | null;
   stores: StoreRecord[];
   employees: EmployeeRecord[];
   inventory: InventoryItem[];
   scopedEmployees: EmployeeRecord[];
   scopedInventory: InventoryItem[];
   orderNotes: AdminOrderNoteMap;
-  session: InternalAccessSession | null;
   permissions: AdminPermissions;
-  serverStatus: ServerStatus;
   activeStoreScope: StoreScope;
   activeStore: StoreRecord | null;
-  loginAsAdmin: (pin: string) => Promise<InternalLoginResult>;
-  loginAsStore: (storeId: string, pin: string) => Promise<InternalLoginResult>;
-  logoutInternalAccess: () => void;
   setActiveStoreScope: (scope: StoreScope) => void;
+  loginAsAdmin: (pin: string) => { success: boolean; message: string };
+  loginAsStore: (storeId: string, pin: string) => { success: boolean; message: string };
+  logoutInternalAccess: () => void;
   addStore: (input: StoreInput) => { success: boolean; message: string };
   updateStore: (storeId: string, input: StoreInput) => { success: boolean; message: string };
   addEmployee: (input: EmployeeInput) => { success: boolean; message: string };
@@ -53,24 +44,17 @@ interface AdminDashboardContextType {
   markInventoryOutOfStock: (itemId: string) => void;
   saveOrderNote: (orderId: string, note: string) => void;
   getStoreName: (storeId: string) => string;
-  showIdleWarning: boolean;
-  idleCountdown: number;
-  dismissIdleWarning: () => void;
 }
 
 const STORAGE_KEYS = {
+  session: 'cultiv_admin_access_session_v1',
   stores: 'cultiv_admin_stores_v1',
   employees: 'cultiv_admin_employees_v2',
   inventory: 'cultiv_admin_inventory_v4',
   orderNotes: 'cultiv_admin_order_notes_v1',
-  session: 'cultiv_admin_access_session_v1',
   activeStoreScope: 'cultiv_admin_active_store_scope_v1',
   inventoryResetApplied: 'cultiv_admin_inventory_reset_applied_v1',
 } as const;
-
-const nowIso = () => new Date().toISOString();
-const SESSION_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
-const SESSION_WARNING_BEFORE_MS = 60 * 1000;
 
 const daysAgo = (days: number, hour = 9, minute = 0) => {
   const date = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
@@ -78,35 +62,29 @@ const daysAgo = (days: number, hour = 9, minute = 0) => {
   return date.toISOString();
 };
 
-const seedStores: StoreRecord[] = [
-  {
-    id: 'store-siddipet',
-    name: 'Siddipet Central',
-    city: 'Siddipet',
-    code: 'SID-CEN',
-    pin: '',
-    isActive: true,
-    createdAt: daysAgo(210),
-  },
-  {
-    id: 'store-hyderabad',
-    name: 'Banjara Hills',
-    city: 'Hyderabad',
-    code: 'HYD-BAN',
-    pin: '',
-    isActive: true,
-    createdAt: daysAgo(135),
-  },
-  {
-    id: 'store-warangal',
-    name: 'Warangal North',
-    city: 'Warangal',
-    code: 'WRG-NTH',
-    pin: '',
-    isActive: false,
-    createdAt: daysAgo(48),
-  },
-];
+const nowIso = () => new Date().toISOString();
+
+const isSixDigitPin = (value: string) => /^\d{6}$/.test(value.trim());
+
+const LEGACY_INTERNAL_STORE_PINS_BY_ID: Record<string, string[]> = {
+  'store-siddipet': ['240101', '502103'],
+  'store-hyderabad': ['240202', '500034'],
+  'store-warangal': ['240303', '506002'],
+};
+
+const seedStores: StoreRecord[] = CUSTOMER_STORE_METADATA.map((store) => ({
+  id: store.id,
+  name: store.name,
+  city: store.city,
+  code: store.code,
+  pin: ADMIN_STORE_ACCESS_PIN_BY_ID[store.id] ?? '000000',
+  isActive: store.isActive,
+  createdAt: store.id === 'store-siddipet'
+    ? daysAgo(210)
+    : store.id === 'store-hyderabad'
+      ? daysAgo(135)
+      : daysAgo(48),
+}));
 
 const seedEmployees: EmployeeRecord[] = [
   {
@@ -356,19 +334,6 @@ const seedInventory: InventoryItem[] = [
 
 const AdminDashboardContext = createContext<AdminDashboardContextType | undefined>(undefined);
 
-// ── Optional sync server layer ────────────────────────────────────────────────
-const SYNC_URL = ADMIN_INTERNAL_AUTH_SYNC_URL;
-const CLIENT_ID = typeof crypto !== 'undefined' ? crypto.randomUUID() : Math.random().toString(36).slice(2);
-const INTERNAL_AUTH_URL = ADMIN_INTERNAL_AUTH_URL;
-
-if (typeof window !== 'undefined' && !SYNC_URL) {
-  const runtimeWindow = window as Window & { __cultivSyncEnvWarningShown?: boolean };
-  if (!runtimeWindow.__cultivSyncEnvWarningShown) {
-    console.warn(ADMIN_INTERNAL_AUTH_MESSAGES.missingSyncUrlWarning);
-    runtimeWindow.__cultivSyncEnvWarningShown = true;
-  }
-}
-
 const createId = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
 
 const readStorage = <T,>(key: string, fallback: T): T => {
@@ -391,8 +356,6 @@ const getShiftHours = (shift: EmployeeShift) => {
   return Number(Math.max(0, hours).toFixed(2));
 };
 
-const isSixDigitPin = (value: string) => /^\d{6}$/.test(value.trim());
-
 const normalizeStoreCode = (value: string) => value.trim().toUpperCase().replace(/\s+/g, '-');
 
 const normalizeRole = (role: string): EmployeeRole => {
@@ -402,12 +365,34 @@ const normalizeRole = (role: string): EmployeeRole => {
   return 'kitchen';
 };
 
-const normalizeStores = (stores: StoreRecord[]) => stores.map((store) => ({
-  ...store,
-  city: store.city.trim(),
-  code: normalizeStoreCode(store.code),
-  pin: store.pin.trim(),
-}));
+const normalizeSession = (session: InternalAccessSession | null, stores: StoreRecord[]) => {
+  if (!session) return null;
+  if (session.role === 'owner') {
+    return session;
+  }
+  const store = stores.find((entry) => entry.id === session.storeId && entry.isActive);
+  return store ? session : null;
+};
+
+const normalizeStores = (stores: StoreRecord[]) => stores.map((store) => {
+  const seedStore = seedStores.find((s) => s.id === store.id);
+  const currentPin = typeof store.pin === 'string' ? store.pin.trim() : '';
+  const canonicalPin = seedStore?.pin ?? '000000';
+  const shouldRestoreCanonicalPin = Boolean(
+    seedStore
+      && (
+        !isSixDigitPin(currentPin)
+        || LEGACY_INTERNAL_STORE_PINS_BY_ID[store.id]?.includes(currentPin)
+      ),
+  );
+
+  return {
+    ...store,
+    city: store.city.trim(),
+    code: normalizeStoreCode(store.code),
+    pin: shouldRestoreCanonicalPin ? canonicalPin : currentPin,
+  };
+});
 
 const normalizeEmployees = (employees: EmployeeRecord[]) => employees.map((employee) => {
   const storeId = employee.storeId ?? DEFAULT_ORDER_STORE_ID;
@@ -436,15 +421,6 @@ const normalizeInventory = (items: InventoryItem[]) => items.map((item) => ({
   status: getInventoryStatus(Math.max(0, item.quantity), Math.max(0, item.threshold)),
   updatedAt: item.updatedAt ?? nowIso(),
 }));
-
-const normalizeSession = (session: InternalAccessSession | null, stores: StoreRecord[]) => {
-  if (!session) return null;
-  if (session.role === 'admin') {
-    return session;
-  }
-  const store = stores.find((entry) => entry.id === session.storeId && entry.isActive);
-  return store ? session : null;
-};
 
 const finalizeEmployeeDeactivation = (employee: EmployeeRecord): EmployeeRecord => {
   if (employee.status === 'off_shift') {
@@ -477,12 +453,8 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
   const [employees, setEmployees] = useState<EmployeeRecord[]>(() => normalizeEmployees(readStorage(STORAGE_KEYS.employees, seedEmployees)));
   const [inventory, setInventory] = useState<InventoryItem[]>(() => normalizeInventory(readStorage(STORAGE_KEYS.inventory, seedInventory)));
   const [orderNotes, setOrderNotes] = useState<AdminOrderNoteMap>(() => readStorage(STORAGE_KEYS.orderNotes, {}));
-  const [session, setSession] = useState<InternalAccessSession | null>(() => normalizeSession(readStorage(STORAGE_KEYS.session, null), seedStores));
   const [storedScope, setStoredScope] = useState<StoreScope>(() => readStorage(STORAGE_KEYS.activeStoreScope, 'all'));
-  const [showIdleWarning, setShowIdleWarning] = useState(false);
-  const [idleCountdown, setIdleCountdown] = useState(60);
-  const [serverStatus, setServerStatus] = useState<ServerStatus>('unknown');
-  const resetIdleTimerRef = useRef<() => void>(() => {});
+  const [session, setSession] = useState<InternalAccessSession | null>(() => normalizeSession(readStorage(STORAGE_KEYS.session, null), seedStores));
 
   useEffect(() => {
     const hasResetApplied = readStorage(STORAGE_KEYS.inventoryResetApplied, false);
@@ -512,182 +484,59 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
   }, [orderNotes]);
 
   useEffect(() => {
-    if (session) {
-      writeStorage(STORAGE_KEYS.session, session);
-      return;
-    }
-    localStorage.removeItem(STORAGE_KEYS.session);
-  }, [session]);
-
-  useEffect(() => {
     writeStorage(STORAGE_KEYS.activeStoreScope, storedScope);
   }, [storedScope]);
 
   useEffect(() => {
-    const normalized = normalizeSession(session, stores);
-    if (normalized?.role === 'store') {
-      setStoredScope(normalized.storeId ?? DEFAULT_ORDER_STORE_ID);
+    if (session) {
+      writeStorage(STORAGE_KEYS.session, session);
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.session);
     }
+  }, [session]);
+
+  useEffect(() => {
+    const normalized = normalizeSession(session, stores);
     if (normalized !== session) {
       setSession(normalized);
     }
   }, [session, stores]);
 
-  useEffect(() => {
-    if (!session) return;
-
-    let warningTimeoutId: number | undefined;
-    let logoutTimeoutId: number | undefined;
-    let countdownIntervalId: number | undefined;
-
-    const clearAll = () => {
-      if (warningTimeoutId !== undefined) window.clearTimeout(warningTimeoutId);
-      if (logoutTimeoutId !== undefined) window.clearTimeout(logoutTimeoutId);
-      if (countdownIntervalId !== undefined) window.clearInterval(countdownIntervalId);
-    };
-
-    const scheduleLogout = () => {
-      clearAll();
-      setShowIdleWarning(false);
-
-      warningTimeoutId = window.setTimeout(() => {
-        setShowIdleWarning(true);
-        setIdleCountdown(60);
-        countdownIntervalId = window.setInterval(() => {
-          setIdleCountdown((previous) => Math.max(0, previous - 1));
-        }, 1000);
-      }, SESSION_IDLE_TIMEOUT_MS - SESSION_WARNING_BEFORE_MS);
-
-      logoutTimeoutId = window.setTimeout(() => {
-        clearAll();
-        setShowIdleWarning(false);
-        setSession(null);
-        setStoredScope('all');
-      }, SESSION_IDLE_TIMEOUT_MS);
-    };
-
-    scheduleLogout();
-    resetIdleTimerRef.current = scheduleLogout;
-
-    const activityEvents: Array<keyof WindowEventMap> = ['pointerdown', 'keydown', 'scroll', 'touchstart'];
-    activityEvents.forEach((eventName) => window.addEventListener(eventName, scheduleLogout, { passive: true }));
-
-    return () => {
-      clearAll();
-      activityEvents.forEach((eventName) => window.removeEventListener(eventName, scheduleLogout));
-    };
-  }, [session]);
-
-  // ── Sync layer (only active when VITE_SYNC_SERVER_URL is set) ─────────────
-  const storesRef = useRef(stores);
-  const employeesRef = useRef(employees);
-  const inventoryRef = useRef(inventory);
-  useEffect(() => { storesRef.current = stores; });
-  useEffect(() => { employeesRef.current = employees; });
-  useEffect(() => { inventoryRef.current = inventory; });
-
-  useEffect(() => {
-    let active = true;
-
-    if (!SYNC_URL) {
-      setServerStatus('unknown');
-      return () => {
-        active = false;
-      };
+  const loginAsAdmin = (pin: string) => {
+    if (pin.trim() !== ADMIN_ACCESS_PIN) {
+      return { success: false, message: 'Owner PIN did not match.' };
     }
+    setSession({ role: 'owner', loggedInAt: nowIso() });
+    setStoredScope('all');
+    return { success: true, message: 'Owner access enabled.' };
+  };
 
-    const checkHealth = async () => {
-      try {
-        if (!ADMIN_INTERNAL_AUTH_HEALTH_URL) {
-          if (!active) return;
-          setServerStatus('unknown');
-          return;
-        }
+  const loginAsStore = (storeId: string, pin: string) => {
+    const store = stores.find((entry) => entry.id === storeId);
+    if (!store || !store.isActive) {
+      return { success: false, message: 'Select an active store.' };
+    }
+    if (store.pin !== pin.trim()) {
+      return { success: false, message: 'Store PIN did not match.' };
+    }
+    setSession({ role: 'store', storeId: store.id, loggedInAt: nowIso() });
+    setStoredScope(store.id);
+    return { success: true, message: `${store.name} workspace is ready.` };
+  };
 
-        const response = await fetch(ADMIN_INTERNAL_AUTH_HEALTH_URL, { signal: AbortSignal.timeout(ADMIN_INTERNAL_AUTH_TIMEOUTS.healthMs) });
-        const bodyText = await response.text();
-        let body: { ok?: boolean } | null = null;
-        try {
-          body = JSON.parse(bodyText) as { ok?: boolean };
-        } catch {
-          body = null;
-        }
-
-        if (!active) return;
-        setServerStatus(response.ok && body?.ok === true ? 'online' : 'offline');
-      } catch {
-        if (!active) return;
-        setServerStatus('offline');
-      }
-    };
-
-    checkHealth();
-    const intervalId = window.setInterval(checkHealth, ADMIN_INTERNAL_AUTH_TIMEOUTS.healthPollMs);
-    return () => {
-      active = false;
-      window.clearInterval(intervalId);
-    };
-  }, []);
-
-  // Initial load from server (overrides localStorage if server has data)
-  useEffect(() => {
-    if (!SYNC_URL) return;
-    fetch(`${SYNC_URL}/api/state`, { signal: AbortSignal.timeout(4000) })
-      .then((r) => r.json())
-      .then((s: Record<string, unknown>) => {
-        if (Array.isArray(s.stores) && s.stores.length > 0) setStores(normalizeStores(s.stores as StoreRecord[]));
-        if (Array.isArray(s.employees) && s.employees.length > 0) setEmployees(normalizeEmployees(s.employees as EmployeeRecord[]));
-        if (Array.isArray(s.inventory) && s.inventory.length > 0) setInventory(normalizeInventory(s.inventory as InventoryItem[]));
-      })
-      .catch(() => {}); // silent fail — localStorage is always the fallback
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Outbound debounced sync (1.2s after any state change)
-  useEffect(() => {
-    if (!SYNC_URL) return;
-    const id = window.setTimeout(() => {
-      fetch(`${SYNC_URL}/api/state`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'X-Client-ID': CLIENT_ID },
-        body: JSON.stringify({ stores, employees, inventory }),
-      }).catch(() => {});
-    }, 1200);
-    return () => window.clearTimeout(id);
-  }, [stores, employees, inventory]);
-
-  // SSE subscription — receive live updates from other clients
-  useEffect(() => {
-    if (!SYNC_URL) return;
-    const es = new EventSource(`${SYNC_URL}/api/events`);
-    es.onmessage = (event) => {
-      try {
-        const s = JSON.parse(event.data) as Record<string, unknown>;
-        if (s._sourceClientId === CLIENT_ID) return; // own echo — skip
-        if (Array.isArray(s.stores) && JSON.stringify(s.stores) !== JSON.stringify(storesRef.current)) {
-          setStores(normalizeStores(s.stores as StoreRecord[]));
-        }
-        if (Array.isArray(s.employees) && JSON.stringify(s.employees) !== JSON.stringify(employeesRef.current)) {
-          setEmployees(normalizeEmployees(s.employees as EmployeeRecord[]));
-        }
-        if (Array.isArray(s.inventory) && JSON.stringify(s.inventory) !== JSON.stringify(inventoryRef.current)) {
-          setInventory(normalizeInventory(s.inventory as InventoryItem[]));
-        }
-      } catch {
-        // malformed SSE payload — ignore
-      }
-    };
-    return () => es.close();
-  }, []); // empty deps — CLIENT_ID is module-level, refs don't need to be listed
+  const logoutInternalAccess = () => {
+    setSession(null);
+    setStoredScope('all');
+  };
 
   const permissions = useMemo<AdminPermissions>(() => ({
-    canManageStores: session?.role === 'admin',
-    canManageEmployees: session?.role === 'admin',
-    canSwitchStores: session?.role === 'admin',
-    canViewAllStores: session?.role === 'admin',
+    canManageStores: session?.role === 'owner',
+    canManageEmployees: session?.role === 'owner',
+    canSwitchStores: session?.role === 'owner',
+    canViewAllStores: session?.role === 'owner',
   }), [session]);
 
-  const activeStoreScope = session?.role === 'store' ? (session.storeId ?? DEFAULT_ORDER_STORE_ID) : storedScope;
+  const activeStoreScope = storedScope;
   const activeStore = activeStoreScope === 'all' ? null : stores.find((store) => store.id === activeStoreScope) ?? null;
 
   const matchesScope = (storeId: string) => activeStoreScope === 'all' || storeId === activeStoreScope;
@@ -696,77 +545,6 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
   const scopedInventory = useMemo(() => inventory.filter((item) => matchesScope(item.storeId)), [activeStoreScope, inventory]);
 
   const getStoreName = (storeId: string) => stores.find((store) => store.id === storeId)?.name ?? 'Unknown store';
-
-  const verifyInternalAccess = async (payload: InternalAuthRequestPayload): Promise<InternalAuthVerificationResult> => {
-    if (!INTERNAL_AUTH_URL) {
-      return {
-        ok: false,
-        message: ADMIN_INTERNAL_AUTH_MESSAGES.missingSyncUrl,
-        reason: 'validation' as const,
-      };
-    }
-
-    try {
-      const result = await requestInternalAuth(
-        INTERNAL_AUTH_URL,
-        payload,
-        ADMIN_INTERNAL_AUTH_TIMEOUTS.requestMs,
-        {
-          accessGranted: ADMIN_INTERNAL_AUTH_MESSAGES.accessGranted,
-          verificationFailed: ADMIN_INTERNAL_AUTH_MESSAGES.verificationFailed,
-        },
-      );
-      setServerStatus('online');
-      return result;
-    } catch {
-      setServerStatus('offline');
-      return {
-        ok: false,
-        message: ADMIN_INTERNAL_AUTH_MESSAGES.unreachableServer,
-        reason: 'validation' as const,
-      };
-    }
-  };
-
-  const loginAsAdmin = async (pin: string) => {
-    const result = await verifyInternalAccess({ mode: 'owner', pin });
-    if (!result.ok || result.role !== 'admin') {
-      return {
-        success: false,
-        message: result.message,
-        reason: result.reason ?? 'invalid_credentials',
-      };
-    }
-
-    setSession({ role: 'admin', loggedInAt: nowIso() });
-    setStoredScope('all');
-    return { success: true, message: result.message };
-  };
-
-  const loginAsStore = async (storeId: string, pin: string) => {
-    const store = stores.find((entry) => entry.id === storeId);
-    if (!store || !store.isActive) {
-      return { success: false, message: 'Select an active store.', reason: 'validation' as const };
-    }
-
-    const result = await verifyInternalAccess({ mode: 'store', storeId, pin });
-    if (!result.ok || result.role !== 'store') {
-      return {
-        success: false,
-        message: result.message,
-        reason: result.reason ?? 'invalid_credentials',
-      };
-    }
-
-    setSession({ role: 'store', storeId: store.id, loggedInAt: nowIso() });
-    setStoredScope(store.id);
-    return { success: true, message: result.message };
-  };
-
-  const logoutInternalAccess = () => {
-    setSession(null);
-    setStoredScope('all');
-  };
 
   const setActiveStoreScope = (scope: StoreScope) => {
     if (!permissions.canSwitchStores) return;
@@ -830,10 +608,6 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
         }
         : store
     )));
-
-    if (!input.isActive && session?.role === 'store' && session.storeId === storeId) {
-      setSession(null);
-    }
 
     return { success: true, message: 'Store updated.' };
   };
@@ -971,26 +745,21 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     }));
   };
 
-  const dismissIdleWarning = useCallback(() => {
-    resetIdleTimerRef.current();
-  }, []);
-
   const value: AdminDashboardContextType = {
+    session,
     stores,
     employees,
     inventory,
     scopedEmployees,
     scopedInventory,
     orderNotes,
-    session,
     permissions,
-    serverStatus,
     activeStoreScope,
     activeStore,
+    setActiveStoreScope,
     loginAsAdmin,
     loginAsStore,
     logoutInternalAccess,
-    setActiveStoreScope,
     addStore,
     updateStore,
     addEmployee,
@@ -1003,9 +772,6 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     markInventoryOutOfStock,
     saveOrderNote,
     getStoreName,
-    showIdleWarning,
-    idleCountdown,
-    dismissIdleWarning,
   };
 
   return <AdminDashboardContext.Provider value={value}>{children}</AdminDashboardContext.Provider>;

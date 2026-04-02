@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import { writeFileSync } from 'node:fs';
 
 const base = 'http://127.0.0.1:5173';
+const ADMIN_OWNER_PIN = process.env.ADMIN_OWNER_PIN ?? '240620';
 const result = {
   login: {},
   orders: {},
@@ -18,11 +19,10 @@ const page = await browser.newPage({ viewport: { width: 1366, height: 900 } });
 
 try {
   await page.goto(`${base}/admin/summary`, { waitUntil: 'domcontentloaded' });
-  await page.getByRole('button', { name: 'Owner Login' }).click();
-  await page.getByPlaceholder('6-digit owner PIN').fill('240620');
-  await page.getByRole('button', { name: 'Open owner panel' }).click();
+  await page.getByTestId('owner-pin-input').fill(ADMIN_OWNER_PIN);
+  await page.getByTestId('owner-login-button').click();
   await page.waitForURL(/\/admin\/summary/);
-  result.login.ownerLogin = 'pass';
+  result.login.ownerPinLogin = 'pass';
 
   const contextText = await page.locator('text=Store:').first().textContent();
   const roleVisible = await page.locator('text=Role:').first().isVisible();

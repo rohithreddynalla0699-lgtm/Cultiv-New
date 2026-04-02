@@ -827,7 +827,7 @@ export async function hydrateMenuCatalogFromSupabase() {
     groupedByCategory.set(item.category_slug, list);
   }
 
-  const subcategoryByItemId = Object.fromEntries(visibleMenuItems.map((item) => [item.id, item.subcategory_slug]));
+  const subcategoryByItemId = Object.fromEntries(visibleMenuItems.map((item) => [item.menu_item_id, item.subcategory_slug]));
 
   const nextCategories: MenuCategoryData[] = CATEGORY_ORDER
     .filter((slug) => groupedByCategory.has(slug))
@@ -846,14 +846,14 @@ export async function hydrateMenuCatalogFromSupabase() {
         description: meta.description,
         image: meta.image,
         items: categoryItems.map((row) => {
-          const fallback = ITEM_META_FALLBACK[row.id] ?? {
+          const fallback = ITEM_META_FALLBACK[row.menu_item_id] ?? {
             description: '',
             calories: 0,
             protein: 0,
             image: meta.image,
           };
           return {
-            id: row.id,
+            id: row.menu_item_id,
             name: row.name,
             description: fallback.description,
             calories: fallback.calories,
@@ -869,12 +869,12 @@ export async function hydrateMenuCatalogFromSupabase() {
   replaceArray(MENU_CATEGORIES, nextCategories);
   replaceObject(CATEGORY_BY_SLUG, Object.fromEntries(nextCategories.map((category) => [category.slug, category])) as Record<string, MenuCategoryData>);
 
-  const groupsById = Object.fromEntries(payload.optionGroups.map((group) => [group.id, group]));
+  const groupsById = Object.fromEntries(payload.optionGroups.map((group) => [group.option_group_id, group]));
   const optionItemsByGroupId = payload.optionItems
     .reduce((acc, item) => {
-      const list = acc.get(item.group_id) ?? [];
+      const list = acc.get(item.option_group_id) ?? [];
       list.push(item);
-      acc.set(item.group_id, list);
+      acc.set(item.option_group_id, list);
       return acc;
     }, new Map<string, typeof payload.optionItems>());
 
@@ -898,9 +898,9 @@ export async function hydrateMenuCatalogFromSupabase() {
       type: group.selection_type,
       required: group.is_required ?? requiredFallback,
       ingredients: optionItems.map((item) => {
-        const fallback = INGREDIENT_META_FALLBACK[item.id] ?? { calories: 0, protein: 0 };
+        const fallback = INGREDIENT_META_FALLBACK[item.option_item_id] ?? { calories: 0, protein: 0 };
         return {
-          id: item.id,
+          id: item.option_item_id,
           name: item.name,
           description: fallback.description,
           calories: fallback.calories,
@@ -976,9 +976,9 @@ export async function hydrateMenuCatalogFromSupabase() {
   const nextDrinks: DrinkItem[] = visibleMenuItems
     .filter((item) => item.category_slug === 'drinks-juices')
     .map((row) => {
-      const existing = DRINK_ITEMS.find((drink) => drink.id === row.id);
-      const section = inferDrinkSection(row.id, row.subcategory_slug);
-      const fallback = ITEM_META_FALLBACK[row.id] ?? {
+      const existing = DRINK_ITEMS.find((drink) => drink.id === row.menu_item_id);
+      const section = inferDrinkSection(row.menu_item_id, row.subcategory_slug);
+      const fallback = ITEM_META_FALLBACK[row.menu_item_id] ?? {
         description: existing?.description ?? '',
         calories: existing?.calories ?? 0,
         protein: existing?.protein ?? 0,
@@ -986,14 +986,14 @@ export async function hydrateMenuCatalogFromSupabase() {
       };
 
       return {
-        id: row.id,
+        id: row.menu_item_id,
         name: row.name,
         description: fallback.description,
         calories: fallback.calories,
         protein: fallback.protein,
         price: row.base_price,
         image: fallback.image,
-        badge: ITEM_META_FALLBACK[row.id]?.badge,
+        badge: ITEM_META_FALLBACK[row.menu_item_id]?.badge,
         section,
         sectionChip: inferDrinkChip(section),
         isDispenser: section === 'dispenser',
@@ -1007,9 +1007,9 @@ export async function hydrateMenuCatalogFromSupabase() {
 
   const nextItemOptionGroups = payload.itemOptionGroupMap
     .reduce((acc, row) => {
-      const list = acc.get(row.item_id) ?? [];
+      const list = acc.get(row.menu_item_id) ?? [];
       list.push(row);
-      acc.set(row.item_id, list);
+      acc.set(row.menu_item_id, list);
       return acc;
     }, new Map<string, typeof payload.itemOptionGroupMap>())
     ;
@@ -1019,7 +1019,7 @@ export async function hydrateMenuCatalogFromSupabase() {
       itemId,
       rows
         .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-        .map((row) => row.group_id),
+        .map((row) => row.option_group_id),
     ]),
   ) as Record<string, string[]>;
 

@@ -2,10 +2,6 @@ export type EmployeeShiftStatus = 'on_shift' | 'off_shift';
 
 export type EmployeeRole = 'kitchen' | 'counter' | 'manager';
 
-export type InternalAccessRole = 'admin' | 'store';
-
-export type StoreScope = 'all' | string;
-
 export interface StoreRecord {
   id: string;
   name: string;
@@ -73,6 +69,8 @@ export type AdminOrderBoardStatus = 'new' | 'preparing' | 'ready' | 'picked_up';
 export interface AdminOrderNoteMap {
   [orderId: string]: string;
 }
+
+export type InternalAccessRole = 'owner' | 'store';
 
 export interface InternalAccessSession {
   role: InternalAccessRole;

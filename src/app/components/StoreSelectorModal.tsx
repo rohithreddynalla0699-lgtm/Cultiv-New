@@ -6,7 +6,8 @@ export interface StoreSelectorItem {
   id: string;
   name: string;
   city: string;
-  pin: string;
+  code: string;
+  zipCode: string;
   isActive: boolean;
 }
 
@@ -48,14 +49,14 @@ export function StoreSelectorModal({
   onClose,
   onSelectStore,
 }: StoreSelectorModalProps) {
-  const [pinQuery, setPinQuery] = useState('');
-  const [appliedPinFilter, setAppliedPinFilter] = useState('');
+  const [zipQuery, setZipQuery] = useState('');
+  const [appliedZipFilter, setAppliedZipFilter] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
-      setPinQuery('');
-      setAppliedPinFilter('');
+      setZipQuery('');
+      setAppliedZipFilter('');
       setFeedback(null);
       return;
     }
@@ -85,13 +86,13 @@ export function StoreSelectorModal({
   }, [isOpen, onClose]);
 
   const filteredStores = useMemo(() => {
-    if (!appliedPinFilter.trim()) {
+    if (!appliedZipFilter.trim()) {
       return stores;
     }
 
-    const normalized = appliedPinFilter.trim();
-    return stores.filter((store) => store.pin.includes(normalized));
-  }, [appliedPinFilter, stores]);
+    const normalized = appliedZipFilter.trim();
+    return stores.filter((store) => store.zipCode.includes(normalized));
+  }, [appliedZipFilter, stores]);
 
   const handleUseLocation = () => {
     if (!navigator.geolocation) {
@@ -127,24 +128,24 @@ export function StoreSelectorModal({
         setFeedback(`Nearest store selected: ${nearest.name}`);
       },
       () => {
-        setFeedback('Location access is blocked. You can still select using pincode search.');
+        setFeedback('Location access is blocked. You can still select using zip code search.');
       },
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 120000 },
     );
   };
 
-  const handlePinSearch = () => {
-    if (!pinQuery.trim()) {
-      setAppliedPinFilter('');
-      setFeedback('Enter a pincode to search stores.');
+  const handleZipSearch = () => {
+    if (!zipQuery.trim()) {
+      setAppliedZipFilter('');
+      setFeedback('Enter a zip code to search stores.');
       return;
     }
 
-    setAppliedPinFilter(pinQuery.trim());
+    setAppliedZipFilter(zipQuery.trim());
 
-    const match = stores.find((store) => store.pin.includes(pinQuery.trim()) && store.isActive);
+    const match = stores.find((store) => store.zipCode.includes(zipQuery.trim()) && store.isActive);
     if (!match) {
-      setFeedback('No active store found for this pincode yet.');
+      setFeedback('No active store found for this zip code yet.');
       return;
     }
 
@@ -203,7 +204,7 @@ export function StoreSelectorModal({
               >
                 <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary/80">Delivery Store</p>
                 <h2 className="mt-1 text-xl font-semibold text-foreground sm:text-2xl">Select your nearest CULTIV store</h2>
-                <p className="mt-1 text-sm text-foreground/65">Use your location or search with pincode. You can switch anytime before checkout.</p>
+                <p className="mt-1 text-sm text-foreground/65">Use your location or search with zip code. You can switch anytime before checkout.</p>
               </motion.div>
 
               <motion.div
@@ -227,14 +228,14 @@ export function StoreSelectorModal({
                     type="text"
                     inputMode="numeric"
                     maxLength={6}
-                    value={pinQuery}
-                    onChange={(event) => setPinQuery(event.target.value.replace(/\D/g, ''))}
-                    placeholder="Search by pincode"
+                    value={zipQuery}
+                    onChange={(event) => setZipQuery(event.target.value.replace(/\D/g, ''))}
+                    placeholder="Search by zip code"
                     className="w-full bg-transparent text-sm text-foreground outline-none placeholder:text-foreground/45"
                   />
                   <button
                     type="button"
-                    onClick={handlePinSearch}
+                    onClick={handleZipSearch}
                     className="rounded-xl bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-transform hover:scale-[1.03]"
                   >
                     Find
@@ -265,7 +266,7 @@ export function StoreSelectorModal({
               >
                 {filteredStores.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-black/15 bg-white/80 px-4 py-5 text-sm text-foreground/65">
-                    No stores found for this pincode.
+                    No stores found for this zip code.
                   </div>
                 ) : (
                   filteredStores.map((store, index) => {
@@ -290,7 +291,7 @@ export function StoreSelectorModal({
                       >
                         <div>
                           <p className="text-sm font-semibold text-foreground">{store.name}</p>
-                          <p className="mt-0.5 text-xs text-foreground/65">{store.city} · {store.pin}</p>
+                          <p className="mt-0.5 text-xs text-foreground/65">{store.city} · {store.zipCode}</p>
                           <div className="mt-1 flex items-center gap-2">
                             <span
                               className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] ${

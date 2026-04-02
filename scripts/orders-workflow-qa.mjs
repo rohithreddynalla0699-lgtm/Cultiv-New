@@ -1,5 +1,7 @@
 import { chromium } from 'playwright';
 
+const ADMIN_OWNER_PIN = process.env.ADMIN_OWNER_PIN ?? '240620';
+
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1366, height: 900 } });
 
@@ -61,9 +63,8 @@ await page.evaluate((orders) => {
 ]);
 
 await page.reload({ waitUntil: 'domcontentloaded' });
-await page.getByRole('button', { name: 'Owner Login' }).click();
-await page.getByPlaceholder('6-digit owner PIN').fill('240620');
-await page.getByRole('button', { name: 'Open owner panel' }).click();
+await page.getByTestId('owner-pin-input').fill(ADMIN_OWNER_PIN);
+await page.getByTestId('owner-login-button').click();
 await page.locator('text=Role:').first().waitFor({ timeout: 5000 });
 
 const nav = page.locator('aside');

@@ -4,19 +4,19 @@ export interface StoreLocatorStore {
   id: string;
   name: string;
   city: string;
-  pin: string;
+  code: string;
+  zipCode: string;
   isActive: boolean;
 }
 
-export const ADMIN_STORES_STORAGE_KEY = 'cultiv_admin_stores_v1';
 export const SELECTED_STORE_STORAGE_KEY = 'cultiv_selected_store_id_v1';
 const STORE_CHANGED_EVENT = 'cultiv:store-changed';
 const OPEN_SELECTOR_EVENT = 'cultiv:open-store-selector';
 
-const FALLBACK_STORES: StoreLocatorStore[] = [
-  { id: 'store-siddipet', name: 'Siddipet Central', city: 'Siddipet', pin: '', isActive: true },
-  { id: 'store-hyderabad', name: 'Banjara Hills', city: 'Hyderabad', pin: '', isActive: true },
-  { id: 'store-warangal', name: 'Warangal North', city: 'Warangal', pin: '', isActive: false },
+export const CUSTOMER_STORE_METADATA: StoreLocatorStore[] = [
+  { id: 'store-siddipet', name: 'Siddipet Central', city: 'Siddipet', code: 'SID-CEN', zipCode: '502103', isActive: true },
+  { id: 'store-hyderabad', name: 'Banjara Hills', city: 'Hyderabad', code: 'HYD-BAN', zipCode: '500034', isActive: true },
+  { id: 'store-warangal', name: 'Warangal North', city: 'Warangal', code: 'WRG-NTH', zipCode: '506002', isActive: false },
 ];
 
 function isBrowser() {
@@ -24,31 +24,9 @@ function isBrowser() {
 }
 
 export function loadStores(): StoreLocatorStore[] {
-  if (!isBrowser()) {
-    return FALLBACK_STORES;
-  }
-
-  try {
-    const raw = localStorage.getItem(ADMIN_STORES_STORAGE_KEY);
-    if (!raw) {
-      return FALLBACK_STORES;
-    }
-
-    const parsed = JSON.parse(raw) as Array<Partial<StoreLocatorStore>>;
-    const normalized = parsed
-      .filter((store) => Boolean(store.id) && Boolean(store.name))
-      .map((store) => ({
-        id: store.id as string,
-        name: store.name as string,
-        city: store.city ?? 'Store City',
-        pin: typeof store.pin === 'string' ? store.pin : '',
-        isActive: store.isActive ?? true,
-      }));
-
-    return normalized.length > 0 ? normalized : FALLBACK_STORES;
-  } catch {
-    return FALLBACK_STORES;
-  }
+  // Store metadata source-of-truth is static app config, not mutable admin cache.
+  // This prevents stale admin localStorage from regressing customer-facing store details.
+  return CUSTOMER_STORE_METADATA;
 }
 
 export function loadSelectedStoreId(stores = loadStores()) {
@@ -63,7 +41,7 @@ export function loadSelectedStoreId(stores = loadStores()) {
 
 export function getSelectedStore(stores = loadStores()) {
   const selectedStoreId = loadSelectedStoreId(stores);
-  return stores.find((store) => store.id === selectedStoreId) ?? stores[0] ?? FALLBACK_STORES[0];
+  return stores.find((store) => store.id === selectedStoreId) ?? stores[0] ?? CUSTOMER_STORE_METADATA[0];
 }
 
 export function setSelectedStoreId(storeId: string, stores = loadStores()) {

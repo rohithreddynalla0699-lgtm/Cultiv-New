@@ -7,9 +7,14 @@ const APP_PORT = Number(process.env.APP_PORT ?? 4176);
 const SYNC_URL = `http://127.0.0.1:${SYNC_PORT}`;
 const BASE_URL = `http://127.0.0.1:${APP_PORT}`;
 
-const ADMIN_PIN = '240620';
 const CUSTOMER_EMAIL = 'member@cultiv.app';
 const CUSTOMER_PHONE = '9876543210';
+const ADMIN_OWNER_PIN = process.env.ADMIN_OWNER_PIN ?? '240620';
+const STORE_PIN_BY_ID = {
+  'store-siddipet': process.env.STORE_PIN_SIDDIPET ?? '111111',
+  'store-hyderabad': process.env.STORE_PIN_HYDERABAD ?? '222222',
+  'store-warangal': process.env.STORE_PIN_WARANGAL ?? '333333',
+};
 
 const waitForUrl = async (url, timeoutMs = 30000) => {
   const started = Date.now();
@@ -26,14 +31,14 @@ const waitForUrl = async (url, timeoutMs = 30000) => {
 };
 
 const seedStores = async (page) => {
-  await page.evaluate(() => {
+  await page.evaluate((storePins) => {
     localStorage.setItem('cultiv_admin_stores_v1', JSON.stringify([
       {
         id: 'store-siddipet',
         name: 'Siddipet Central',
         city: 'Siddipet',
         code: 'SID-CEN',
-        pin: '240101',
+        pin: storePins['store-siddipet'],
         isActive: true,
         createdAt: new Date().toISOString(),
       },
@@ -42,12 +47,12 @@ const seedStores = async (page) => {
         name: 'Banjara Hills',
         city: 'Hyderabad',
         code: 'HYD-BAN',
-        pin: '240202',
+        pin: storePins['store-hyderabad'],
         isActive: true,
         createdAt: new Date().toISOString(),
       },
     ]));
-  });
+  }, STORE_PIN_BY_ID);
 };
 
 const loginCustomerByStorage = async (page) => {
@@ -124,7 +129,7 @@ const loginAdminOwner = async (page) => {
     await page.goto(`${BASE_URL}/admin/summary`, { waitUntil: 'domcontentloaded' });
   }
 
-  await page.getByTestId('owner-pin-input').fill(ADMIN_PIN);
+  await page.getByTestId('owner-pin-input').fill(ADMIN_OWNER_PIN);
   await page.getByTestId('owner-login-button').click();
   await page.waitForSelector('[data-testid="admin-store-scope"]', { timeout: 5000 });
 };
