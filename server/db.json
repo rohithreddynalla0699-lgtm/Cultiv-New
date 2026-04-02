@@ -393,7 +393,7 @@
       ]
     }
   ],
-  "_updatedAt": "2026-04-02T00:35:27.646Z",
+  "_updatedAt": "2026-04-02T01:20:53.638Z",
   "_sourceClientId": "675828f4-50fe-45dc-8f7a-52c125ed8653",
   "stores": [
     {
@@ -431,7 +431,7 @@
           "employeeId": "emp-1",
           "storeId": "store-siddipet",
           "loginAt": "2026-03-31T16:02:00.000Z",
-          "totalHoursWorked": 32.56
+          "totalHoursWorked": 33.31
         },
         {
           "id": "shift-1b",
@@ -458,7 +458,7 @@
           "employeeId": "emp-2",
           "storeId": "store-siddipet",
           "loginAt": "2026-03-31T17:15:00.000Z",
-          "totalHoursWorked": 31.34
+          "totalHoursWorked": 32.1
         }
       ]
     },

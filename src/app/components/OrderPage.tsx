@@ -960,8 +960,8 @@ export function OrderPage() {
         category: 'Central Ordering',
         storeId: selectedStoreId,
         items: [
-          ...cartLines.map((line, index) => ({
-            id: `${line.itemId}-${index}`,
+          ...cartLines.map((line) => ({
+            id: line.itemId,
             category: line.categoryName,
             title: line.title,
             selections: line.selections ?? [],

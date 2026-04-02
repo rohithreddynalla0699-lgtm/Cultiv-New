@@ -357,31 +357,96 @@ const buildSelectionSnapshotRows = (orderItemId: string, selections: OrderItem['
   });
 };
 
+const ORDER_NUMBER_PREFIX = 'CULTIV';
+const ORDER_NUMBER_SEQUENCE_LENGTH = 4;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+const formatOrderNumberDate = (date: Date) => {
+  const yy = String(date.getUTCFullYear()).slice(-2);
+  const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const dd = String(date.getUTCDate()).padStart(2, '0');
+  return `${yy}${mm}${dd}`;
+};
+
+const getUtcDayRange = (date: Date) => {
+  const start = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0));
+  const end = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1, 0, 0, 0, 0));
+  return {
+    startIso: start.toISOString(),
+    endIso: end.toISOString(),
+  };
+};
+
+const generateOrderNumber = async () => {
+  const now = new Date();
+  const dateToken = formatOrderNumberDate(now);
+  const { startIso, endIso } = getUtcDayRange(now);
+
+  const { count, error } = await supabase
+    .from('orders')
+    .select('id', { count: 'exact', head: true })
+    .gte('created_at', startIso)
+    .lt('created_at', endIso);
+
+  if (error) {
+    throw new Error(`Could not generate order number: ${error.message}`);
+  }
+
+  const sequence = (count ?? 0) + 1;
+  const paddedSequence = String(sequence).padStart(ORDER_NUMBER_SEQUENCE_LENGTH, '0');
+  return `${ORDER_NUMBER_PREFIX}${dateToken}${paddedSequence}`;
+};
+
+const resolveMenuItemId = (itemId: string) => {
+  const normalized = itemId.trim();
+  if (!normalized) return null;
+  return UUID_PATTERN.test(normalized) ? normalized : null;
+};
+
 const persistOrderToSupabase = async (order: Order): Promise<boolean> => {
   try {
     const sourceChannel: SupabaseSourceChannel = order.source;
 
-    const { data: orderInsert, error: orderError } = await supabase
-      .from('orders')
-      .insert({
-        order_type: resolveSupabaseOrderType(order.orderType, sourceChannel),
-        source_channel: sourceChannel,
-        status: order.status,
-        store_id: order.storeId ?? DEFAULT_ORDER_STORE_ID,
-        customer_name: order.fullName,
-        customer_phone: order.phone,
-        customer_email: order.email,
-        payment_method: order.paymentMethod ?? null,
-        notes: null,
-        subtotal: Math.round(order.subtotal),
-        discount_amount: Math.round(order.rewardDiscount),
-        total: Math.round(order.total),
-      })
-      .select('id')
-      .single();
+    let orderInsert: { id: string } | null = null;
+    let orderInsertError: { code?: string; message?: string } | null = null;
 
-    if (orderError || !orderInsert?.id) {
-      throw new Error(orderError?.message ?? 'Could not create orders row.');
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const orderNumber = await generateOrderNumber();
+      const { data, error } = await supabase
+        .from('orders')
+        .insert({
+          order_type: resolveSupabaseOrderType(order.orderType, sourceChannel),
+          source_channel: sourceChannel,
+          status: order.status,
+          store_id: order.storeId ?? DEFAULT_ORDER_STORE_ID,
+          customer_name: order.fullName,
+          customer_phone: order.phone,
+          customer_email: order.email,
+          payment_method: order.paymentMethod ?? null,
+          notes: null,
+          subtotal: Math.round(order.subtotal),
+          discount_amount: Math.round(order.rewardDiscount),
+          total: Math.round(order.total),
+          order_number: orderNumber,
+        })
+        .select('id')
+        .single();
+
+      if (!error && data?.id) {
+        orderInsert = data as { id: string };
+        orderInsertError = null;
+        break;
+      }
+
+      orderInsertError = error ? { code: error.code, message: error.message } : { message: 'Could not create orders row.' };
+
+      if (error?.code !== '23505') {
+        break;
+      }
+    }
+
+    if (!orderInsert?.id) {
+      throw new Error(orderInsertError?.message ?? 'Could not create orders row.');
     }
 
     const supabaseOrderId = orderInsert.id as string;
@@ -393,7 +458,7 @@ const persistOrderToSupabase = async (order: Order): Promise<boolean> => {
           .from('order_items')
           .insert({
             order_id: supabaseOrderId,
-            menu_item_id: null,
+            menu_item_id: resolveMenuItemId(item.id),
             item_name_snapshot: item.title,
             category_snapshot: item.category,
             unit_price_snapshot: Math.round(item.price),
