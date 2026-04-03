@@ -2,8 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { ADMIN_STORE_ACCESS_PIN_BY_ID, DEFAULT_ORDER_STORE_ID } from '../constants/admin';
 import { CUSTOMER_STORE_METADATA } from '../data/storeLocator';
 import { INVENTORY_MASTER_LIST } from '../constants/inventoryCatalog';
-// @ts-ignore - Supabase client is defined in JS module.
-import { supabase } from '../../lib/supabase';
+import { loginInternal } from '../lib/internalOpsApi';
 import type {
   AdminOrderNoteMap,
   AdminPermissions,
@@ -356,26 +355,6 @@ const readStorage = <T,>(key: string, fallback: T): T => {
   }
 };
 
-interface InternalUserAccessRow {
-  id: string;
-  role_id: string;
-  full_name: string;
-  pin_hash: string;
-  store_id: string | null;
-  is_active: boolean;
-  roles: {
-    role_key: 'owner' | 'admin' | 'store';
-    role_name: string;
-    scope_type: 'global' | 'store';
-    role_permissions: Array<{
-      is_allowed: boolean;
-      permissions: {
-        permission_key: string;
-      } | null;
-    }>;
-  };
-}
-
 const PERMISSION_KEY_TO_FLAG = {
   can_manage_stores: 'canManageStores',
   can_manage_employees: 'canManageEmployees',
@@ -418,6 +397,7 @@ const toRoleLabel = (roleKey: string) => roleKey.charAt(0).toUpperCase() + roleK
 const createAccessSession = (params: {
   userId: string;
   roleId: string;
+  internalSessionToken?: string;
   roleKey: InternalAccessSession['roleKey'];
   roleName?: string;
   permissionKeys: string[];
@@ -428,6 +408,7 @@ const createAccessSession = (params: {
   const {
     userId,
     roleId,
+    internalSessionToken,
     roleKey,
     roleName,
     permissionKeys,
@@ -442,6 +423,7 @@ const createAccessSession = (params: {
     sessionId: createId('access-session'),
     userId,
     roleId,
+    internalSessionToken: internalSessionToken?.trim() ?? '',
     roleKey,
     roleName: roleName?.trim() || toRoleLabel(roleKey),
     permissionKeys: Array.from(new Set(resolvedPermissionKeys)),
@@ -449,44 +431,6 @@ const createAccessSession = (params: {
     scopeStoreId,
     loggedInAt,
   } satisfies InternalAccessSession;
-};
-
-const fetchInternalUserByRoleAndPin = async (params: {
-  roleKey: 'owner' | 'admin' | 'store';
-  pin: string;
-  storeCode?: string;
-}) => {
-  const { roleKey, pin, storeCode } = params;
-  const normalizedPin = pin.trim();
-
-  let query = supabase
-    .from('internal_users')
-    .select('id, role_id, full_name, pin_hash, store_id, is_active, roles!inner(role_key, role_name, scope_type, role_permissions(is_allowed, permissions(permission_key)))')
-    .eq('is_active', true)
-    .eq('roles.role_key', roleKey)
-    .eq('pin_hash', normalizedPin)
-    .limit(1);
-
-  if (roleKey === 'store') {
-    query = query.select('id, role_id, full_name, pin_hash, store_id, is_active, roles!inner(role_key, role_name, scope_type, role_permissions(is_allowed, permissions(permission_key))), stores!inner(code)');
-    query = query.eq('stores.code', storeCode ?? '');
-  }
-
-  const { data, error } = await query.maybeSingle();
-  if (error) {
-    return { user: null, error };
-  }
-
-  return { user: (data as InternalUserAccessRow | null), error: null };
-};
-
-const getPermissionKeysFromAccessRow = (user: InternalUserAccessRow) => {
-  const permissionKeys = (user.roles.role_permissions ?? [])
-    .filter((entry) => entry.is_allowed)
-    .map((entry) => entry.permissions?.permission_key?.trim())
-    .filter((permissionKey): permissionKey is string => Boolean(permissionKey));
-
-  return Array.from(new Set(permissionKeys));
 };
 
 const writeStorage = (key: string, value: unknown) => {
@@ -516,11 +460,12 @@ const sameStringArray = (left: string[], right: string[]) => (
 const normalizeSession = (session: InternalAccessSession | null, stores: StoreRecord[]) => {
   if (!session) return null;
 
-  if (!session.sessionId || !session.userId || !session.roleId || !session.roleKey) {
+  if (!session.sessionId || !session.userId || !session.roleKey) {
     return null;
   }
 
   const normalizedPermissionKeys = Array.isArray(session.permissionKeys) ? session.permissionKeys : [];
+  const normalizedInternalSessionToken = typeof session.internalSessionToken === 'string' ? session.internalSessionToken.trim() : '';
   const normalizedScopeStoreId = session.scopeStoreId ?? null;
   const normalizedScopeType = session.scopeType ?? (normalizedScopeStoreId ? 'store' : 'global');
   const normalizedRoleName = session.roleName?.trim() || toRoleLabel(session.roleKey);
@@ -528,6 +473,7 @@ const normalizeSession = (session: InternalAccessSession | null, stores: StoreRe
   if (normalizedScopeType === 'global') {
     const alreadyNormalized = (
       session.roleName === normalizedRoleName
+      && session.internalSessionToken === normalizedInternalSessionToken
       && session.scopeType === 'global'
       && session.scopeStoreId === null
       && sameStringArray(session.permissionKeys, normalizedPermissionKeys)
@@ -540,19 +486,22 @@ const normalizeSession = (session: InternalAccessSession | null, stores: StoreRe
     return {
       ...session,
       roleName: normalizedRoleName,
+      internalSessionToken: normalizedInternalSessionToken,
       permissionKeys: normalizedPermissionKeys,
       scopeType: 'global',
       scopeStoreId: null,
     } satisfies InternalAccessSession;
   }
 
-  const store = stores.find((entry) => entry.id === normalizedScopeStoreId && entry.isActive);
-  if (!store) return null;
+  // scopeStoreId is now a DB UUID returned by the edge function — do not validate
+  // against the local stores list (which uses app-level string IDs).
+  if (!normalizedScopeStoreId) return null;
 
   const alreadyNormalized = (
     session.roleName === normalizedRoleName
+    && session.internalSessionToken === normalizedInternalSessionToken
     && session.scopeType === 'store'
-    && session.scopeStoreId === store.id
+    && session.scopeStoreId === normalizedScopeStoreId
     && sameStringArray(session.permissionKeys, normalizedPermissionKeys)
   );
 
@@ -563,9 +512,10 @@ const normalizeSession = (session: InternalAccessSession | null, stores: StoreRe
   return {
     ...session,
     roleName: normalizedRoleName,
+    internalSessionToken: normalizedInternalSessionToken,
     permissionKeys: normalizedPermissionKeys,
     scopeType: 'store',
-    scopeStoreId: store.id,
+    scopeStoreId: normalizedScopeStoreId,
   } satisfies InternalAccessSession;
 };
 
@@ -703,19 +653,16 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
   }, [session, stores]);
 
   const loginAsOwner = async (pin: string) => {
-    const { user, error } = await fetchInternalUserByRoleAndPin({ roleKey: 'owner', pin });
-    if (error) {
-      return { success: false, message: 'Could not verify owner access right now.' };
-    }
-    if (!user) {
-      return { success: false, message: 'Owner PIN did not match.' };
+    const { data, error } = await loginInternal({ mode: 'owner', pin });
+    if (error || !data) {
+      return { success: false, message: error ?? 'Owner login failed.' };
     }
     const nextSession = createAccessSession({
-      userId: user.id,
-      roleId: user.role_id,
+      userId: data.userId,
+      roleId: '',
+      internalSessionToken: data.internalSessionToken,
       roleKey: 'owner',
-      roleName: user.roles.role_name,
-      permissionKeys: getPermissionKeysFromAccessRow(user),
+      permissionKeys: data.permissionKeys,
       scopeType: 'global',
       loggedInAt: nowIso(),
       scopeStoreId: null,
@@ -728,19 +675,16 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
   };
 
   const loginAsAdmin = async (pin: string) => {
-    const { user, error } = await fetchInternalUserByRoleAndPin({ roleKey: 'admin', pin });
-    if (error) {
-      return { success: false, message: 'Could not verify admin access right now.' };
-    }
-    if (!user) {
-      return { success: false, message: 'Admin PIN did not match.' };
+    const { data, error } = await loginInternal({ mode: 'admin', pin });
+    if (error || !data) {
+      return { success: false, message: error ?? 'Admin login failed.' };
     }
     const nextSession = createAccessSession({
-      userId: user.id,
-      roleId: user.role_id,
+      userId: data.userId,
+      roleId: '',
+      internalSessionToken: data.internalSessionToken,
       roleKey: 'admin',
-      roleName: user.roles.role_name,
-      permissionKeys: getPermissionKeysFromAccessRow(user),
+      permissionKeys: data.permissionKeys,
       scopeType: 'global',
       loggedInAt: nowIso(),
       scopeStoreId: null,
@@ -759,28 +703,25 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
       return { success: false, message: 'Select an active store.' };
     }
 
-    const { user, error } = await fetchInternalUserByRoleAndPin({ roleKey: 'store', pin, storeCode: normalizedStoreCode });
-    if (error) {
-      return { success: false, message: 'Could not verify store access right now.' };
-    }
-    if (!user) {
-      return { success: false, message: 'Store PIN did not match.' };
+    const { data, error } = await loginInternal({ mode: 'store', pin, storeCode: normalizedStoreCode });
+    if (error || !data) {
+      return { success: false, message: error ?? 'Store login failed.' };
     }
 
     const nextSession = createAccessSession({
-      userId: user.id,
-      roleId: user.role_id,
+      userId: data.userId,
+      roleId: '',
+      internalSessionToken: data.internalSessionToken,
       roleKey: 'store',
-      roleName: user.roles.role_name,
-      permissionKeys: getPermissionKeysFromAccessRow(user),
+      permissionKeys: data.permissionKeys,
       scopeType: 'store',
       loggedInAt: nowIso(),
-      scopeStoreId: store.id,
+      scopeStoreId: data.scopeStoreId,   // DB UUID from edge function
     });
     writeStorage(STORAGE_KEYS.session, nextSession);
-    writeStorage(STORAGE_KEYS.activeStoreScope, store.id);
+    writeStorage(STORAGE_KEYS.activeStoreScope, store.id);   // local ID for UI scope filtering
     setSession(nextSession);
-    setStoredScope(store.id);
+    setStoredScope(store.id);   // local ID for UI scope filtering
     return { success: true, message: `${store.name} workspace is ready.` };
   };
 
@@ -824,7 +765,7 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
   const canAccessStore = (storeId: string) => {
     if (!session) return false;
     if (session.scopeType === 'global') return true;
-    return session.scopeStoreId === storeId;
+    return storedScope === storeId;
   };
 
   const activeStoreScope = storedScope;

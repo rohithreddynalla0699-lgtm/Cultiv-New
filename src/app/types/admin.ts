@@ -82,6 +82,7 @@ export interface InternalAccessSession {
   sessionId: string;
   userId: string;
   roleId: string;
+  internalSessionToken: string;
   roleKey: InternalAccessRole;
   roleName: string;
   permissionKeys: string[];

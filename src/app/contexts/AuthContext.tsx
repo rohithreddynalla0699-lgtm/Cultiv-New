@@ -56,6 +56,13 @@ interface PhoneChangeVerificationRecord {
   expiresAt: string;
 }
 
+interface InternalAccessSessionSnapshot {
+  internalSessionToken: string;
+  roleKey: 'owner' | 'admin' | 'store';
+  scopeType: 'global' | 'store';
+  scopeStoreId: string | null;
+}
+
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
@@ -102,6 +109,8 @@ const STORAGE_KEYS = {
   phoneChangeVerifications: 'cultiv_phone_change_verifications_v1',
   rejectedGuestClaims: 'cultiv_rejected_guest_claims_v1',
 } as const;
+
+const ADMIN_ACCESS_SESSION_STORAGE_KEY = 'cultiv_admin_access_session_v1';
 
 const SYNC_URL: string | undefined = (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_SYNC_SERVER_URL;
 const AUTH_SYNC_CLIENT_ID = typeof crypto !== 'undefined' ? crypto.randomUUID() : Math.random().toString(36).slice(2);
@@ -489,8 +498,8 @@ const persistOrderToSupabase = async (order: Order): Promise<boolean> => {
       await supabase.from('orders').delete().eq('order_id', supabaseOrderId);
       throw error;
     }
-  } catch (error) {
-    console.error('Supabase order persistence failed. Falling back to local-only persistence.', error);
+  } catch {
+    console.error('Supabase order persistence failed. Falling back to local-only persistence.');
     return false;
   }
 };
@@ -970,7 +979,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const refreshSharedOrdersFromSupabase = useCallback(async () => {
     try {
-      const nextOrders = await fetchOperationalOrdersFromSupabase();
+      const internalSession = readStorage<InternalAccessSessionSnapshot | null>(ADMIN_ACCESS_SESSION_STORAGE_KEY, null);
+      if (!internalSession?.internalSessionToken) {
+        return;
+      }
+
+      const nextOrders = await fetchOperationalOrdersFromSupabase({
+        internalSessionToken: internalSession.internalSessionToken,
+        roleKey: internalSession.roleKey,
+        scopeType: internalSession.scopeType,
+        scopeStoreId: internalSession.scopeStoreId,
+      });
       const hasRecentLocalOrders = allOrders.some((order) => Date.now() - new Date(order.createdAt).getTime() < 24 * 60 * 60 * 1000);
       if (nextOrders.length === 0 && hasRecentLocalOrders) {
         console.warn('Supabase returned zero orders while recent local orders exist. Using local fallback for safety.');
@@ -980,8 +999,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setSupabaseSharedOrders(nextOrders);
       setSupabaseReadSuccessful(true);
       setSupabaseReadDegraded(false);
-    } catch (error) {
-      console.error('Supabase admin order read failed, using local fallback.', error);
+    } catch {
+      console.error('Supabase admin order read failed, using local fallback.');
       setSupabaseReadDegraded(true);
     }
   }, [allOrders]);
@@ -1895,6 +1914,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const getOrderById = (orderId: string) => orders.find((order) => order.id === orderId);
 
   const updateOrderStatus = async (orderId: string, status: OrderStatus): Promise<AuthActionResult> => {
+    const internalSession = readStorage<InternalAccessSessionSnapshot | null>(ADMIN_ACCESS_SESSION_STORAGE_KEY, null);
+    if (!internalSession?.internalSessionToken) {
+      return { success: false, message: 'Internal access session is required.' };
+    }
+
     const existingOrder = sharedOrders.find((entry) => entry.id === orderId) ?? allOrders.find((entry) => entry.id === orderId);
     if (!existingOrder) {
       return { success: false, message: 'Order not found.' };
@@ -1925,13 +1949,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     let supabasePersisted = false;
     try {
-      await updateSupabaseOrderStatus(orderId, status);
+      await updateSupabaseOrderStatus(orderId, status, {
+        internalSessionToken: internalSession.internalSessionToken,
+        roleKey: internalSession.roleKey,
+        scopeType: internalSession.scopeType,
+        scopeStoreId: internalSession.scopeStoreId,
+      });
       supabasePersisted = true;
       setSupabaseReadSuccessful(true);
       setSupabaseReadDegraded(false);
       setSupabaseRefreshTick((value) => value + 1);
-    } catch (error) {
-      console.error('Supabase status update failed, using local fallback update.', error);
+    } catch {
+      console.error('Supabase status update failed, using local fallback update.');
       setSupabaseReadDegraded(true);
     }
 

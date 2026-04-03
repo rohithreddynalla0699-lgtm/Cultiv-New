@@ -145,6 +145,5 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, () => {
   console.log(`\n  CULTIV Sync Server  →  http://localhost:${PORT}`);
   console.log(`  SSE stream          →  http://localhost:${PORT}/api/events`);
-  console.log(`\n  Set in .env.local:`);
-  console.log(`    VITE_SYNC_SERVER_URL=http://localhost:${PORT}\n`);
+  console.log(`\n  Configure VITE_SYNC_SERVER_URL in .env.local before frontend sync usage.\n`);
 });

@@ -3,17 +3,17 @@ import { Navigate } from 'react-router-dom';
 import { useAdminDashboard } from '../../contexts/AdminDashboardContext';
 
 export function StoreShiftScreen() {
-  const { session, scopedEmployees, clockInEmployee, clockOutEmployee } = useAdminDashboard();
+  const { session, activeStoreScope, scopedEmployees, clockInEmployee, clockOutEmployee } = useAdminDashboard();
   const [pinInput, setPinInput] = useState('');
   const [message, setMessage] = useState('Enter employee PIN to start or end shift.');
 
-  if (!session || session.scopeType !== 'store' || !session.scopeStoreId) {
+  if (!session || session.scopeType !== 'store' || !session.scopeStoreId || activeStoreScope === 'all') {
     return <Navigate to="/operations" replace />;
   }
 
   const storeEmployees = useMemo(
-    () => scopedEmployees.filter((employee) => employee.storeId === session.scopeStoreId && employee.isActive),
-    [scopedEmployees, session.scopeStoreId]
+    () => scopedEmployees.filter((employee) => employee.storeId === activeStoreScope && employee.isActive),
+    [activeStoreScope, scopedEmployees]
   );
   const onShiftEmployees = storeEmployees.filter((employee) => employee.status === 'on_shift');
 

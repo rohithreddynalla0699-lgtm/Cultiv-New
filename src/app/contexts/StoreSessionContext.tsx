@@ -106,9 +106,9 @@ export const StoreSessionProvider: React.FC<StoreSessionProviderProps> = ({
       // No valid session found
       setSession(null);
       setIsExpiringSoon(false);
-    } catch (err) {
+    } catch {
       // Storage read error, ignore silently
-      console.warn('Failed to restore session from storage:', err);
+      console.warn('Failed to restore session from storage.');
     } finally {
       setIsSessionLoading(false);
     }
@@ -231,8 +231,8 @@ export const StoreSessionProvider: React.FC<StoreSessionProviderProps> = ({
       // await sessionRepository.touchSession(updatedSession.session_id, now);
 
       scheduleSessionTimers(updatedSession.last_activity_at);
-    } catch (err) {
-      console.warn('Failed to touch session:', err);
+    } catch {
+      console.warn('Failed to touch session.');
     }
   }, [scheduleSessionTimers, session]);
 

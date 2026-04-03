@@ -362,7 +362,7 @@ export default function App() {
         await hydrateMenuCatalogFromSupabase();
         syncPresetCatalogFromMenu(MENU_CATEGORIES, BREAKFAST_PRESET_META_BY_ID);
       } catch (error) {
-        console.error('Menu hydration failed, using local fallback catalog.', error);
+        console.error('Menu hydration failed, using local fallback catalog.');
         if (active) {
           setMenuLoadError(error instanceof Error ? error.message : 'Unable to load menu from Supabase.');
         }

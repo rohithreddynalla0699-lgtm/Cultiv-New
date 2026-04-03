@@ -18,6 +18,6 @@ const session = await page.evaluate(() => localStorage.getItem('cultiv_admin_acc
 
 console.log('url=', url);
 console.log('message=', message);
-console.log('session=', session);
+console.log('session_present=', Boolean(session));
 
 await browser.close();

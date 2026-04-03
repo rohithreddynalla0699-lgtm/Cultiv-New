@@ -22,6 +22,7 @@ export function AdminAccessScreen({
   const [storeCode, setStoreCode] = useState(stores.find((store) => store.isActive)?.code ?? '');
   const [storePin, setStorePin] = useState('');
   const [message, setMessage] = useState('Choose owner, admin, or store access and continue with a 6-digit PIN.');
+  const [isLoading, setIsLoading] = useState(false);
 
   // Defensive guard: this screen is only valid on /operations.
   if (!location.pathname.startsWith('/operations')) {
@@ -31,7 +32,9 @@ export function AdminAccessScreen({
   const activeStores = stores.filter((store) => store.isActive);
 
   const handleOwnerLogin = async () => {
+    setIsLoading(true);
     const result = await loginAsOwner(ownerPin);
+    setIsLoading(false);
     setMessage(result.message);
     if (result.success) {
       navigate(adminSuccessPath, { replace: true });
@@ -39,7 +42,9 @@ export function AdminAccessScreen({
   };
 
   const handleScopedAdminLogin = async () => {
+    setIsLoading(true);
     const result = await loginAsAdmin(adminPin);
+    setIsLoading(false);
     setMessage(result.message);
     if (result.success) {
       navigate(adminSuccessPath, { replace: true });
@@ -47,7 +52,9 @@ export function AdminAccessScreen({
   };
 
   const handleStoreLogin = async () => {
+    setIsLoading(true);
     const result = await loginAsStore(storeCode, storePin);
+    setIsLoading(false);
     setMessage(result.message);
     if (result.success) {
       navigate(storeSuccessPath, { replace: true });
@@ -126,7 +133,7 @@ export function AdminAccessScreen({
                     <span className="mb-2 block font-medium">Owner PIN</span>
                     <input data-testid="owner-pin-input" value={ownerPin} onChange={(event) => setOwnerPin(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6-digit owner PIN" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
                   </label>
-                  <button data-testid="owner-login-button" type="button" onClick={handleOwnerLogin} className="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground">Open owner panel</button>
+                  <button data-testid="owner-login-button" type="button" onClick={handleOwnerLogin} disabled={isLoading} className="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground disabled:opacity-60">{isLoading ? 'Verifying…' : 'Open owner panel'}</button>
                 </div>
               ) : mode === 'admin' ? (
                 <div className="mt-5 space-y-3">
@@ -134,7 +141,7 @@ export function AdminAccessScreen({
                     <span className="mb-2 block font-medium">Admin PIN</span>
                     <input data-testid="admin-pin-input" value={adminPin} onChange={(event) => setAdminPin(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6-digit admin PIN" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
                   </label>
-                  <button data-testid="admin-login-button" type="button" onClick={handleScopedAdminLogin} className="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground">Open admin dashboard</button>
+                  <button data-testid="admin-login-button" type="button" onClick={handleScopedAdminLogin} disabled={isLoading} className="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground disabled:opacity-60">{isLoading ? 'Verifying…' : 'Open admin dashboard'}</button>
                 </div>
               ) : (
                 <div className="mt-5 space-y-3">
@@ -150,7 +157,7 @@ export function AdminAccessScreen({
                     <span className="mb-2 block font-medium">6-digit PIN</span>
                     <input data-testid="store-pin-input" value={storePin} onChange={(event) => setStorePin(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Store PIN" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
                   </label>
-                  <button data-testid="store-login-button" type="button" onClick={handleStoreLogin} className="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground">Open store workspace</button>
+                  <button data-testid="store-login-button" type="button" onClick={handleStoreLogin} disabled={isLoading} className="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground disabled:opacity-60">{isLoading ? 'Verifying…' : 'Open store workspace'}</button>
                 </div>
               )}
             </div>
