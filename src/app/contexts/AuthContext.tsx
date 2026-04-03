@@ -412,7 +412,7 @@ const resolveMenuItemId = (itemId: string) => {
   return UUID_PATTERN.test(normalized) ? normalized : null;
 };
 
-const persistOrderToSupabase = async (order: Order): Promise<boolean> => {
+const persistOrderToSupabase = async (order: Order): Promise<void> => {
   try {
     const sourceChannel: SupabaseSourceChannel = order.source;
 
@@ -493,14 +493,14 @@ const persistOrderToSupabase = async (order: Order): Promise<boolean> => {
         }
       }
 
-      return true;
+      return;
     } catch (error) {
       await supabase.from('orders').delete().eq('order_id', supabaseOrderId);
       throw error;
     }
-  } catch {
-    console.error('Supabase order persistence failed. Falling back to local-only persistence.');
-    return false;
+  } catch (error) {
+    console.error('Supabase order persistence failed.');
+    throw error instanceof Error ? error : new Error('Supabase order persistence failed.');
   }
 };
 
@@ -1443,13 +1443,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       statusTimeline: buildStatusTimeline(createdAt),
     };
 
-    setAllOrders((previous) => [newOrder, ...previous]);
-    const persistedToSupabase = await persistOrderToSupabase(newOrder);
-    if (persistedToSupabase) {
+    try {
+      await persistOrderToSupabase(newOrder);
+      setAllOrders((previous) => [newOrder, ...previous]);
+      setSupabaseReadSuccessful(true);
+      setSupabaseReadDegraded(false);
       setSupabaseRefreshTick((value) => value + 1);
-    } else {
+    } catch {
       setSupabaseReadDegraded(true);
+      throw new Error('Could not place order right now. Please try again.');
     }
+
     if (linkedUserId) {
       if (usedRewardIds.length > 0) {
         setLoyaltyProfiles((previous) => {
@@ -1538,13 +1542,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       statusTimeline: buildStatusTimeline(createdAt),
     };
 
-    setAllOrders((previous) => [newOrder, ...previous]);
-    const persistedToSupabase = await persistOrderToSupabase(newOrder);
-    if (persistedToSupabase) {
+    try {
+      await persistOrderToSupabase(newOrder);
+      setAllOrders((previous) => [newOrder, ...previous]);
+      setSupabaseReadSuccessful(true);
+      setSupabaseReadDegraded(false);
       setSupabaseRefreshTick((value) => value + 1);
-    } else {
+    } catch {
       setSupabaseReadDegraded(true);
+      throw new Error('Could not create counter billing order right now. Please try again.');
     }
+
     return newOrder;
   };
 
@@ -1612,13 +1620,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       statusTimeline: buildStatusTimeline(createdAt),
     };
 
-    setAllOrders((previous) => [linkedOrder, ...previous]);
-    const persistedToSupabase = await persistOrderToSupabase(linkedOrder);
-    if (persistedToSupabase) {
+    try {
+      await persistOrderToSupabase(linkedOrder);
+      setAllOrders((previous) => [linkedOrder, ...previous]);
+      setSupabaseReadSuccessful(true);
+      setSupabaseReadDegraded(false);
       setSupabaseRefreshTick((value) => value + 1);
-    } else {
+    } catch {
       setSupabaseReadDegraded(true);
+      return {
+        success: false,
+        message: 'Could not link walk-in order right now. Please try again.',
+        userExists: true,
+      };
     }
+
     syncLoyaltyForOrder(candidate.id, linkedOrder.total, linkedOrder.category);
 
     return {
@@ -1947,7 +1963,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return { success: false, message: 'Use the next step in the order workflow.' };
     }
 
-    let supabasePersisted = false;
     try {
       await updateSupabaseOrderStatus(orderId, status, {
         internalSessionToken: internalSession.internalSessionToken,
@@ -1955,21 +1970,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         scopeType: internalSession.scopeType,
         scopeStoreId: internalSession.scopeStoreId,
       });
-      supabasePersisted = true;
+
+      setAllOrders((previous) => previous.map((entry) => (
+        entry.id === orderId ? { ...entry, status } : entry
+      )));
+
       setSupabaseReadSuccessful(true);
       setSupabaseReadDegraded(false);
       setSupabaseRefreshTick((value) => value + 1);
     } catch {
-      console.error('Supabase status update failed, using local fallback update.');
+      console.error('Supabase status update failed.');
       setSupabaseReadDegraded(true);
-    }
-
-    setAllOrders((previous) => previous.map((entry) => (
-      entry.id === orderId ? { ...entry, status } : entry
-    )));
-
-    if (!supabasePersisted) {
-      return { success: true, message: 'Order status updated locally (Supabase fallback).' };
+      return { success: false, message: 'Could not update order status. Please try again.' };
     }
 
     return { success: true, message: 'Order status updated.' };

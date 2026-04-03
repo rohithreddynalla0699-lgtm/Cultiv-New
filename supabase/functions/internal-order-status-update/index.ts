@@ -16,11 +16,16 @@ interface InternalOrderStatusUpdateRequest {
   nextStatus?: NextStatus;
 }
 
-interface InternalSessionContext {
-  internalSessionToken: string;
-  roleKey: RoleKey;
-  scopeType: ScopeType;
-  scopeStoreId: string | null;
+interface InternalAccessSessionRow {
+  id: string;
+  session_token: string;
+  internal_user_id: string;
+  role_key: RoleKey;
+  scope_type: ScopeType;
+  scope_store_id: string | null;
+  expires_at: string;
+  revoked_at: string | null;
+  last_seen_at: string;
 }
 
 interface OrderStatusRow {
@@ -50,41 +55,12 @@ const json = (status: number, payload: Record<string, unknown>) =>
     },
   });
 
-const normalizeScopeType = (scopeType: ScopeType | undefined, roleKey: RoleKey): ScopeType => {
-  if (scopeType === 'store' || scopeType === 'global' || scopeType === 'owner' || scopeType === 'admin') {
-    return scopeType;
-  }
-  if (roleKey === 'store') return 'store';
-  return 'global';
-};
-
-const normalizeSessionPayload = (body: InternalOrderStatusUpdateRequest): { value?: InternalSessionContext; error?: string } => {
-  const internalSessionToken = (body.internalSessionToken ?? '').trim();
-  const roleKey = body.roleKey;
-  const scopeStoreId = body.scopeStoreId ?? null;
-
-  if (!internalSessionToken) {
+const extractSessionToken = (body: InternalOrderStatusUpdateRequest): { value?: string; error?: string } => {
+  const token = (body.internalSessionToken ?? '').trim();
+  if (!token) {
     return { error: 'internalSessionToken is required.' };
   }
-
-  if (roleKey !== 'owner' && roleKey !== 'admin' && roleKey !== 'store') {
-    return { error: 'roleKey must be one of owner, admin, or store.' };
-  }
-
-  const scopeType = normalizeScopeType(body.scopeType, roleKey);
-  const isStoreScope = scopeType === 'store' || roleKey === 'store';
-  if (isStoreScope && !scopeStoreId) {
-    return { error: 'scopeStoreId is required for store scope.' };
-  }
-
-  return {
-    value: {
-      internalSessionToken,
-      roleKey,
-      scopeType,
-      scopeStoreId,
-    },
-  };
+  return { value: token };
 };
 
 const normalizeUpdatePayload = (body: InternalOrderStatusUpdateRequest): { orderId?: string; nextStatus?: NextStatus; error?: string } => {
@@ -102,10 +78,37 @@ const normalizeUpdatePayload = (body: InternalOrderStatusUpdateRequest): { order
   return { orderId, nextStatus };
 };
 
-// Temporary phase: trust payload. Next phase should validate token against
-// server-side internal session state and enforce expiry/revocation.
-const verifyInternalSession = async (_ctx: InternalSessionContext) => {
-  return { valid: true as const };
+const verifyAndLoadSession = async (
+  db: ReturnType<typeof createClient>,
+  token: string,
+): Promise<{ valid: true; session: InternalAccessSessionRow } | { valid: false; error: string }> => {
+  const { data, error } = await db
+    .from('internal_access_sessions')
+    .select('id, session_token, internal_user_id, role_key, scope_type, scope_store_id, expires_at, revoked_at, last_seen_at')
+    .eq('session_token', token)
+    .single();
+
+  if (error || !data) {
+    return { valid: false, error: 'Internal session not found.' };
+  }
+
+  if (data.revoked_at !== null) {
+    return { valid: false, error: 'Internal session has been revoked.' };
+  }
+
+  if (new Date(data.expires_at) <= new Date()) {
+    return { valid: false, error: 'Internal session has expired.' };
+  }
+
+  // Fire-and-forget: update last_seen_at without blocking the response.
+  db
+    .from('internal_access_sessions')
+    .update({ last_seen_at: new Date().toISOString() })
+    .eq('session_token', token)
+    .then(() => {})
+    .catch(() => {});
+
+  return { valid: true, session: data as InternalAccessSessionRow };
 };
 
 Deno.serve(async (req) => {
@@ -131,19 +134,14 @@ Deno.serve(async (req) => {
     return json(400, { success: false, error: 'Invalid JSON body.' });
   }
 
-  const normalizedSession = normalizeSessionPayload(body);
-  if (normalizedSession.error || !normalizedSession.value) {
-    return json(400, { success: false, error: normalizedSession.error ?? 'Invalid session payload.' });
+  const tokenResult = extractSessionToken(body);
+  if (tokenResult.error || !tokenResult.value) {
+    return json(400, { success: false, error: tokenResult.error ?? 'Invalid session payload.' });
   }
 
   const normalizedUpdate = normalizeUpdatePayload(body);
   if (normalizedUpdate.error || !normalizedUpdate.orderId || !normalizedUpdate.nextStatus) {
     return json(400, { success: false, error: normalizedUpdate.error ?? 'Invalid update payload.' });
-  }
-
-  const verifyResult = await verifyInternalSession(normalizedSession.value);
-  if (!verifyResult.valid) {
-    return json(401, { success: false, error: 'Invalid internal session.' });
   }
 
   const db = createClient(supabaseUrl, serviceRoleKey, {
@@ -153,7 +151,12 @@ Deno.serve(async (req) => {
     },
   });
 
-  const { roleKey, scopeType, scopeStoreId } = normalizedSession.value;
+  const verifyResult = await verifyAndLoadSession(db, tokenResult.value);
+  if (!verifyResult.valid) {
+    return json(401, { success: false, error: verifyResult.error });
+  }
+
+  const { role_key: roleKey, scope_type: scopeType, scope_store_id: scopeStoreId } = verifyResult.session;
   const { orderId, nextStatus } = normalizedUpdate;
 
   const isStoreScope = scopeType === 'store' || roleKey === 'store';

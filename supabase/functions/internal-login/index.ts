@@ -20,7 +20,7 @@ interface InternalUserAccessRow {
   roles: {
     role_key: LoginMode;
     role_name: string;
-    scope_type: 'global' | 'store';
+    scope_type: 'global' | 'owner' | 'admin' | 'store';
     role_permissions: Array<{
       is_allowed: boolean;
       permissions: {
@@ -49,6 +49,73 @@ const isSixDigitPin = (value: string) => /^\d{6}$/.test(value.trim());
 
 const normalizeStoreCode = (value: string) =>
   value.trim().toUpperCase().replace(/\s+/g, '-');
+
+const isValidIpv4 = (value: string) => {
+  const parts = value.split('.');
+  if (parts.length !== 4) return false;
+
+  for (const part of parts) {
+    if (!/^\d{1,3}$/.test(part)) return false;
+    const octet = Number(part);
+    if (octet < 0 || octet > 255) return false;
+  }
+
+  return true;
+};
+
+const isLikelyIpv6 = (value: string) => value.includes(':') && /^[0-9a-fA-F:]+$/.test(value);
+
+const normalizeIpCandidate = (value: string): string => {
+  let normalized = value.trim();
+
+  if (normalized.toLowerCase().startsWith('for=')) {
+    normalized = normalized.slice(4).trim();
+  }
+
+  normalized = normalized.replace(/^"|"$/g, '');
+
+  if (normalized.includes(',')) {
+    normalized = normalized.split(',')[0].trim();
+  }
+
+  if (normalized.startsWith('[') && normalized.includes(']')) {
+    normalized = normalized.slice(1, normalized.indexOf(']'));
+  }
+
+  const ipv4WithPortMatch = normalized.match(/^(\d{1,3}(?:\.\d{1,3}){3}):(\d+)$/);
+  if (ipv4WithPortMatch) {
+    normalized = ipv4WithPortMatch[1];
+  }
+
+  return normalized;
+};
+
+const extractClientIp = (req: Request): string | null => {
+  const candidates = [
+    req.headers.get('x-forwarded-for'),
+    req.headers.get('cf-connecting-ip'),
+    req.headers.get('x-real-ip'),
+    req.headers.get('forwarded'),
+  ];
+
+  for (const rawValue of candidates) {
+    if (!rawValue) continue;
+    const candidate = normalizeIpCandidate(rawValue);
+    if (!candidate) continue;
+
+    if (isValidIpv4(candidate) || isLikelyIpv6(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+};
+
+const extractUserAgent = (req: Request): string | null => {
+  const userAgent = req.headers.get('user-agent')?.trim() ?? '';
+  if (!userAgent) return null;
+  return userAgent.slice(0, 1024);
+};
 
 const getPermissionKeys = (row: InternalUserAccessRow): string[] => {
   const permissionKeys = (row.roles.role_permissions ?? [])
@@ -182,20 +249,63 @@ Deno.serve(async (req) => {
     if (!user.store_id) {
       return json(403, { error: 'Store user is missing store scope.' });
     }
-  } else if (user.roles.scope_type !== 'global') {
-    return json(403, { error: 'Role scope mismatch for global mode.' });
+  } else {
+    const allowedGlobalScopes = new Set(['global', 'owner', 'admin']);
+    if (!allowedGlobalScopes.has(user.roles.scope_type)) {
+      return json(403, { error: 'Role scope mismatch for non-store mode.' });
+    }
   }
 
   const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString();
+  const nowIso = new Date().toISOString();
   const permissionKeys = getPermissionKeys(user);
+  const roleKey = user.roles.role_key;
+  const scopeType = user.roles.scope_type;
+  const scopeStoreId = scopeType === 'store' ? user.store_id : null;
+
+  const sessionToken = crypto.randomUUID();
+  const createdByIp = extractClientIp(req);
+  const createdUserAgent = extractUserAgent(req);
+
+  const { data: insertedSession, error: sessionInsertError } = await db
+    .from('internal_access_sessions')
+    .insert({
+      session_token: sessionToken,
+      internal_user_id: user.id,
+      role_key: roleKey,
+      scope_type: scopeType,
+      scope_store_id: scopeStoreId,
+      expires_at: expiresAt,
+      last_seen_at: nowIso,
+      created_by_ip: createdByIp,
+      created_user_agent: createdUserAgent,
+    })
+    .select('id, session_token, internal_user_id, role_key, scope_type, scope_store_id, expires_at, last_seen_at, created_at')
+    .single();
+
+  if (sessionInsertError || !insertedSession) {
+    return json(500, { error: 'Could not create internal access session.' });
+  }
 
   return json(200, {
     userId: user.id,
-    roleKey: user.roles.role_key,
+    roleKey,
     permissionKeys,
-    scopeType: mode,
-    scopeStoreId: mode === 'store' ? user.store_id : null,
+    scopeType,
+    scopeStoreId,
     expiresAt,
-    internalSessionToken: crypto.randomUUID(),
+    internalSessionToken: insertedSession.session_token,
+    session_token: insertedSession.session_token,
+    session: {
+      id: insertedSession.id,
+      sessionToken: insertedSession.session_token,
+      internalUserId: insertedSession.internal_user_id,
+      roleKey: insertedSession.role_key,
+      scopeType: insertedSession.scope_type,
+      scopeStoreId: insertedSession.scope_store_id,
+      expiresAt: insertedSession.expires_at,
+      lastSeenAt: insertedSession.last_seen_at,
+      createdAt: insertedSession.created_at,
+    },
   });
 });
