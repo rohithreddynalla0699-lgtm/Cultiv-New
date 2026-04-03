@@ -35,7 +35,7 @@ import {
   REWARD_ID_SET,
 } from '../config/rewardsCatalog';
 import { DEFAULT_ORDER_STORE_ID } from '../constants/admin';
-import { PRICE_EPSILON, REWARD_MAX_DISCOUNT_RATIO, REWARD_MIN_ORDER_SUBTOTAL } from '../constants/business';
+import { POS_TAX_RATE, PRICE_EPSILON, REWARD_MAX_DISCOUNT_RATIO, REWARD_MIN_ORDER_SUBTOTAL } from '../constants/business';
 // @ts-ignore - Supabase client is defined in JS module.
 import { supabase } from '../../lib/supabase';
 
@@ -435,6 +435,8 @@ const persistOrderToSupabase = async (order: Order): Promise<void> => {
           notes: null,
           subtotal_amount: Math.round(order.subtotal),
           discount_amount: Math.round(order.rewardDiscount),
+          tax_amount: Math.round(order.taxAmount ?? 0),
+          tip_amount: Math.round(order.tipAmount ?? 0),
           total_amount: Math.round(order.total),
           order_number: orderNumber,
         })
@@ -981,6 +983,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       const internalSession = readStorage<InternalAccessSessionSnapshot | null>(ADMIN_ACCESS_SESSION_STORAGE_KEY, null);
       if (!internalSession?.internalSessionToken) {
+        setSupabaseSharedOrders([]);
+        setSupabaseReadSuccessful(false);
+        setSupabaseReadDegraded(false);
         return;
       }
 
@@ -990,20 +995,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         scopeType: internalSession.scopeType,
         scopeStoreId: internalSession.scopeStoreId,
       });
-      const hasRecentLocalOrders = allOrders.some((order) => Date.now() - new Date(order.createdAt).getTime() < 24 * 60 * 60 * 1000);
-      if (nextOrders.length === 0 && hasRecentLocalOrders) {
-        console.warn('Supabase returned zero orders while recent local orders exist. Using local fallback for safety.');
-        setSupabaseReadDegraded(true);
-        return;
-      }
       setSupabaseSharedOrders(nextOrders);
       setSupabaseReadSuccessful(true);
       setSupabaseReadDegraded(false);
     } catch {
-      console.error('Supabase admin order read failed, using local fallback.');
+      console.error('Supabase admin order read failed.');
+      setSupabaseReadSuccessful(false);
       setSupabaseReadDegraded(true);
     }
-  }, [allOrders]);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -1026,7 +1026,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const user = userRecord ? ({ ...userRecord, password: undefined } as unknown as User) : null;
   const guestOrders = allOrders.filter((order) => !order.userId && order.source === 'app');
   const orders = user ? allOrders.filter((order) => order.userId === user.id) : guestOrders;
-  const sharedOrders = (supabaseReadSuccessful && !supabaseReadDegraded) ? supabaseSharedOrders : allOrders;
+  const hasInternalOrdersSession = Boolean(readStorage<InternalAccessSessionSnapshot | null>(ADMIN_ACCESS_SESSION_STORAGE_KEY, null)?.internalSessionToken);
+  const sharedOrders = hasInternalOrdersSession
+    ? supabaseSharedOrders
+    : ((supabaseReadSuccessful && !supabaseReadDegraded) ? supabaseSharedOrders : allOrders);
   const activeOrders = orders.filter((order) => order.status !== 'completed');
   const loyaltyProfile = user ? loyaltyProfiles[user.id] ?? null : null;
 
@@ -1413,7 +1416,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
     }
 
-    const expectedTotal = Math.max(0, input.subtotal - requestedDiscount);
+    const taxableSubtotal = Math.max(0, input.subtotal - requestedDiscount);
+    const gstAmount = Math.round(taxableSubtotal * POS_TAX_RATE * 100) / 100;
+    const tipAmount = Math.max(0, input.tipAmount ?? 0);
+    const tipPercentage = Math.max(0, input.tipPercentage ?? 0);
+    const expectedTotal = Math.round((taxableSubtotal + gstAmount + tipAmount) * 100) / 100;
     if (Math.abs(expectedTotal - input.total) > PRICE_EPSILON) {
       throw new Error('Order total mismatch.');
     }
@@ -1432,6 +1439,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       orderType: input.orderType,
       subtotal: input.subtotal,
       rewardDiscount: requestedDiscount,
+      taxAmount: gstAmount,
       total: input.total,
       status,
       createdAt,
@@ -1439,6 +1447,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       fullName: trimmedName,
       email: normalizedEmail,
       source: input.source ?? 'app',
+      tipPercentage,
+      tipAmount,
       fulfillmentWindow: buildFulfillmentWindow(),
       statusTimeline: buildStatusTimeline(createdAt),
     };
@@ -1501,8 +1511,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       throw new Error('Tip details are invalid.');
     }
 
-    const normalizedChannel = input.orderChannel ?? 'counter';
-    const displayName = input.fullName?.trim() || (normalizedChannel === 'phone' ? 'Phone Order' : 'Walk-in Customer');
+    const displayName = input.fullName?.trim() || 'Walk-in Customer';
     const createdAt = new Date().toISOString();
     const orderId = createId('walkin');
     const items: OrderItem[] = input.items.map((item) => ({
@@ -1515,7 +1524,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       price: item.price,
     }));
     const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const total = subtotal + input.tipAmount;
+    const taxAmount = Math.round(subtotal * POS_TAX_RATE * 100) / 100;
+    const total = subtotal + taxAmount + input.tipAmount;
     if (!Number.isFinite(total) || total < 0) {
       throw new Error('Computed billing total is invalid.');
     }
@@ -1525,16 +1535,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       storeId: input.storeId,
       category: items[0]?.category ?? 'Counter Billing',
       items,
-      orderType: normalizedChannel === 'walk_in' ? 'walk-in' : 'pickup',
+      orderType: 'walk-in',
       subtotal,
       rewardDiscount: 0,
+      taxAmount,
       total,
       status: 'placed',
       createdAt,
       phone: normalizedPhone,
       fullName: displayName,
       email: `walkin-${normalizedPhone}@cultiv.local`,
-      source: normalizedChannel === 'phone' ? 'phone' : 'walk-in',
+      source: 'walk-in',
       paymentMethod: input.paymentMethod,
       tipPercentage: input.tipPercentage,
       tipAmount: input.tipAmount,
@@ -1586,6 +1597,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const orderId = createId('walkin');
     const createdAt = new Date().toISOString();
+    const subtotal = 189;
+    const taxAmount = Math.round(subtotal * POS_TAX_RATE * 100) / 100;
+    const tipAmount = 0;
+    const total = subtotal + taxAmount;
     const linkedOrder: Order = {
       id: orderId,
       userId: candidate.id,
@@ -1607,9 +1622,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         },
       ],
       orderType: 'walk-in',
-      subtotal: 189,
+      subtotal,
       rewardDiscount: 0,
-      total: 189,
+      taxAmount,
+      tipAmount,
+      total,
       status: 'completed',
       createdAt,
       phone: normalizedPhone,

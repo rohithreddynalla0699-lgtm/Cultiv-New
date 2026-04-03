@@ -77,30 +77,34 @@ export function AdminDashboardLayout() {
         </aside>
 
         <div className="rounded-[32px] border border-primary/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(247,250,243,0.88))] p-4 shadow-[0_20px_58px_rgba(45,80,22,0.1)] md:p-6 lg:p-7">
-          <div className="mb-6 flex flex-col gap-3 rounded-[26px] border border-primary/10 bg-white/76 px-4 py-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              <span className="rounded-full bg-[#F7FAF3] px-3 py-1.5 font-medium text-foreground/72">Store: {scopeLabel}</span>
-              <span className="rounded-full bg-[#F7FAF3] px-3 py-1.5 font-medium text-foreground/72">Role: {roleLabel}</span>
-              <span className="rounded-full bg-[#F7FAF3] px-3 py-1.5 font-medium text-foreground/72">Page: {currentPage}</span>
-            </div>
+          <div className="mb-6 rounded-[26px] border border-primary/10 bg-white/76 px-4 py-3.5">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="flex min-h-[38px] flex-wrap items-center gap-2 text-sm">
+                <span className="rounded-full bg-[#F7FAF3] px-3 py-1.5 font-medium text-foreground/72">Store: {scopeLabel}</span>
+                <span className="rounded-full bg-[#F7FAF3] px-3 py-1.5 font-medium text-foreground/72">Role: {roleLabel}</span>
+                <span className="rounded-full bg-[#F7FAF3] px-3 py-1.5 font-medium text-foreground/72">Page: {currentPage}</span>
+              </div>
 
-            <div className="flex flex-wrap items-center gap-3">
-              {hasPermission('can_switch_stores') ? (
-                <label className="flex flex-col gap-1 text-sm text-foreground/68 md:items-end">
-                  <span className="font-medium">Store scope</span>
-                  <select data-testid="admin-store-scope" value={activeStoreScope} onChange={(event) => setActiveStoreScope(event.target.value)} className="rounded-xl border border-primary/12 bg-background/80 px-3 py-2 outline-none transition-colors focus:border-primary">
-                    <option value="all">All stores</option>
-                    {stores.map((store) => (
-                      <option key={store.id} value={store.id}>{store.name} · {store.city}</option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
+              <div className="flex items-center gap-2">
+                <div className="inline-flex h-[38px] min-w-[190px] items-center gap-2 rounded-xl border border-primary/12 bg-background/70 px-2.5">
+                  <span className="shrink-0 text-[10px] font-medium uppercase tracking-[0.14em] text-foreground/48">Scope</span>
+                  {hasPermission('can_switch_stores') ? (
+                    <select data-testid="admin-store-scope" value={activeStoreScope} onChange={(event) => setActiveStoreScope(event.target.value)} className="h-8 w-full rounded-lg bg-transparent px-2 text-sm text-foreground/78 outline-none transition-colors focus:bg-white/70">
+                      <option value="all">All stores</option>
+                      {stores.map((store) => (
+                        <option key={store.id} value={store.id}>{store.name} · {store.city}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span className="truncate px-2 text-sm font-medium text-foreground/74">{scopeLabel}</span>
+                  )}
+                </div>
 
-              <button data-testid="admin-signout" type="button" onClick={logoutInternalAccess} className="inline-flex items-center justify-center gap-2 rounded-xl border border-primary/14 bg-white/86 px-4 py-2.5 text-sm font-medium text-foreground/72">
-                <LogOut className="h-4 w-4" />
-                Sign Out
-              </button>
+                <button data-testid="admin-signout" type="button" onClick={logoutInternalAccess} className="inline-flex h-[38px] items-center justify-center gap-2 rounded-xl border border-primary/14 bg-white/86 px-3.5 text-sm font-medium text-foreground/72">
+                  <LogOut className="h-4 w-4" />
+                  Sign Out
+                </button>
+              </div>
             </div>
           </div>
 

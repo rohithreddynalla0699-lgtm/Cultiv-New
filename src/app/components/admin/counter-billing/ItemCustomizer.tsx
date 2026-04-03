@@ -8,6 +8,7 @@ interface ItemCustomizerProps {
   quantity: number;
   totalPrice: number;
   validationError?: string;
+  submitLabel?: string;
   onBack: () => void;
   onToggleChoice: (step: BuilderStep, ingredientId: string) => void;
   onQuantityChange: (delta: number) => void;
@@ -21,6 +22,7 @@ export function ItemCustomizer({
   quantity,
   totalPrice,
   validationError,
+  submitLabel = 'Add to Cart',
   onBack,
   onToggleChoice,
   onQuantityChange,
@@ -75,7 +77,7 @@ export function ItemCustomizer({
           <button type="button" onClick={() => onQuantityChange(1)} className="rounded-lg border border-border px-2.5 py-1 text-sm font-semibold">+</button>
         </div>
         <button type="button" onClick={onAddToCart} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
-          Add to Cart · Rs {totalPrice.toFixed(2)}
+          {submitLabel} · Rs {totalPrice.toFixed(2)}
         </button>
       </div>
     </section>

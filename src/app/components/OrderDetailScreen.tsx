@@ -9,7 +9,7 @@ import { ActiveOrderTracker } from './ActiveOrderTracker';
 import type { AuthRedirectState, HomeOrderLaunchState } from '../types/navigation';
 import { resolveCategorySlugFromLabel } from '../utils/categoryRouting';
 import { mapOrderItemsToDraftLines } from '../utils/orderReorder';
-import { DEFAULT_REORDER_FALLBACK_CATEGORY_SLUG } from '../constants/business';
+import { DEFAULT_REORDER_FALLBACK_CATEGORY_SLUG, POS_TAX_RATE } from '../constants/business';
 
 export function OrderDetailScreen() {
 	const { user, getOrderById } = useAuth();
@@ -25,6 +25,13 @@ export function OrderDetailScreen() {
 	if (!order) {
 		return <Navigate to="/orders" replace />;
 	}
+
+	const taxableSubtotal = Math.max(0, order.subtotal - order.rewardDiscount);
+	const derivedGstAmount = Math.round(taxableSubtotal * POS_TAX_RATE * 100) / 100;
+	const gstAmount = order.taxAmount ?? derivedGstAmount;
+	const tipAmount = order.tipAmount ?? 0;
+	const expectedGstTotal = Math.round((taxableSubtotal + gstAmount + tipAmount) * 100) / 100;
+	const hasGstAwareTotal = Math.abs(expectedGstTotal - order.total) <= 0.05;
 
 	return (
 		<PageReveal className="min-h-screen bg-gradient-to-br from-[#f5f5f0] via-background to-[#f7f6f2] px-4 py-8 sm:px-6 lg:px-8">
@@ -92,9 +99,16 @@ export function OrderDetailScreen() {
 								<div className="flex justify-between"><span>Placed on</span><span>{new Date(order.createdAt).toLocaleString()}</span></div>
 								<div className="flex justify-between"><span>Order type</span><span className="capitalize">{order.orderType.replace('_', ' ')}</span></div>
 								<div className="flex justify-between"><span>Status</span><span>{order.statusTimeline.find((event) => event.status === order.status)?.label}</span></div>
-								<div className="flex justify-between"><span>Items total</span><span>₹{order.subtotal}</span></div>
-								{order.rewardDiscount > 0 ? <div className="flex justify-between text-primary/80"><span>Reward discount</span><span>-₹{order.rewardDiscount}</span></div> : null}
-								<div className="flex justify-between border-t border-border pt-3 text-base font-medium text-foreground"><span>Total</span><span>₹{order.total}</span></div>
+								<div className="flex justify-between"><span>Subtotal</span><span>₹{order.subtotal.toFixed(2)}</span></div>
+								{order.rewardDiscount > 0 ? <div className="flex justify-between text-primary/80"><span>Reward discount</span><span>-₹{order.rewardDiscount.toFixed(2)}</span></div> : null}
+								{hasGstAwareTotal ? (
+									<>
+										<div className="flex justify-between"><span>Taxable subtotal</span><span>₹{taxableSubtotal.toFixed(2)}</span></div>
+										<div className="flex justify-between"><span>GST</span><span>₹{gstAmount.toFixed(2)}</span></div>
+										<div className="flex justify-between"><span>Tip</span><span>₹{tipAmount.toFixed(2)}</span></div>
+									</>
+								) : null}
+								<div className="flex justify-between border-t border-border pt-3 text-base font-medium text-foreground"><span>Total</span><span>₹{order.total.toFixed(2)}</span></div>
 							</div>
 
 							<div className="mt-6 space-y-2 rounded-2xl border border-border bg-background/75 p-4 text-sm leading-6 text-foreground/64">

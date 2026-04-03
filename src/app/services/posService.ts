@@ -1,5 +1,6 @@
 import type { CreateCounterWalkInOrderInput } from '../types/platform';
 import type { PosOrderPayload, PosPaymentPayload, PosReceipt } from '../types/pos';
+import { POS_TAX_RATE } from '../constants/business';
 
 interface CreateOrderDeps {
   createCounterWalkInOrder: (input: CreateCounterWalkInOrderInput) => Promise<{ id: string }>;
@@ -33,7 +34,8 @@ export const posService = {
   async createOrder(payload: PosOrderPayload, deps: CreateOrderDeps): Promise<PosReceipt> {
     const createdOrder = await deps.createCounterWalkInOrder(mapToCounterOrderInput(payload));
     const subtotal = payload.items.reduce((sum, item) => sum + item.quantity * item.price, 0);
-    const total = subtotal + payload.tipAmount;
+    const taxAmount = Math.round(subtotal * POS_TAX_RATE * 100) / 100;
+    const total = subtotal + taxAmount + payload.tipAmount;
 
     return {
       orderId: createdOrder.id,
@@ -42,6 +44,7 @@ export const posService = {
       customerPhone: payload.customerPhone,
       paymentMethod: payload.paymentMethod,
       subtotal,
+      taxAmount,
       tipAmount: payload.tipAmount,
       total,
       createdAt: new Date().toISOString(),

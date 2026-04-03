@@ -2,12 +2,13 @@ import type { PosCartLine } from '../../../types/pos';
 
 interface CartItemRowProps {
   line: PosCartLine;
+  onEdit: () => void;
   onIncrement: () => void;
   onDecrement: () => void;
   onRemove: () => void;
 }
 
-export function CartItemRow({ line, onIncrement, onDecrement, onRemove }: CartItemRowProps) {
+export function CartItemRow({ line, onEdit, onIncrement, onDecrement, onRemove }: CartItemRowProps) {
   return (
     <div className="rounded-lg border border-border bg-background p-3">
       <div className="flex items-start justify-between gap-2">
@@ -19,7 +20,10 @@ export function CartItemRow({ line, onIncrement, onDecrement, onRemove }: CartIt
             </p>
           ) : null}
         </div>
-        <button type="button" onClick={onRemove} className="text-xs font-semibold text-red-700 hover:underline">Remove</button>
+        <div className="flex items-center gap-3">
+          <button type="button" onClick={onEdit} className="text-xs font-semibold text-primary hover:underline">Edit</button>
+          <button type="button" onClick={onRemove} className="text-xs font-semibold text-red-700 hover:underline">Remove</button>
+        </div>
       </div>
 
       <div className="mt-3 flex items-center justify-between">

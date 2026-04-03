@@ -11,7 +11,7 @@ import { ActiveOrderTracker } from './ActiveOrderTracker';
 import type { Order } from '../types/platform';
 import type { HomeOrderLaunchState, OrdersSuccessLocationState } from '../types/navigation';
 import { mapOrderItemsToDraftLines, resolveReorderCategorySlug } from '../utils/orderReorder';
-import { DEFAULT_FIRST_ORDER_CATEGORY_SLUG, PICKUP_ESTIMATE_WINDOW } from '../constants/business';
+import { DEFAULT_FIRST_ORDER_CATEGORY_SLUG, PICKUP_ESTIMATE_WINDOW, POS_TAX_RATE } from '../constants/business';
 
 type OrderFilter = 'all' | 'online' | 'instore';
 
@@ -73,6 +73,20 @@ export function OrderHistoryScreen() {
 		navigate('/', {
 			state: nextState,
 		});
+	};
+
+	const getGstBreakdown = (order: Order) => {
+		const taxableSubtotal = Math.max(0, order.subtotal - order.rewardDiscount);
+		const derivedGstAmount = Math.round(taxableSubtotal * POS_TAX_RATE * 100) / 100;
+		const gstAmount = order.taxAmount ?? derivedGstAmount;
+		const tipAmount = order.tipAmount ?? 0;
+		const expectedTotal = Math.round((taxableSubtotal + gstAmount + tipAmount) * 100) / 100;
+		const hasGstAwareTotal = Math.abs(expectedTotal - order.total) <= 0.05;
+		return {
+			hasGstAwareTotal,
+			gstAmount,
+			tipAmount,
+		};
 	};
 
 	return (
@@ -219,7 +233,9 @@ export function OrderHistoryScreen() {
 
 											<div className="mt-4 flex flex-wrap items-center justify-between gap-4">
 												<div className="flex flex-wrap gap-2 text-xs text-foreground/68">
-													<span className="rounded-full bg-background/75 px-3 py-1">Total: ₹{order.total}</span>
+													<span className="rounded-full bg-background/75 px-3 py-1">Total: ₹{order.total.toFixed(2)}</span>
+													{getGstBreakdown(order).hasGstAwareTotal ? <span className="rounded-full bg-background/75 px-3 py-1">GST: ₹{getGstBreakdown(order).gstAmount.toFixed(2)}</span> : null}
+													{getGstBreakdown(order).hasGstAwareTotal ? <span className="rounded-full bg-background/75 px-3 py-1">Tip: ₹{getGstBreakdown(order).tipAmount.toFixed(2)}</span> : null}
 													<span className="rounded-full bg-background/75 px-3 py-1">Payment: {getPaymentLabel(order)}</span>
 													<span className="rounded-full bg-background/75 px-3 py-1">{fulfillmentLabel}</span>
 												</div>

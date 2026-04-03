@@ -11,10 +11,13 @@ export function ReceiptView({ receipt, onNewOrder }: ReceiptViewProps) {
       <p className="text-xs font-semibold uppercase tracking-[0.1em] text-emerald-700">Payment Successful</p>
       <h3 className="mt-1 text-base font-semibold text-emerald-900">Order #{receipt.orderId}</h3>
       <div className="mt-3 grid gap-1 text-sm text-emerald-900/90">
-        <p>Channel: {receipt.orderChannel}</p>
+        <p>Channel: In Store</p>
         <p>Customer: {receipt.customerName}</p>
         <p>Phone: {receipt.customerPhone}</p>
         <p>Payment: {receipt.paymentMethod.toUpperCase()}</p>
+        <p>Subtotal: Rs {receipt.subtotal.toFixed(2)}</p>
+        <p>Tax: Rs {receipt.taxAmount.toFixed(2)}</p>
+        <p>Tip: Rs {receipt.tipAmount.toFixed(2)}</p>
         <p>Total: Rs {receipt.total.toFixed(2)}</p>
       </div>
       <button

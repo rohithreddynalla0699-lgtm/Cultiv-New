@@ -1,4 +1,5 @@
 import { Building2, ShieldCheck } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAdminDashboard } from '../../contexts/AdminDashboardContext';
@@ -116,7 +117,7 @@ export function AdminAccessScreen({
           </section>
 
           <section className="grid gap-4">
-            <div className="rounded-[32px] border border-primary/12 bg-white/92 p-6 shadow-[0_20px_52px_rgba(45,80,22,0.12)] md:p-7">
+            <motion.div layout className="min-h-[430px] rounded-[32px] border border-primary/12 bg-white/92 p-6 shadow-[0_20px_52px_rgba(45,80,22,0.12)] md:p-7">
               <div className="flex items-center gap-3">
                 <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-primary/8 text-primary">
                   {mode === 'store' ? <Building2 className="h-5 w-5" /> : <ShieldCheck className="h-5 w-5" />}
@@ -127,40 +128,65 @@ export function AdminAccessScreen({
                 </div>
               </div>
 
-              {mode === 'owner' ? (
-                <div className="mt-5 space-y-3">
-                  <label className="block text-sm text-foreground/68">
-                    <span className="mb-2 block font-medium">Owner PIN</span>
-                    <input data-testid="owner-pin-input" value={ownerPin} onChange={(event) => setOwnerPin(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6-digit owner PIN" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
-                  </label>
-                  <button data-testid="owner-login-button" type="button" onClick={handleOwnerLogin} disabled={isLoading} className="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground disabled:opacity-60">{isLoading ? 'Verifying…' : 'Open owner panel'}</button>
-                </div>
-              ) : mode === 'admin' ? (
-                <div className="mt-5 space-y-3">
-                  <label className="block text-sm text-foreground/68">
-                    <span className="mb-2 block font-medium">Admin PIN</span>
-                    <input data-testid="admin-pin-input" value={adminPin} onChange={(event) => setAdminPin(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6-digit admin PIN" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
-                  </label>
-                  <button data-testid="admin-login-button" type="button" onClick={handleScopedAdminLogin} disabled={isLoading} className="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground disabled:opacity-60">{isLoading ? 'Verifying…' : 'Open admin dashboard'}</button>
-                </div>
-              ) : (
-                <div className="mt-5 space-y-3">
-                  <label className="block text-sm text-foreground/68">
-                    <span className="mb-2 block font-medium">Store</span>
-                    <select data-testid="store-select" value={storeCode} onChange={(event) => setStoreCode(event.target.value)} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary">
-                      {activeStores.map((store) => (
-                        <option key={store.id} value={store.code}>{store.name} · {store.city}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="block text-sm text-foreground/68">
-                    <span className="mb-2 block font-medium">6-digit PIN</span>
-                    <input data-testid="store-pin-input" value={storePin} onChange={(event) => setStorePin(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Store PIN" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
-                  </label>
-                  <button data-testid="store-login-button" type="button" onClick={handleStoreLogin} disabled={isLoading} className="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground disabled:opacity-60">{isLoading ? 'Verifying…' : 'Open store workspace'}</button>
-                </div>
-              )}
-            </div>
+              <div className="mt-5 min-h-[230px]">
+                <AnimatePresence mode="wait" initial={false}>
+                  {mode === 'owner' ? (
+                    <motion.div
+                      key="owner"
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      transition={{ duration: 0.18, ease: 'easeOut' }}
+                      className="space-y-3"
+                    >
+                      <label className="block text-sm text-foreground/68">
+                        <span className="mb-2 block font-medium">Owner PIN</span>
+                        <input data-testid="owner-pin-input" value={ownerPin} onChange={(event) => setOwnerPin(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6-digit owner PIN" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                      </label>
+                      <button data-testid="owner-login-button" type="button" onClick={handleOwnerLogin} disabled={isLoading} className="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground disabled:opacity-60">{isLoading ? 'Verifying…' : 'Open owner panel'}</button>
+                    </motion.div>
+                  ) : mode === 'admin' ? (
+                    <motion.div
+                      key="admin"
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      transition={{ duration: 0.18, ease: 'easeOut' }}
+                      className="space-y-3"
+                    >
+                      <label className="block text-sm text-foreground/68">
+                        <span className="mb-2 block font-medium">Admin PIN</span>
+                        <input data-testid="admin-pin-input" value={adminPin} onChange={(event) => setAdminPin(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6-digit admin PIN" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                      </label>
+                      <button data-testid="admin-login-button" type="button" onClick={handleScopedAdminLogin} disabled={isLoading} className="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground disabled:opacity-60">{isLoading ? 'Verifying…' : 'Open admin dashboard'}</button>
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="store"
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      transition={{ duration: 0.18, ease: 'easeOut' }}
+                      className="space-y-3"
+                    >
+                      <label className="block text-sm text-foreground/68">
+                        <span className="mb-2 block font-medium">Store</span>
+                        <select data-testid="store-select" value={storeCode} onChange={(event) => setStoreCode(event.target.value)} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary">
+                          {activeStores.map((store) => (
+                            <option key={store.id} value={store.code}>{store.name} · {store.city}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="block text-sm text-foreground/68">
+                        <span className="mb-2 block font-medium">6-digit PIN</span>
+                        <input data-testid="store-pin-input" value={storePin} onChange={(event) => setStorePin(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Store PIN" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                      </label>
+                      <button data-testid="store-login-button" type="button" onClick={handleStoreLogin} disabled={isLoading} className="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground disabled:opacity-60">{isLoading ? 'Verifying…' : 'Open store workspace'}</button>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            </motion.div>
 
             <div className="rounded-[28px] border border-primary/10 bg-[linear-gradient(180deg,rgba(247,250,243,0.95),rgba(255,255,255,0.88))] px-5 py-4 text-sm text-foreground/66 shadow-[0_16px_40px_rgba(45,80,22,0.08)]">
               {message}

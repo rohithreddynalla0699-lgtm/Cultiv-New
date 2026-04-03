@@ -212,7 +212,7 @@ Deno.serve(async (req) => {
   let query = db
     .from('orders')
     .select(
-      'order_id, order_type, source_channel, order_status, store_id, customer_name, customer_phone, customer_email, payment_method, subtotal_amount, discount_amount, total_amount, created_at, order_items(order_item_id, order_id, item_name, item_category, unit_price, quantity, order_item_selections(order_item_selection_id, order_item_id, group_name_snapshot, option_name))'
+      'order_id, order_type, source_channel, order_status, store_id, customer_name, customer_phone, customer_email, payment_method, subtotal_amount, discount_amount, tax_amount, tip_amount, total_amount, created_at, order_items(order_item_id, order_id, item_name, item_category, unit_price, quantity, order_item_selections(order_item_selection_id, order_item_id, group_name_snapshot, option_name))'
     )
     .order('created_at', { ascending: false });
 

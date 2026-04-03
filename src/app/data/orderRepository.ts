@@ -87,6 +87,7 @@ export async function fetchOperationalOrdersFromSupabase(sessionPayload: Interna
       orderType: toUiOrderType(row.order_type),
       subtotal: row.subtotal_amount,
       rewardDiscount: row.discount_amount,
+      taxAmount: row.tax_amount,
       total: row.total_amount,
       status: toUiStatus(row.order_status),
       createdAt: row.created_at,
@@ -95,6 +96,7 @@ export async function fetchOperationalOrdersFromSupabase(sessionPayload: Interna
       email: row.customer_email ?? '',
       source: row.source_channel,
       paymentMethod: row.payment_method ?? undefined,
+      tipAmount: row.tip_amount,
       fulfillmentWindow: '20-30 min',
       statusTimeline: buildStatusTimeline(row.created_at),
     } satisfies Order;

@@ -15,6 +15,7 @@ import { useAdminDashboard } from '../../contexts/AdminDashboardContext';
 import { useStoreSession } from '../../hooks/useStoreSession';
 import { menuService } from '../../services/menuService';
 import { posService } from '../../services/posService';
+import { POS_TAX_RATE } from '../../constants/business';
 import { CategoryRail } from './counter-billing/CategoryRail';
 import { ItemGrid } from './counter-billing/ItemGrid';
 import { ItemCustomizer } from './counter-billing/ItemCustomizer';
@@ -22,14 +23,16 @@ import { CartPanel } from './counter-billing/CartPanel';
 import { PaymentPanel } from './counter-billing/PaymentPanel';
 import { ReceiptView } from './counter-billing/ReceiptView';
 import type { CounterPaymentMethod, OrderItemSelection } from '../../types/platform';
-import type { PosCartLine, PosOrderChannel, PosReceipt } from '../../types/pos';
+import type { PosCartLine, PosReceipt } from '../../types/pos';
 
 type SupportedCategorySlug = 'signature-bowls' | 'breakfast-bowls' | 'high-protein-cups' | 'salad-bowls' | 'kids-meal' | 'drinks-juices';
+type TipOption = 'none' | '5' | '10' | '15' | 'custom';
 
 interface CustomizerState {
   item: FoodItem;
   selections: Record<string, string[]>;
   quantity: number;
+  categoryName: string;
 }
 
 const CATEGORY_ICON: Record<SupportedCategorySlug, string> = {
@@ -62,6 +65,22 @@ function mapSelectionsToLabels(selections: Record<string, string[]>, steps: Buil
       choices: selectedIds.map((id) => stepById[stepId]?.ingredients.find((ingredient) => ingredient.id === id)?.name ?? id),
     }))
     .filter((entry) => entry.choices.length > 0);
+}
+
+function mapSelectionLabelsToIds(selections: OrderItemSelection[], steps: BuilderStep[]) {
+  const stepByTitle = new Map(steps.map((step) => [step.title.toLowerCase(), step]));
+  const nextSelections: Record<string, string[]> = {};
+
+  for (const selection of selections) {
+    const step = stepByTitle.get(selection.section.toLowerCase());
+    if (!step) continue;
+    const ids = selection.choices
+      .map((choice) => step.ingredients.find((ingredient) => ingredient.name === choice)?.id)
+      .filter((value): value is string => Boolean(value));
+    nextSelections[step.id] = ids;
+  }
+
+  return nextSelections;
 }
 
 function getCustomizeSteps(itemId: string) {
@@ -105,16 +124,17 @@ export function CounterBillingScreen() {
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [phoneSkipped, setPhoneSkipped] = useState(false);
-  const [orderChannel, setOrderChannel] = useState<PosOrderChannel>('counter');
-  const [tipPercentage, setTipPercentage] = useState(0);
+  const [selectedTipOption, setSelectedTipOption] = useState<TipOption>('none');
+  const [customTipInput, setCustomTipInput] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<CounterPaymentMethod | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [customizer, setCustomizer] = useState<CustomizerState | null>(null);
+  const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [customizerError, setCustomizerError] = useState('');
   const [receipt, setReceipt] = useState<PosReceipt | null>(null);
   const [message, setMessage] = useState<{ tone: 'info' | 'success' | 'warning' | 'error'; text: string }>({
     tone: 'info',
-    text: 'Build the order fast: select items, verify payment, and charge.',
+    text: '',
   });
 
   useEffect(() => {
@@ -167,8 +187,19 @@ export function CounterBillingScreen() {
   const activeItems = activeCategory?.items ?? [];
 
   const subtotal = useMemo(() => cartLines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0), [cartLines]);
-  const tipAmount = useMemo(() => Math.round(subtotal * (tipPercentage / 100) * 100) / 100, [subtotal, tipPercentage]);
-  const total = subtotal + tipAmount;
+  const discountAmount = 0;
+  const taxableSubtotal = Math.max(0, subtotal - discountAmount);
+  const taxAmount = useMemo(() => Math.round(taxableSubtotal * POS_TAX_RATE * 100) / 100, [taxableSubtotal]);
+  const tipPercentage = selectedTipOption === 'custom' || selectedTipOption === 'none' ? 0 : Number(selectedTipOption);
+  const parsedCustomTip = Number(customTipInput || 0);
+  const customTipAmount = selectedTipOption === 'custom' && Number.isFinite(parsedCustomTip) ? Math.max(0, parsedCustomTip) : 0;
+  const tipAmount = useMemo(
+    () => (selectedTipOption === 'custom'
+      ? Math.round(customTipAmount * 100) / 100
+      : Math.round(taxableSubtotal * (tipPercentage / 100) * 100) / 100),
+    [selectedTipOption, customTipAmount, taxableSubtotal, tipPercentage],
+  );
+  const total = taxableSubtotal + taxAmount + tipAmount;
 
   const canCharge = Boolean(
     activeStoreScope !== 'all'
@@ -207,7 +238,37 @@ export function CounterBillingScreen() {
       item,
       quantity: 1,
       selections: preset?.defaultSelections ?? {},
+      categoryName: activeCategory?.name ?? 'POS',
     });
+    setEditingLineId(null);
+    setCustomizerError('');
+  };
+
+  const editCartLine = (lineId: string) => {
+    void touchActivity();
+    const line = cartLines.find((entry) => entry.id === lineId);
+    if (!line) return;
+
+    const menuCategory = menuCatalog.find((entry) => entry.items.some((item) => item.id === line.itemId));
+    const item = menuCategory?.items.find((entry) => entry.id === line.itemId);
+
+    if (!item) {
+      setMessage({ tone: 'warning', text: 'This item cannot be edited because it is no longer in the current menu.' });
+      return;
+    }
+
+    if (menuCategory && SUPPORTED_CATEGORY_SLUGS.includes(menuCategory.slug as SupportedCategorySlug)) {
+      setActiveCategorySlug(menuCategory.slug as SupportedCategorySlug);
+    }
+
+    const steps = getCustomizeSteps(item.id);
+    setCustomizer({
+      item,
+      quantity: line.quantity,
+      selections: mapSelectionLabelsToIds(line.selections, steps),
+      categoryName: line.category,
+    });
+    setEditingLineId(line.id);
     setCustomizerError('');
   };
 
@@ -246,20 +307,32 @@ export function CounterBillingScreen() {
     const unitPrice = calculateUnitPrice(customizer.item, customizer.selections);
     const selections = mapSelectionsToLabels(customizer.selections, steps);
 
-    setCartLines((previous) => [
-      ...previous,
-      {
-        id: createId('line'),
+    setCartLines((previous) => {
+      const nextLine: PosCartLine = {
+        id: editingLineId ?? createId('line'),
         itemId: customizer.item.id,
         title: customizer.item.name,
-        category: activeCategory?.name ?? 'POS',
+        category: customizer.categoryName,
         quantity: customizer.quantity,
         unitPrice,
         selections,
-      },
-    ]);
+      };
+
+      if (!editingLineId) {
+        return [...previous, nextLine];
+      }
+
+      return previous.map((line) => (line.id === editingLineId ? nextLine : line));
+    });
 
     setCustomizer(null);
+    setEditingLineId(null);
+    setCustomizerError('');
+  };
+
+  const closeCustomizer = () => {
+    setCustomizer(null);
+    setEditingLineId(null);
     setCustomizerError('');
   };
 
@@ -282,11 +355,7 @@ export function CounterBillingScreen() {
 
   const toggleSkipPhone = () => {
     setPhoneSkipped((previous) => !previous);
-    if (!phoneSkipped) {
-      setCustomerPhone(`999${Date.now().toString().slice(-7)}`);
-    } else {
-      setCustomerPhone('');
-    }
+    setCustomerPhone('');
   };
 
   const handleCharge = async () => {
@@ -302,7 +371,7 @@ export function CounterBillingScreen() {
     try {
       const receiptResult = await posService.createOrder({
         storeId: activeStoreScope,
-        orderChannel,
+        orderChannel: 'in_store',
         customerName: customerName.trim() || undefined,
         customerPhone: normalizePhoneInput(customerPhone),
         paymentMethod,
@@ -330,7 +399,8 @@ export function CounterBillingScreen() {
 
       setReceipt(receiptResult);
       setCartLines([]);
-      setTipPercentage(0);
+      setSelectedTipOption('none');
+      setCustomTipInput('');
       setPaymentMethod(null);
       setMessage({ tone: 'success', text: `Order ${receiptResult.orderId} placed successfully.` });
     } catch (error) {
@@ -348,7 +418,6 @@ export function CounterBillingScreen() {
     setCustomerName('');
     setCustomerPhone('');
     setPhoneSkipped(false);
-    setOrderChannel('counter');
     setMessage({ tone: 'info', text: 'Ready for next order.' });
   };
 
@@ -395,10 +464,11 @@ export function CounterBillingScreen() {
               quantity={customizer.quantity}
               totalPrice={calculateUnitPrice(customizer.item, customizer.selections) * customizer.quantity}
               validationError={customizerError}
-              onBack={() => setCustomizer(null)}
+              onBack={closeCustomizer}
               onToggleChoice={updateCustomizerChoice}
               onQuantityChange={(delta) => setCustomizer((current) => (current ? { ...current, quantity: Math.max(1, current.quantity + delta) } : current))}
               onAddToCart={addCustomizedToCart}
+              submitLabel={editingLineId ? 'Update Item' : 'Add to Cart'}
             />
           ) : (
             <>
@@ -423,32 +493,34 @@ export function CounterBillingScreen() {
 
           <CartPanel
             cartLines={cartLines}
-            tipPercentage={tipPercentage}
             subtotal={subtotal}
+            taxAmount={taxAmount}
             tipAmount={tipAmount}
             total={total}
             selectedPaymentMethod={paymentMethod}
             customerPhone={customerPhone}
             customerName={customerName}
             phoneSkipped={phoneSkipped}
-            orderChannel={orderChannel}
+            selectedTipOption={selectedTipOption}
+            customTipInput={customTipInput}
             isSubmitting={isSubmitting}
             canSubmit={canCharge}
-            onSetTip={setTipPercentage}
-            onSetOrderChannel={setOrderChannel}
+            onSelectTipOption={setSelectedTipOption}
+            onSetCustomTipInput={setCustomTipInput}
             onPhoneChange={(value) => setCustomerPhone(normalizePhoneInput(value))}
             onNameChange={setCustomerName}
             onToggleSkipPhone={toggleSkipPhone}
             onSelectPaymentMethod={setPaymentMethod}
             onIncrementLine={incrementLine}
             onDecrementLine={decrementLine}
+            onEditLine={editCartLine}
             onRemoveLine={removeLine}
             onCharge={() => {
               void handleCharge();
             }}
           />
 
-          <PaymentPanel message={message.text} tone={message.tone} />
+          {message.text.trim() ? <PaymentPanel message={message.text} tone={message.tone} /> : null}
         </div>
       </div>
     </motion.div>

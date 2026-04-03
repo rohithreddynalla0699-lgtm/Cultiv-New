@@ -20,9 +20,7 @@ interface OrdersBoardHeaderProps {
 const ORDER_TYPE_TABS: Array<{ value: OrdersBoardOrderTypeFilter; label: string }> = [
   { value: 'all', label: 'All' },
   { value: 'online', label: 'Online' },
-  { value: 'counter', label: 'Counter' },
-  { value: 'walk_in', label: 'Walk-in' },
-  { value: 'phone', label: 'Phone' },
+  { value: 'in_store', label: 'In Store' },
 ];
 
 const DATE_TABS: Array<{ value: OrdersBoardDateFilter; label: string }> = [

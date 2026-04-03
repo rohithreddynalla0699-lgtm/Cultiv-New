@@ -3,6 +3,7 @@
 const INTERNAL_LOGIN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-login`;
 const INTERNAL_ORDERS_LIST_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-orders-list`;
 const INTERNAL_ORDER_STATUS_UPDATE_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-order-status-update`;
+const INTERNAL_SHIFT_CONTROL_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-shift-control`;
 
 export interface InternalLoginResponse {
   userId: string;
@@ -55,6 +56,8 @@ export interface InternalOrdersListOrderRow {
   payment_method: 'cash' | 'upi' | 'card' | null;
   subtotal_amount: number;
   discount_amount: number;
+  tax_amount: number;
+  tip_amount: number;
   total_amount: number;
   created_at: string;
   order_items: InternalOrdersListItemRow[];
@@ -70,14 +73,34 @@ export interface InternalOrderStatusUpdateResponse {
   updatedStatus: 'placed' | 'preparing' | 'ready_for_pickup' | 'completed' | 'cancelled' | 'pending';
 }
 
-export async function loginInternal(params: {
-  mode: 'owner' | 'admin' | 'store';
-  pin: string;
-  storeCode?: string;
-}): Promise<{ data: InternalLoginResponse | null; error: string | null }> {
+export interface InternalShiftDashboardEmployee {
+  employeeId: string;
+  name: string;
+  role: 'manager' | 'kitchen' | 'counter';
+  status: 'on_shift' | 'off_shift';
+  clockInAt: string | null;
+  todayHours: number;
+  weekHours: number;
+  monthHours: number;
+}
+
+export interface InternalShiftDashboardResponse {
+  employees: InternalShiftDashboardEmployee[];
+  currentlyOnShift: number;
+}
+
+export interface InternalShiftToggleResponse {
+  action: 'clock_in' | 'clock_out';
+  shiftId: string;
+  employeeId: string;
+  employeeName: string;
+  employeeRole: 'manager' | 'kitchen' | 'counter';
+}
+
+const postInternal = async <TResponse>(url: string, params: Record<string, unknown>, fallbackMessage: string): Promise<{ data: TResponse | null; error: string | null }> => {
   try {
     const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-    const response = await fetch(INTERNAL_LOGIN_URL, {
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -90,14 +113,22 @@ export async function loginInternal(params: {
     const payload = (await response.json()) as Record<string, unknown>;
 
     if (!response.ok) {
-      const message = typeof payload.error === 'string' ? payload.error : 'Login failed.';
+      const message = typeof payload.error === 'string' ? payload.error : fallbackMessage;
       return { data: null, error: message };
     }
 
-    return { data: payload as unknown as InternalLoginResponse, error: null };
+    return { data: payload as unknown as TResponse, error: null };
   } catch {
     return { data: null, error: 'Network error. Please try again.' };
   }
+};
+
+export async function loginInternal(params: {
+  mode: 'owner' | 'admin' | 'store';
+  pin: string;
+  storeCode?: string;
+}): Promise<{ data: InternalLoginResponse | null; error: string | null }> {
+  return postInternal<InternalLoginResponse>(INTERNAL_LOGIN_URL, params, 'Login failed.');
 }
 
 export async function listInternalOrders(params: {
@@ -107,29 +138,7 @@ export async function listInternalOrders(params: {
   scopeStoreId: string | null;
   filters?: InternalOrdersListFilters;
 }): Promise<{ data: InternalOrdersListResponse | null; error: string | null }> {
-  try {
-    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-    const response = await fetch(INTERNAL_ORDERS_LIST_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: anonKey,
-        Authorization: `Bearer ${anonKey}`,
-      },
-      body: JSON.stringify(params),
-    });
-
-    const payload = (await response.json()) as Record<string, unknown>;
-
-    if (!response.ok) {
-      const message = typeof payload.error === 'string' ? payload.error : 'Could not fetch internal orders.';
-      return { data: null, error: message };
-    }
-
-    return { data: payload as unknown as InternalOrdersListResponse, error: null };
-  } catch {
-    return { data: null, error: 'Network error. Please try again.' };
-  }
+  return postInternal<InternalOrdersListResponse>(INTERNAL_ORDERS_LIST_URL, params, 'Could not fetch internal orders.');
 }
 
 export async function updateInternalOrderStatus(params: {
@@ -140,27 +149,25 @@ export async function updateInternalOrderStatus(params: {
   orderId: string;
   nextStatus: 'preparing' | 'ready_for_pickup' | 'completed';
 }): Promise<{ data: InternalOrderStatusUpdateResponse | null; error: string | null }> {
-  try {
-    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-    const response = await fetch(INTERNAL_ORDER_STATUS_UPDATE_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: anonKey,
-        Authorization: `Bearer ${anonKey}`,
-      },
-      body: JSON.stringify(params),
-    });
+  return postInternal<InternalOrderStatusUpdateResponse>(INTERNAL_ORDER_STATUS_UPDATE_URL, params, 'Could not update order status.');
+}
 
-    const payload = (await response.json()) as Record<string, unknown>;
+export async function loadInternalShiftDashboard(params: {
+  internalSessionToken: string;
+  roleKey: 'owner' | 'admin' | 'store';
+  scopeType: 'global' | 'store';
+  scopeStoreId: string | null;
+}): Promise<{ data: InternalShiftDashboardResponse | null; error: string | null }> {
+  return postInternal<InternalShiftDashboardResponse>(INTERNAL_SHIFT_CONTROL_URL, { ...params, action: 'dashboard' }, 'Could not load shift dashboard.');
+}
 
-    if (!response.ok) {
-      const message = typeof payload.error === 'string' ? payload.error : 'Could not update order status.';
-      return { data: null, error: message };
-    }
-
-    return { data: payload as unknown as InternalOrderStatusUpdateResponse, error: null };
-  } catch {
-    return { data: null, error: 'Network error. Please try again.' };
-  }
+export async function submitInternalShiftPin(params: {
+  internalSessionToken: string;
+  roleKey: 'owner' | 'admin' | 'store';
+  scopeType: 'global' | 'store';
+  scopeStoreId: string | null;
+  employeeId: string;
+  pin: string;
+}): Promise<{ data: InternalShiftToggleResponse | null; error: string | null }> {
+  return postInternal<InternalShiftToggleResponse>(INTERNAL_SHIFT_CONTROL_URL, { ...params, action: 'submit_pin' }, 'Could not submit employee PIN.');
 }

@@ -45,11 +45,14 @@ import type { OrderPageLocationState, OrdersSuccessLocationState } from '../type
 import { getSelectedStore, loadSelectedStoreId, loadStores, requestOpenStoreSelector, subscribeSelectedStore, type StoreLocatorStore } from '../data/storeLocator';
 import {
   DEFAULT_ACTIVE_ORDER_CATEGORY_SLUG,
+  POS_TAX_RATE,
   PICKUP_ESTIMATE_WINDOW,
   PRICE_EPSILON,
   REWARD_MAX_DISCOUNT_RATIO,
   REWARD_MIN_ORDER_SUBTOTAL,
 } from '../constants/business';
+
+type TipOption = 'none' | '5' | '10' | '15' | 'custom';
 
 type CartLine = DraftCartLine;
 
@@ -304,6 +307,8 @@ export function OrderPage() {
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [showGuestAuthPrompt, setShowGuestAuthPrompt] = useState(true);
   const [selectedRewardIds, setSelectedRewardIds] = useState<string[]>([]);
+  const [selectedTipOption, setSelectedTipOption] = useState<TipOption>('none');
+  const [customTipInput, setCustomTipInput] = useState('');
   const submissionLockRef = useRef(false);
   const [stores, setStores] = useState<StoreLocatorStore[]>(() => loadStores());
   const [selectedStoreId, setSelectedStoreId] = useState<string>(() => loadSelectedStoreId(loadStores()));
@@ -509,7 +514,15 @@ export function OrderPage() {
 
   const selectedDiscountRewardId = selectedRewardIds.find((rewardId) => Number.isFinite(DISCOUNT_REWARD_VALUES[rewardId]));
   const rewardDiscount = selectedDiscountRewardId ? DISCOUNT_REWARD_VALUES[selectedDiscountRewardId] : 0;
-  const payableTotal = Math.max(0, cartTotal - rewardDiscount);
+  const taxableSubtotal = Math.max(0, cartTotal - rewardDiscount);
+  const gstAmount = Math.round(taxableSubtotal * POS_TAX_RATE * 100) / 100;
+  const tipPercentage = selectedTipOption === 'custom' || selectedTipOption === 'none' ? 0 : Number(selectedTipOption);
+  const parsedCustomTip = Number(customTipInput || 0);
+  const customTipAmount = selectedTipOption === 'custom' && Number.isFinite(parsedCustomTip) ? Math.max(0, parsedCustomTip) : 0;
+  const tipAmount = selectedTipOption === 'custom'
+    ? Math.round(customTipAmount * 100) / 100
+    : Math.round(taxableSubtotal * (tipPercentage / 100) * 100) / 100;
+  const payableTotal = Math.round((taxableSubtotal + gstAmount + tipAmount) * 100) / 100;
 
   const selectedFreeRewardItems = selectedRewardIds
     .filter((rewardId) => !Number.isFinite(DISCOUNT_REWARD_VALUES[rewardId]))
@@ -973,6 +986,8 @@ export function OrderPage() {
         orderType: 'pickup',
         subtotal: cartTotal,
         rewardDiscount,
+        tipPercentage,
+        tipAmount,
         usedRewardIds: selectedRewardIds,
         total: payableTotal,
         fullName: customer.fullName.trim(),
@@ -1482,7 +1497,7 @@ export function OrderPage() {
                     </div>
                     <div className="mt-2 flex items-center justify-between text-sm">
                       <span className="text-foreground/60">Food subtotal</span>
-                      <span className="tabular-nums">₹{cartTotal}</span>
+                      <span className="tabular-nums">₹{cartTotal.toFixed(2)}</span>
                     </div>
                     {customizing ? (
                       <div className="mt-2 flex items-center justify-between text-sm text-foreground/60">
@@ -1493,9 +1508,53 @@ export function OrderPage() {
                       {rewardDiscount > 0 ? (
                         <div className="mt-2 flex items-center justify-between text-sm text-primary/80">
                           <span>Rewards discount</span>
-                          <span className="tabular-nums">-₹{rewardDiscount}</span>
+                          <span className="tabular-nums">-₹{rewardDiscount.toFixed(2)}</span>
                         </div>
                       ) : null}
+                    <div className="mt-2 flex items-center justify-between text-sm text-foreground/60">
+                      <span>Taxable subtotal</span>
+                      <span className="tabular-nums">₹{taxableSubtotal.toFixed(2)}</span>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between text-sm text-foreground/60">
+                      <span>GST</span>
+                      <span className="tabular-nums">₹{gstAmount.toFixed(2)}</span>
+                    </div>
+                    <div className="mt-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-foreground/55">Tip</p>
+                      <div className="mt-1 flex flex-wrap gap-2">
+                        {([
+                          { value: 'none', label: 'No Tip' },
+                          { value: '5', label: '5%' },
+                          { value: '10', label: '10%' },
+                          { value: '15', label: '15%' },
+                          { value: 'custom', label: 'Custom' },
+                        ] as Array<{ value: TipOption; label: string }>).map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setSelectedTipOption(option.value)}
+                            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${selectedTipOption === option.value ? 'bg-primary text-primary-foreground' : 'border border-border text-foreground/70'}`}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                      {selectedTipOption === 'custom' ? (
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={customTipInput}
+                          onChange={(event) => setCustomTipInput(event.target.value)}
+                          placeholder="Enter custom tip"
+                          className="mt-2 w-full rounded-xl border border-primary/14 bg-white px-3 py-2.5 text-sm outline-none"
+                        />
+                      ) : null}
+                    </div>
+                    <div className="mt-2 flex items-center justify-between text-sm text-foreground/60">
+                      <span>Tip</span>
+                      <span className="tabular-nums">₹{tipAmount.toFixed(2)}</span>
+                    </div>
                     <motion.div 
                       key={`payable-${payableTotal}`}
                       initial={{ scale: 0.95, opacity: 0.7 }}
@@ -1503,8 +1562,8 @@ export function OrderPage() {
                       transition={{ type: 'spring', stiffness: 280, damping: 18 }}
                       className="mt-2 flex items-center justify-between text-base font-semibold"
                     >
-                      <span>Payable Total</span>
-                        <span className="tabular-nums">₹{payableTotal}</span>
+                      <span>Total</span>
+                        <span className="tabular-nums">₹{payableTotal.toFixed(2)}</span>
                     </motion.div>
                     <div className="mt-2 flex items-center justify-between text-sm text-foreground/60">
                       <span>Pickup estimate</span>
@@ -1617,7 +1676,7 @@ export function OrderPage() {
                     className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-full bg-primary py-3 text-sm font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
                   >
                     <ShoppingBag className="h-4 w-4" />
-                    {isSubmitting ? 'Placing Order...' : customizing ? 'Finish customization to place order' : `Place Order · ₹${payableTotal}`}
+                    {isSubmitting ? 'Placing Order...' : customizing ? 'Finish customization to place order' : `Place Order · ₹${payableTotal.toFixed(2)}`}
                   </button>
 
                   {!user && showGuestAuthPrompt && cartCount > 0 ? (
@@ -1645,7 +1704,7 @@ export function OrderPage() {
             className="inline-flex min-h-[52px] w-full items-center justify-between rounded-2xl border border-primary/14 bg-[linear-gradient(160deg,rgba(255,255,255,0.97),rgba(242,247,235,0.94))] px-[18px] py-3.5 shadow-[0_12px_28px_rgba(20,35,10,0.18)]"
           >
             <span className="min-w-0 pr-2 text-sm font-medium text-foreground/72 truncate">{cartCount} item{cartCount > 1 ? 's' : ''} in cart</span>
-            <span className="shrink-0 text-sm font-semibold text-primary whitespace-nowrap">Review Cart · ₹{payableTotal}</span>
+            <span className="shrink-0 text-sm font-semibold text-primary whitespace-nowrap">Review Cart · ₹{payableTotal.toFixed(2)}</span>
           </button>
         </div>
       ) : null}

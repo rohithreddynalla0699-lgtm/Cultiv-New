@@ -88,6 +88,7 @@ export interface Order {
 	orderType: OrderType;
 	subtotal: number;
 	rewardDiscount: number;
+	taxAmount?: number;
 	total: number;
 	status: OrderStatus;
 	createdAt: string;
@@ -166,6 +167,8 @@ export interface PlaceOrderInput {
 	orderType: 'pickup';
 	subtotal: number;
 	rewardDiscount?: number;
+	tipPercentage?: number;
+	tipAmount?: number;
 	usedRewardIds?: string[];
 	total: number;
 	fullName: string;
@@ -186,7 +189,7 @@ export interface CreateCounterWalkInOrderInput {
 	storeId: string;
 	fullName?: string;
 	phone: string;
-	orderChannel?: 'counter' | 'walk_in' | 'phone';
+	orderChannel?: 'in_store';
 	items: CounterOrderItemInput[];
 	paymentMethod: CounterPaymentMethod;
 	tipPercentage: number;

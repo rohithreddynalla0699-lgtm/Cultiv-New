@@ -2,60 +2,67 @@ import { CartItemRow } from './CartItemRow';
 import type { CounterPaymentMethod } from '../../../types/platform';
 import type { PosCartLine } from '../../../types/pos';
 
+type TipOption = 'none' | '5' | '10' | '15' | 'custom';
+
 interface CartPanelProps {
   cartLines: PosCartLine[];
-  tipPercentage: number;
   subtotal: number;
+  taxAmount: number;
   tipAmount: number;
   total: number;
   selectedPaymentMethod: CounterPaymentMethod | null;
   customerPhone: string;
   customerName: string;
   phoneSkipped: boolean;
-  orderChannel: 'counter' | 'walk_in' | 'phone';
+  selectedTipOption: TipOption;
+  customTipInput: string;
   isSubmitting: boolean;
   canSubmit: boolean;
-  onSetTip: (nextTip: number) => void;
-  onSetOrderChannel: (next: 'counter' | 'walk_in' | 'phone') => void;
+  onSelectTipOption: (nextTip: TipOption) => void;
+  onSetCustomTipInput: (value: string) => void;
   onPhoneChange: (nextValue: string) => void;
   onNameChange: (nextValue: string) => void;
   onToggleSkipPhone: () => void;
   onSelectPaymentMethod: (method: CounterPaymentMethod) => void;
   onIncrementLine: (lineId: string) => void;
   onDecrementLine: (lineId: string) => void;
+  onEditLine: (lineId: string) => void;
   onRemoveLine: (lineId: string) => void;
   onCharge: () => void;
 }
 
-const TIP_OPTIONS = [0, 5, 10, 15] as const;
-const CHANNEL_OPTIONS = [
-  { value: 'counter', label: 'Counter' },
-  { value: 'walk_in', label: 'Walk-in' },
-  { value: 'phone', label: 'Phone' },
-] as const;
+const TIP_OPTIONS: Array<{ value: TipOption; label: string }> = [
+  { value: 'none', label: 'No Tip' },
+  { value: '5', label: '5%' },
+  { value: '10', label: '10%' },
+  { value: '15', label: '15%' },
+  { value: 'custom', label: 'Custom' },
+];
 const PAYMENT_OPTIONS: CounterPaymentMethod[] = ['cash', 'upi', 'card'];
 
 export function CartPanel({
   cartLines,
-  tipPercentage,
   subtotal,
+  taxAmount,
   tipAmount,
   total,
   selectedPaymentMethod,
   customerPhone,
   customerName,
   phoneSkipped,
-  orderChannel,
+  selectedTipOption,
+  customTipInput,
   isSubmitting,
   canSubmit,
-  onSetTip,
-  onSetOrderChannel,
+  onSelectTipOption,
+  onSetCustomTipInput,
   onPhoneChange,
   onNameChange,
   onToggleSkipPhone,
   onSelectPaymentMethod,
   onIncrementLine,
   onDecrementLine,
+  onEditLine,
   onRemoveLine,
   onCharge,
 }: CartPanelProps) {
@@ -66,22 +73,6 @@ export function CartPanel({
       </div>
 
       <div className="flex-1 space-y-3 overflow-y-auto p-4">
-        <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-foreground/55">Order Channel</p>
-          <div className="grid grid-cols-3 gap-2">
-            {CHANNEL_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => onSetOrderChannel(option.value)}
-                className={`rounded-lg px-2 py-1.5 text-xs font-semibold ${orderChannel === option.value ? 'bg-primary text-primary-foreground' : 'border border-border text-foreground/70'}`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
         <div className="space-y-2">
           {cartLines.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border bg-muted/35 px-3 py-4 text-center text-sm text-foreground/55">
@@ -92,6 +83,7 @@ export function CartPanel({
               <CartItemRow
                 key={line.id}
                 line={line}
+                onEdit={() => onEditLine(line.id)}
                 onIncrement={() => onIncrementLine(line.id)}
                 onDecrement={() => onDecrementLine(line.id)}
                 onRemove={() => onRemoveLine(line.id)}
@@ -106,20 +98,36 @@ export function CartPanel({
             <span className="font-semibold text-foreground">Rs {subtotal.toFixed(2)}</span>
           </div>
 
+          <div className="mt-2 flex items-center justify-between text-sm">
+            <span className="text-foreground/70">Tax</span>
+            <span className="font-semibold text-foreground">Rs {taxAmount.toFixed(2)}</span>
+          </div>
+
           <div className="mt-2">
             <p className="text-xs font-semibold uppercase tracking-[0.08em] text-foreground/55">Tip</p>
             <div className="mt-1 flex flex-wrap gap-2">
               {TIP_OPTIONS.map((tip) => (
                 <button
-                  key={tip}
+                  key={tip.value}
                   type="button"
-                  onClick={() => onSetTip(tip)}
-                  className={`rounded-full px-2.5 py-1 text-xs font-semibold ${tipPercentage === tip ? 'bg-primary text-primary-foreground' : 'border border-border text-foreground/70'}`}
+                  onClick={() => onSelectTipOption(tip.value)}
+                  className={`rounded-full px-2.5 py-1 text-xs font-semibold ${selectedTipOption === tip.value ? 'bg-primary text-primary-foreground' : 'border border-border text-foreground/70'}`}
                 >
-                  {tip === 0 ? '0%' : `${tip}%`}
+                  {tip.label}
                 </button>
               ))}
             </div>
+            {selectedTipOption === 'custom' ? (
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={customTipInput}
+                onChange={(event) => onSetCustomTipInput(event.target.value)}
+                placeholder="Enter custom tip"
+                className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
+              />
+            ) : null}
           </div>
 
           <div className="mt-2 flex items-center justify-between text-sm">

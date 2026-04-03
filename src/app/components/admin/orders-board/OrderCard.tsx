@@ -14,9 +14,7 @@ interface OrderCardProps {
 
 const TYPE_BADGE_CLASS: Record<OrdersBoardOrder['orderType'], string> = {
   online: 'bg-blue-100 text-blue-700',
-  counter: 'bg-emerald-100 text-emerald-700',
-  walk_in: 'bg-amber-100 text-amber-700',
-  phone: 'bg-slate-200 text-slate-700',
+  in_store: 'bg-emerald-100 text-emerald-700',
 };
 
 export function OrderCard({

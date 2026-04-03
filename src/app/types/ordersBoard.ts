@@ -1,7 +1,7 @@
 import type { AdminOrderBoardStatus } from './admin';
 import type { OrderStatus } from './platform';
 
-export type OrdersBoardOrderTypeFilter = 'all' | 'online' | 'counter' | 'walk_in' | 'phone';
+export type OrdersBoardOrderTypeFilter = 'all' | 'online' | 'in_store';
 
 export type OrdersBoardDateFilter = 'today' | 'yesterday' | 'custom';
 
@@ -26,7 +26,7 @@ export interface OrdersBoardOrder {
   itemsSummary: string[];
   totalAmount: number;
   storeId: string;
-  sourceLabel: 'Online' | 'Counter' | 'Walk-in' | 'Phone';
+  sourceLabel: 'Online' | 'In Store';
   placedAt: string;
   waitingMinutes: number;
   note?: string;

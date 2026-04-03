@@ -64,23 +64,17 @@ const isWithinSelectedDate = (createdAt: string, dateFilter: OrdersBoardFilters[
 };
 
 const inferBoardOrderType = (order: Order): OrdersBoardOrder['orderType'] => {
-  if (order.source === 'phone') return 'phone';
   if (order.source === 'app') return 'online';
-  if (order.orderType === 'walk-in') return 'walk_in';
-  return 'counter';
+  return 'in_store';
 };
 
 const toSourceLabel = (orderType: OrdersBoardOrder['orderType']): OrdersBoardOrder['sourceLabel'] => {
   switch (orderType) {
     case 'online':
       return 'Online';
-    case 'counter':
-      return 'Counter';
-    case 'walk_in':
-      return 'Walk-in';
-    case 'phone':
+    case 'in_store':
     default:
-      return 'Phone';
+      return 'In Store';
   }
 };
 

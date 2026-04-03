@@ -1,6 +1,6 @@
 import type { CounterPaymentMethod, OrderItemSelection } from './platform';
 
-export type PosOrderChannel = 'counter' | 'walk_in' | 'phone';
+export type PosOrderChannel = 'in_store';
 
 export interface PosCartLine {
   id: string;
@@ -52,6 +52,7 @@ export interface PosReceipt {
   customerPhone: string;
   paymentMethod: CounterPaymentMethod;
   subtotal: number;
+  taxAmount: number;
   tipAmount: number;
   total: number;
   createdAt: string;
