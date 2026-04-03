@@ -76,9 +76,18 @@ export type StoreScope = 'all' | string;
 
 export type InternalAccessRole = 'owner' | 'admin' | 'store';
 
+export type InternalAccessScopeType = 'global' | 'store';
+
 export interface InternalAccessSession {
-  role: InternalAccessRole;
-  storeId?: string;
+  sessionId: string;
+  userId: string;
+  roleId: string;
+  roleKey: InternalAccessRole;
+  roleName: string;
+  permissionKeys: string[];
+  scopeType: InternalAccessScopeType;
+  scopeStoreId: string | null;
+
   loggedInAt: string;
 }
 

@@ -7,13 +7,13 @@ export function StoreShiftScreen() {
   const [pinInput, setPinInput] = useState('');
   const [message, setMessage] = useState('Enter employee PIN to start or end shift.');
 
-  if (!session || session.role !== 'store' || !session.storeId) {
+  if (!session || session.scopeType !== 'store' || !session.scopeStoreId) {
     return <Navigate to="/operations" replace />;
   }
 
   const storeEmployees = useMemo(
-    () => scopedEmployees.filter((employee) => employee.storeId === session.storeId && employee.isActive),
-    [scopedEmployees, session.storeId]
+    () => scopedEmployees.filter((employee) => employee.storeId === session.scopeStoreId && employee.isActive),
+    [scopedEmployees, session.scopeStoreId]
   );
   const onShiftEmployees = storeEmployees.filter((employee) => employee.status === 'on_shift');
 

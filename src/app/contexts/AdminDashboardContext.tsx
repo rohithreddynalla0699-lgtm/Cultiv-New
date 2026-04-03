@@ -1,7 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ADMIN_ACCESS_PIN, ADMIN_OPERATOR_PIN, ADMIN_STORE_ACCESS_PIN_BY_ID, DEFAULT_ORDER_STORE_ID } from '../constants/admin';
+import { ADMIN_STORE_ACCESS_PIN_BY_ID, DEFAULT_ORDER_STORE_ID } from '../constants/admin';
 import { CUSTOMER_STORE_METADATA } from '../data/storeLocator';
 import { INVENTORY_MASTER_LIST } from '../constants/inventoryCatalog';
+// @ts-ignore - Supabase client is defined in JS module.
+import { supabase } from '../../lib/supabase';
 import type {
   AdminOrderNoteMap,
   AdminPermissions,
@@ -26,12 +28,16 @@ interface AdminDashboardContextType {
   scopedInventory: InventoryItem[];
   orderNotes: AdminOrderNoteMap;
   permissions: AdminPermissions;
+  hasPermission: (permissionKey: string) => boolean;
+  hasAnyPermission: (permissionKeys: string[]) => boolean;
+  isStoreScoped: () => boolean;
+  canAccessStore: (storeId: string) => boolean;
   activeStoreScope: StoreScope;
   activeStore: StoreRecord | null;
   setActiveStoreScope: (scope: StoreScope) => void;
-  loginAsOwner: (pin: string) => { success: boolean; message: string };
-  loginAsAdmin: (pin: string) => { success: boolean; message: string };
-  loginAsStore: (storeId: string, pin: string) => { success: boolean; message: string };
+  loginAsOwner: (pin: string) => Promise<{ success: boolean; message: string }>;
+  loginAsAdmin: (pin: string) => Promise<{ success: boolean; message: string }>;
+  loginAsStore: (storeId: string, pin: string) => Promise<{ success: boolean; message: string }>;
   logoutInternalAccess: () => void;
   addStore: (input: StoreInput) => { success: boolean; message: string };
   updateStore: (storeId: string, input: StoreInput) => { success: boolean; message: string };
@@ -350,6 +356,139 @@ const readStorage = <T,>(key: string, fallback: T): T => {
   }
 };
 
+interface InternalUserAccessRow {
+  id: string;
+  role_id: string;
+  full_name: string;
+  pin_hash: string;
+  store_id: string | null;
+  is_active: boolean;
+  roles: {
+    role_key: 'owner' | 'admin' | 'store';
+    role_name: string;
+    scope_type: 'global' | 'store';
+    role_permissions: Array<{
+      is_allowed: boolean;
+      permissions: {
+        permission_key: string;
+      } | null;
+    }>;
+  };
+}
+
+const PERMISSION_KEY_TO_FLAG = {
+  can_manage_stores: 'canManageStores',
+  can_manage_employees: 'canManageEmployees',
+  can_manage_menu: 'canManageMenu',
+  can_view_reports: 'canViewReports',
+  can_access_orders: 'canAccessOrders',
+  can_access_pos: 'canAccessPos',
+  can_access_inventory: 'canAccessInventory',
+  can_switch_stores: 'canSwitchStores',
+  can_view_all_stores: 'canViewAllStores',
+} as const;
+
+type PermissionFlag = typeof PERMISSION_KEY_TO_FLAG[keyof typeof PERMISSION_KEY_TO_FLAG];
+
+const permissionsFromPermissionKeys = (permissionKeys: string[]): AdminPermissions => {
+  const base: AdminPermissions = {
+    canManageStores: false,
+    canManageEmployees: false,
+    canManageMenu: false,
+    canViewReports: false,
+    canAccessOrders: false,
+    canAccessPos: false,
+    canAccessInventory: false,
+    canSwitchStores: false,
+    canViewAllStores: false,
+  };
+
+  const uniqueKeys = new Set(permissionKeys);
+  (Object.entries(PERMISSION_KEY_TO_FLAG) as [string, PermissionFlag][]).forEach(([permissionKey, flag]) => {
+    if (uniqueKeys.has(permissionKey)) {
+      base[flag] = true;
+    }
+  });
+
+  return base;
+};
+
+const toRoleLabel = (roleKey: string) => roleKey.charAt(0).toUpperCase() + roleKey.slice(1);
+
+const createAccessSession = (params: {
+  userId: string;
+  roleId: string;
+  roleKey: InternalAccessSession['roleKey'];
+  roleName?: string;
+  permissionKeys: string[];
+  scopeType?: 'global' | 'store';
+  loggedInAt: string;
+  scopeStoreId: string | null;
+}) => {
+  const {
+    userId,
+    roleId,
+    roleKey,
+    roleName,
+    permissionKeys,
+    scopeType,
+    loggedInAt,
+    scopeStoreId,
+  } = params;
+  const resolvedPermissionKeys = permissionKeys;
+  const resolvedScopeType = scopeType ?? (scopeStoreId ? 'store' as const : 'global' as const);
+
+  return {
+    sessionId: createId('access-session'),
+    userId,
+    roleId,
+    roleKey,
+    roleName: roleName?.trim() || toRoleLabel(roleKey),
+    permissionKeys: Array.from(new Set(resolvedPermissionKeys)),
+    scopeType: resolvedScopeType,
+    scopeStoreId,
+    loggedInAt,
+  } satisfies InternalAccessSession;
+};
+
+const fetchInternalUserByRoleAndPin = async (params: {
+  roleKey: 'owner' | 'admin' | 'store';
+  pin: string;
+  storeCode?: string;
+}) => {
+  const { roleKey, pin, storeCode } = params;
+  const normalizedPin = pin.trim();
+
+  let query = supabase
+    .from('internal_users')
+    .select('id, role_id, full_name, pin_hash, store_id, is_active, roles!inner(role_key, role_name, scope_type, role_permissions(is_allowed, permissions(permission_key)))')
+    .eq('is_active', true)
+    .eq('roles.role_key', roleKey)
+    .eq('pin_hash', normalizedPin)
+    .limit(1);
+
+  if (roleKey === 'store') {
+    query = query.select('id, role_id, full_name, pin_hash, store_id, is_active, roles!inner(role_key, role_name, scope_type, role_permissions(is_allowed, permissions(permission_key))), stores!inner(code)');
+    query = query.eq('stores.code', storeCode ?? '');
+  }
+
+  const { data, error } = await query.maybeSingle();
+  if (error) {
+    return { user: null, error };
+  }
+
+  return { user: (data as InternalUserAccessRow | null), error: null };
+};
+
+const getPermissionKeysFromAccessRow = (user: InternalUserAccessRow) => {
+  const permissionKeys = (user.roles.role_permissions ?? [])
+    .filter((entry) => entry.is_allowed)
+    .map((entry) => entry.permissions?.permission_key?.trim())
+    .filter((permissionKey): permissionKey is string => Boolean(permissionKey));
+
+  return Array.from(new Set(permissionKeys));
+};
+
 const writeStorage = (key: string, value: unknown) => {
   localStorage.setItem(key, JSON.stringify(value));
 };
@@ -370,57 +509,64 @@ const normalizeRole = (role: string): EmployeeRole => {
   return 'kitchen';
 };
 
+const sameStringArray = (left: string[], right: string[]) => (
+  left.length === right.length && left.every((value, index) => value === right[index])
+);
+
 const normalizeSession = (session: InternalAccessSession | null, stores: StoreRecord[]) => {
   if (!session) return null;
-  if (session.role === 'owner' || session.role === 'admin') {
-    return session;
+
+  if (!session.sessionId || !session.userId || !session.roleId || !session.roleKey) {
+    return null;
   }
-  const store = stores.find((entry) => entry.id === session.storeId && entry.isActive);
+
+  const normalizedPermissionKeys = Array.isArray(session.permissionKeys) ? session.permissionKeys : [];
+  const normalizedScopeStoreId = session.scopeStoreId ?? null;
+  const normalizedScopeType = session.scopeType ?? (normalizedScopeStoreId ? 'store' : 'global');
+  const normalizedRoleName = session.roleName?.trim() || toRoleLabel(session.roleKey);
+
+  if (normalizedScopeType === 'global') {
+    const alreadyNormalized = (
+      session.roleName === normalizedRoleName
+      && session.scopeType === 'global'
+      && session.scopeStoreId === null
+      && sameStringArray(session.permissionKeys, normalizedPermissionKeys)
+    );
+
+    if (alreadyNormalized) {
+      return session;
+    }
+
+    return {
+      ...session,
+      roleName: normalizedRoleName,
+      permissionKeys: normalizedPermissionKeys,
+      scopeType: 'global',
+      scopeStoreId: null,
+    } satisfies InternalAccessSession;
+  }
+
+  const store = stores.find((entry) => entry.id === normalizedScopeStoreId && entry.isActive);
   if (!store) return null;
-  if (session.storeId === store.id) {
+
+  const alreadyNormalized = (
+    session.roleName === normalizedRoleName
+    && session.scopeType === 'store'
+    && session.scopeStoreId === store.id
+    && sameStringArray(session.permissionKeys, normalizedPermissionKeys)
+  );
+
+  if (alreadyNormalized) {
     return session;
   }
+
   return {
     ...session,
-    role: 'store',
-    storeId: store.id,
-  };
-};
-
-const ROLE_PERMISSIONS: Record<InternalAccessSession['role'], AdminPermissions> = {
-  owner: {
-    canManageStores: true,
-    canManageEmployees: true,
-    canManageMenu: true,
-    canViewReports: true,
-    canAccessOrders: true,
-    canAccessPos: true,
-    canAccessInventory: true,
-    canSwitchStores: true,
-    canViewAllStores: true,
-  },
-  admin: {
-    canManageStores: false,
-    canManageEmployees: true,
-    canManageMenu: true,
-    canViewReports: true,
-    canAccessOrders: true,
-    canAccessPos: true,
-    canAccessInventory: true,
-    canSwitchStores: true,
-    canViewAllStores: true,
-  },
-  store: {
-    canManageStores: false,
-    canManageEmployees: false,
-    canManageMenu: false,
-    canViewReports: false,
-    canAccessOrders: true,
-    canAccessPos: true,
-    canAccessInventory: true,
-    canSwitchStores: false,
-    canViewAllStores: false,
-  },
+    roleName: normalizedRoleName,
+    permissionKeys: normalizedPermissionKeys,
+    scopeType: 'store',
+    scopeStoreId: store.id,
+  } satisfies InternalAccessSession;
 };
 
 const normalizeStores = (stores: StoreRecord[]) => stores.map((store) => {
@@ -556,11 +702,24 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     }
   }, [session, stores]);
 
-  const loginAsOwner = (pin: string) => {
-    if (pin.trim() !== ADMIN_ACCESS_PIN) {
+  const loginAsOwner = async (pin: string) => {
+    const { user, error } = await fetchInternalUserByRoleAndPin({ roleKey: 'owner', pin });
+    if (error) {
+      return { success: false, message: 'Could not verify owner access right now.' };
+    }
+    if (!user) {
       return { success: false, message: 'Owner PIN did not match.' };
     }
-    const nextSession: InternalAccessSession = { role: 'owner', loggedInAt: nowIso() };
+    const nextSession = createAccessSession({
+      userId: user.id,
+      roleId: user.role_id,
+      roleKey: 'owner',
+      roleName: user.roles.role_name,
+      permissionKeys: getPermissionKeysFromAccessRow(user),
+      scopeType: 'global',
+      loggedInAt: nowIso(),
+      scopeStoreId: null,
+    });
     writeStorage(STORAGE_KEYS.session, nextSession);
     writeStorage(STORAGE_KEYS.activeStoreScope, 'all');
     setSession(nextSession);
@@ -568,11 +727,24 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     return { success: true, message: 'Owner access enabled.' };
   };
 
-  const loginAsAdmin = (pin: string) => {
-    if (pin.trim() !== ADMIN_OPERATOR_PIN) {
+  const loginAsAdmin = async (pin: string) => {
+    const { user, error } = await fetchInternalUserByRoleAndPin({ roleKey: 'admin', pin });
+    if (error) {
+      return { success: false, message: 'Could not verify admin access right now.' };
+    }
+    if (!user) {
       return { success: false, message: 'Admin PIN did not match.' };
     }
-    const nextSession: InternalAccessSession = { role: 'admin', loggedInAt: nowIso() };
+    const nextSession = createAccessSession({
+      userId: user.id,
+      roleId: user.role_id,
+      roleKey: 'admin',
+      roleName: user.roles.role_name,
+      permissionKeys: getPermissionKeysFromAccessRow(user),
+      scopeType: 'global',
+      loggedInAt: nowIso(),
+      scopeStoreId: null,
+    });
     writeStorage(STORAGE_KEYS.session, nextSession);
     writeStorage(STORAGE_KEYS.activeStoreScope, 'all');
     setSession(nextSession);
@@ -580,15 +752,31 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     return { success: true, message: 'Admin access enabled.' };
   };
 
-  const loginAsStore = (storeId: string, pin: string) => {
-    const store = stores.find((entry) => entry.id === storeId);
+  const loginAsStore = async (storeCode: string, pin: string) => {
+    const normalizedStoreCode = storeCode.trim().toUpperCase();
+    const store = stores.find((entry) => entry.code === normalizedStoreCode);
     if (!store || !store.isActive) {
       return { success: false, message: 'Select an active store.' };
     }
-    if (store.pin !== pin.trim()) {
+
+    const { user, error } = await fetchInternalUserByRoleAndPin({ roleKey: 'store', pin, storeCode: normalizedStoreCode });
+    if (error) {
+      return { success: false, message: 'Could not verify store access right now.' };
+    }
+    if (!user) {
       return { success: false, message: 'Store PIN did not match.' };
     }
-    const nextSession: InternalAccessSession = { role: 'store', storeId: store.id, loggedInAt: nowIso() };
+
+    const nextSession = createAccessSession({
+      userId: user.id,
+      roleId: user.role_id,
+      roleKey: 'store',
+      roleName: user.roles.role_name,
+      permissionKeys: getPermissionKeysFromAccessRow(user),
+      scopeType: 'store',
+      loggedInAt: nowIso(),
+      scopeStoreId: store.id,
+    });
     writeStorage(STORAGE_KEYS.session, nextSession);
     writeStorage(STORAGE_KEYS.activeStoreScope, store.id);
     setSession(nextSession);
@@ -617,8 +805,27 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
         canViewAllStores: false,
       };
     }
-    return ROLE_PERMISSIONS[session.role];
+    return permissionsFromPermissionKeys(session.permissionKeys ?? []);
   }, [session]);
+
+  const hasPermission = (permissionKey: string) => {
+    if (!session) return false;
+    return session.permissionKeys.includes(permissionKey);
+  };
+
+  const hasAnyPermission = (permissionKeys: string[]) => {
+    if (!session) return false;
+    const sessionPermissionSet = new Set(session.permissionKeys);
+    return permissionKeys.some((permissionKey) => sessionPermissionSet.has(permissionKey));
+  };
+
+  const isStoreScoped = () => Boolean(session && session.scopeType === 'store' && session.scopeStoreId);
+
+  const canAccessStore = (storeId: string) => {
+    if (!session) return false;
+    if (session.scopeType === 'global') return true;
+    return session.scopeStoreId === storeId;
+  };
 
   const activeStoreScope = storedScope;
   const activeStore = activeStoreScope === 'all' ? null : stores.find((store) => store.id === activeStoreScope) ?? null;
@@ -843,6 +1050,10 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     scopedInventory,
     orderNotes,
     permissions,
+    hasPermission,
+    hasAnyPermission,
+    isStoreScoped,
+    canAccessStore,
     activeStoreScope,
     activeStore,
     setActiveStoreScope,

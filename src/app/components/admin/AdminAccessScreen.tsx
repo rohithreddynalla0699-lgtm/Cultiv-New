@@ -1,6 +1,6 @@
 import { Building2, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAdminDashboard } from '../../contexts/AdminDashboardContext';
 import { Logo } from '../Logo';
 
@@ -13,38 +13,49 @@ export function AdminAccessScreen({
   adminSuccessPath = '/admin/summary',
   storeSuccessPath = '/admin/summary',
 }: AdminAccessScreenProps) {
+  const location = useLocation();
   const navigate = useNavigate();
   const { stores, loginAsOwner, loginAsAdmin, loginAsStore } = useAdminDashboard();
   const [mode, setMode] = useState<'owner' | 'admin' | 'store'>('owner');
   const [ownerPin, setOwnerPin] = useState('');
   const [adminPin, setAdminPin] = useState('');
-  const [storeId, setStoreId] = useState(stores.find((store) => store.isActive)?.id ?? '');
+  const [storeCode, setStoreCode] = useState(stores.find((store) => store.isActive)?.code ?? '');
   const [storePin, setStorePin] = useState('');
   const [message, setMessage] = useState('Choose owner, admin, or store access and continue with a 6-digit PIN.');
 
+  // Defensive guard: this screen is only valid on /operations.
+  if (!location.pathname.startsWith('/operations')) {
+    return null;
+  }
+
   const activeStores = stores.filter((store) => store.isActive);
 
-  const handleOwnerLogin = () => {
-    const result = loginAsOwner(ownerPin);
+  const handleOwnerLogin = async () => {
+    const result = await loginAsOwner(ownerPin);
     setMessage(result.message);
     if (result.success) {
       navigate(adminSuccessPath, { replace: true });
     }
   };
 
-  const handleScopedAdminLogin = () => {
-    const result = loginAsAdmin(adminPin);
+  const handleScopedAdminLogin = async () => {
+    const result = await loginAsAdmin(adminPin);
     setMessage(result.message);
     if (result.success) {
       navigate(adminSuccessPath, { replace: true });
     }
   };
 
-  const handleStoreLogin = () => {
-    const result = loginAsStore(storeId, storePin);
+  const handleStoreLogin = async () => {
+    const result = await loginAsStore(storeCode, storePin);
     setMessage(result.message);
     if (result.success) {
       navigate(storeSuccessPath, { replace: true });
+      window.requestAnimationFrame(() => {
+        if (window.location.pathname.startsWith('/operations')) {
+          window.location.replace(storeSuccessPath);
+        }
+      });
     }
   };
 
@@ -129,9 +140,9 @@ export function AdminAccessScreen({
                 <div className="mt-5 space-y-3">
                   <label className="block text-sm text-foreground/68">
                     <span className="mb-2 block font-medium">Store</span>
-                    <select data-testid="store-select" value={storeId} onChange={(event) => setStoreId(event.target.value)} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary">
+                    <select data-testid="store-select" value={storeCode} onChange={(event) => setStoreCode(event.target.value)} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary">
                       {activeStores.map((store) => (
-                        <option key={store.id} value={store.id}>{store.name} · {store.city}</option>
+                        <option key={store.id} value={store.code}>{store.name} · {store.city}</option>
                       ))}
                     </select>
                   </label>

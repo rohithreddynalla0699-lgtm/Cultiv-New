@@ -24,8 +24,10 @@ export function OrdersBoardScreen() {
     orderNotes,
     saveOrderNote,
     activeStoreScope,
-    permissions,
     setActiveStoreScope,
+    hasPermission,
+    hasAnyPermission,
+    isStoreScoped,
   } = useAdminDashboard();
 
   const [orderType, setOrderType] = useState<OrdersBoardOrderTypeFilter>('all');
@@ -81,11 +83,11 @@ export function OrdersBoardScreen() {
   }), [activeStoreScope, customDate, dateFilter, mergedOrders, orderNotes, orderType, refreshTick, searchQuery]);
 
   const permissionsForBoard = useMemo(() => {
-    return ordersService.getPermissions(session?.role);
-  }, [session?.role]);
+    return ordersService.getPermissions({ hasPermission, hasAnyPermission });
+  }, [hasAnyPermission, hasPermission]);
 
-  if (!permissions.canAccessOrders) {
-    return <Navigate to="/operations" replace />;
+  if (!hasPermission('can_access_orders')) {
+    return <Navigate to={isStoreScoped() ? '/store/shift' : '/operations'} replace />;
   }
 
   const withMutationGuard = async (orderId: string, work: () => Promise<void>) => {
@@ -163,7 +165,7 @@ export function OrdersBoardScreen() {
         return;
       }
 
-      saveOrderNote(selectedOrderForCancel.id, `Cancelled by ${session?.role ?? 'staff'} at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+      saveOrderNote(selectedOrderForCancel.id, `Cancelled by ${session?.roleName ?? 'Staff'} at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
       setSelectedOrderForCancel(null);
       setFeedbackMessage({
         tone: 'info',
@@ -205,7 +207,7 @@ export function OrdersBoardScreen() {
       <OrdersBoardHeader
         activeStoreScope={activeStoreScope}
         stores={stores}
-        canSwitchStoreScope={permissions.canSwitchStores}
+        canSwitchStoreScope={hasPermission('can_switch_stores')}
         orderType={orderType}
         dateFilter={dateFilter}
         customDate={customDate}

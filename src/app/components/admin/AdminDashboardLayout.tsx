@@ -5,38 +5,46 @@ import { useAdminDashboard } from '../../contexts/AdminDashboardContext';
 import { Logo } from '../Logo';
 
 export function AdminDashboardLayout() {
-  const { session, stores, permissions, activeStoreScope, activeStore, setActiveStoreScope, logoutInternalAccess } = useAdminDashboard();
+  const {
+    session,
+    stores,
+    activeStoreScope,
+    activeStore,
+    setActiveStoreScope,
+    logoutInternalAccess,
+    hasPermission,
+  } = useAdminDashboard();
   const location = useLocation();
 
   if (!session) {
     return <Navigate to="/operations" replace />;
   }
 
-  const isStoreWorkspace = session.role === 'store' || location.pathname.startsWith('/store');
+  const isStoreWorkspace = session.scopeType === 'store' || location.pathname.startsWith('/store');
   const navItems = isStoreWorkspace
     ? [
-        ...(permissions.canAccessOrders ? [{ to: '/store/orders', label: 'Orders', icon: ClipboardList }] : []),
-        ...(permissions.canAccessPos ? [{ to: '/store/pos', label: 'POS', icon: ReceiptIndianRupee }] : []),
-        ...(permissions.canAccessInventory ? [{ to: '/store/inventory', label: 'Inventory', icon: Package2 }] : []),
+        ...(hasPermission('can_access_orders') ? [{ to: '/store/orders', label: 'Orders', icon: ClipboardList }] : []),
+        ...(hasPermission('can_access_pos') ? [{ to: '/store/pos', label: 'POS', icon: ReceiptIndianRupee }] : []),
+        ...(hasPermission('can_access_inventory') ? [{ to: '/store/inventory', label: 'Inventory', icon: Package2 }] : []),
         { to: '/store/shift', label: 'Shift Control', icon: Users },
       ]
     : [
         { to: '/admin/summary', label: 'Summary', icon: LayoutDashboard },
-        ...(permissions.canAccessOrders ? [{ to: '/admin/orders', label: 'Orders', icon: ClipboardList }] : []),
-        ...(permissions.canAccessPos ? [{ to: '/admin/counter-billing', label: 'POS', icon: ReceiptIndianRupee }] : []),
-        ...(permissions.canAccessInventory ? [{ to: '/admin/inventory', label: 'Inventory', icon: Package2 }] : []),
-        ...(permissions.canManageEmployees ? [{ to: '/admin/employees', label: 'Employees', icon: Users }] : []),
-        ...(permissions.canManageMenu ? [{ to: '/admin/menu', label: 'Menu', icon: ScrollText }] : []),
-        ...(permissions.canViewReports ? [{ to: '/admin/reports', label: 'Reports', icon: BarChart3 }] : []),
-        ...(permissions.canManageStores ? [{ to: '/admin/stores', label: 'Stores', icon: Store }] : []),
+        ...(hasPermission('can_access_orders') ? [{ to: '/admin/orders', label: 'Orders', icon: ClipboardList }] : []),
+        ...(hasPermission('can_access_pos') ? [{ to: '/admin/counter-billing', label: 'POS', icon: ReceiptIndianRupee }] : []),
+        ...(hasPermission('can_access_inventory') ? [{ to: '/admin/inventory', label: 'Inventory', icon: Package2 }] : []),
+        ...(hasPermission('can_manage_employees') ? [{ to: '/admin/employees', label: 'Employees', icon: Users }] : []),
+        ...(hasPermission('can_manage_menu') ? [{ to: '/admin/menu', label: 'Menu', icon: ScrollText }] : []),
+        ...(hasPermission('can_view_reports') ? [{ to: '/admin/reports', label: 'Reports', icon: BarChart3 }] : []),
+        ...(hasPermission('can_manage_stores') ? [{ to: '/admin/stores', label: 'Stores', icon: Store }] : []),
       ];
 
-  const scopeLabel = session.role === 'owner'
+  const scopeLabel = session.scopeType === 'global'
     ? activeStore ? activeStore.name : 'All stores'
     : activeStore?.name ?? 'Store';
   const currentNav = navItems.find((item) => location.pathname.startsWith(item.to));
   const currentPage = currentNav?.label ?? 'Dashboard';
-  const roleLabel = session.role === 'owner' ? 'Owner' : session.role === 'admin' ? 'Admin' : 'Store';
+  const roleLabel = session.roleName;
 
   return (
     <>
@@ -77,7 +85,7 @@ export function AdminDashboardLayout() {
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              {permissions.canSwitchStores ? (
+              {hasPermission('can_switch_stores') ? (
                 <label className="flex flex-col gap-1 text-sm text-foreground/68 md:items-end">
                   <span className="font-medium">Store scope</span>
                   <select data-testid="admin-store-scope" value={activeStoreScope} onChange={(event) => setActiveStoreScope(event.target.value)} className="rounded-xl border border-primary/12 bg-background/80 px-3 py-2 outline-none transition-colors focus:border-primary">

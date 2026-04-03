@@ -198,13 +198,20 @@ export const ordersService = {
     return null;
   },
 
-  getPermissions(role: string | undefined): OrdersBoardPermissions {
-    const normalizedRole = (role ?? '').trim().toLowerCase();
-    const canCancelOrder = normalizedRole === 'owner' || normalizedRole === 'admin' || normalizedRole === 'store';
+  getPermissions(params: {
+    hasPermission: (permissionKey: string) => boolean;
+    hasAnyPermission: (permissionKeys: string[]) => boolean;
+  }): OrdersBoardPermissions {
+    const { hasPermission, hasAnyPermission } = params;
 
-    // CULTIV assembly-line model: everyone on shift can move status forward.
+    // CULTIV assembly-line model: anyone with orders access can move status forward.
+    const canAdvanceOrderStatus = hasPermission('can_access_orders');
+
+    // Cancel follows orders-access for now until a dedicated cancel permission is introduced.
+    const canCancelOrder = hasAnyPermission(['can_access_orders']);
+
     return {
-      canAdvanceOrderStatus: true,
+      canAdvanceOrderStatus,
       canCancelOrder,
     };
   },

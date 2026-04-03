@@ -19,13 +19,13 @@ function SessionExpiringSoonModal() {
 }
 
 export function StoreRouteGuard({ children }: StoreRouteGuardProps) {
-  const { session: internalSession } = useAdminDashboard();
+  const { session: internalSession, canAccessStore } = useAdminDashboard();
   const { session, isSessionActive, isExpiringSoon } = useStoreSession();
 
-  const hasStoreLogin = Boolean(internalSession && internalSession.role === 'store');
+  const hasStoreLogin = Boolean(internalSession && internalSession.scopeType === 'store' && internalSession.scopeStoreId);
   const hasShiftSession = Boolean(isSessionActive && session);
 
-  if (internalSession && internalSession.role !== 'store') {
+  if (internalSession && internalSession.scopeType === 'global') {
     return <Navigate to="/admin/summary" replace />;
   }
 
@@ -33,7 +33,7 @@ export function StoreRouteGuard({ children }: StoreRouteGuardProps) {
     return <Navigate to="/operations" replace />;
   }
 
-  if (internalSession?.storeId && session && session.store_id !== internalSession.storeId) {
+  if (internalSession?.scopeStoreId && session && !canAccessStore(session.store_id)) {
     return <Navigate to="/shift" replace />;
   }
 
