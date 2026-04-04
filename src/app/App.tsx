@@ -35,6 +35,7 @@ const CareersScreen = lazy(() => import('./components/CareersScreen').then((modu
 const ForgotPasswordScreen = lazy(() => import('./components/ForgotPasswordScreen').then((module) => ({ default: module.ForgotPasswordScreen })));
 const ResetPasswordScreen = lazy(() => import('./components/ResetPasswordScreen').then((module) => ({ default: module.ResetPasswordScreen })));
 const OrderDetailScreen = lazy(() => import('./components/OrderDetailScreen').then((module) => ({ default: module.OrderDetailScreen })));
+const OrderSuccessScreen = lazy(() => import('./components/OrderSuccessScreen').then((module) => ({ default: module.OrderSuccessScreen })));
 const AdminAccessScreen = lazy(() => import('./components/admin/AdminAccessScreen').then((module) => ({ default: module.AdminAccessScreen })));
 const AdminDashboardLayout = lazy(() => import('./components/admin/AdminDashboardLayout').then((module) => ({ default: module.AdminDashboardLayout })));
 const AdminSummaryScreen = lazy(() => import('./components/admin/AdminSummaryScreen').then((module) => ({ default: module.AdminSummaryScreen })));
@@ -184,6 +185,7 @@ function AppShell() {
             <Route path="/profile" element={<ProfileScreen />} />
             <Route path="/orders" element={<OrderHistoryScreen />} />
             <Route path="/orders/:orderId" element={<OrderDetailScreen />} />
+            <Route path="/order-success/:orderId" element={<OrderSuccessScreen />} />
             <Route path="/rewards" element={<RewardsScreen />} />
             <Route path="/careers" element={<CareersScreen />} />
             <Route path="/operations" element={<AdminDashboardProvider><AdminAccessScreen adminSuccessPath="/admin/summary" storeSuccessPath="/store/orders" /></AdminDashboardProvider>} />

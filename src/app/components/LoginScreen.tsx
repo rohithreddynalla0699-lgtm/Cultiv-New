@@ -1,13 +1,12 @@
 // LoginScreen — sign-in form accepting phone or email with password and a forgot-password link.
 
 import { useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { AuthShell } from './AuthShell';
 import { ErrorShake } from '../core/motion/cultivMotion';
-import type { AuthRedirectState } from '../types/navigation';
 
 export function LoginScreen() {
 	const [identifier, setIdentifier] = useState('');
@@ -17,8 +16,6 @@ export function LoginScreen() {
 	const [error, setError] = useState('');
 	const { login } = useAuth();
 	const navigate = useNavigate();
-	const location = useLocation();
-	const nextPath = (location.state as AuthRedirectState | undefined)?.from ?? '/profile';
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
@@ -26,7 +23,7 @@ export function LoginScreen() {
 		setError('');
 		try {
 			const result = await login({ identifier, password });
-			if (result.success) navigate(nextPath, { replace: true });
+			if (result.success) navigate('/', { replace: true });
 			else setError(result.message);
 		} catch {
 			setError('Login failed. Please try again.');
@@ -43,7 +40,7 @@ export function LoginScreen() {
 		>
 			<motion.form 
 				onSubmit={handleSubmit} 
-				className="space-y-5"
+				className="space-y-4"
 				initial="hidden"
 				animate="visible"
 				variants={{
@@ -73,14 +70,12 @@ export function LoginScreen() {
 				<motion.div variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }} className="flex justify-end">
 					<Link to="/forgot-password" className="text-sm font-medium text-primary">Forgot password?</Link>
 				</motion.div>
-				{error ? (
-					<motion.div 
-						{...ErrorShake}
-						className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
-					>
-						{error}
-					</motion.div>
-				) : null}
+				<motion.div
+					{...(error ? ErrorShake : {})}
+					className={`min-h-[3.25rem] rounded-2xl px-4 py-3 text-sm transition-all ${error ? 'border border-red-200 bg-red-50 text-red-700' : 'border border-transparent bg-transparent text-transparent'}`}
+				>
+					{error || 'Placeholder for stable layout.'}
+				</motion.div>
 				<motion.button 
 					type="submit" 
 					disabled={isLoading} 

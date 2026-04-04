@@ -87,18 +87,27 @@ export function setDraftCartScope(userId: string | null) {
   const previousScope = localStorage.getItem(ACTIVE_DRAFT_SCOPE_KEY);
   if (previousScope === nextScope) return;
 
-  // Preserve in-progress cart when moving between guest and signed-in scopes.
-  if (previousScope) {
-    const previousStorageKey = getStorageKeyForScope(previousScope);
-    const nextStorageKey = getStorageKeyForScope(nextScope);
-    const previousLines = readLinesFromStorageKey(previousStorageKey);
-    const nextLines = readLinesFromStorageKey(nextStorageKey);
-    if (previousLines.length > 0 && nextLines.length === 0) {
-      localStorage.setItem(nextStorageKey, JSON.stringify(previousLines));
+  localStorage.setItem(ACTIVE_DRAFT_SCOPE_KEY, nextScope);
+  emitDraftCartChanged();
+}
+
+export function resetDraftCartStorage() {
+  if (!isBrowser()) return;
+
+  const keysToDelete: string[] = [];
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index);
+    if (!key) continue;
+    if (key === LEGACY_DRAFT_CART_STORAGE_KEY || key.startsWith(DRAFT_CART_STORAGE_KEY_PREFIX) || key === ACTIVE_DRAFT_SCOPE_KEY || key === GUEST_DRAFT_SESSION_KEY) {
+      keysToDelete.push(key);
     }
   }
 
-  localStorage.setItem(ACTIVE_DRAFT_SCOPE_KEY, nextScope);
+  keysToDelete.forEach((key) => localStorage.removeItem(key));
+
+  const nextGuestScope = `guest:${getGuestDraftSessionId()}`;
+  localStorage.setItem(ACTIVE_DRAFT_SCOPE_KEY, nextGuestScope);
+  localStorage.setItem(getStorageKeyForScope(nextGuestScope), JSON.stringify([]));
   emitDraftCartChanged();
 }
 

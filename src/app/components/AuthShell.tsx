@@ -23,7 +23,7 @@ const ambientShapes = [
 
 export function AuthShell({ title, subtitle, children, footer, tagline = 'A premium healthy routine, kept in one place.' }: AuthShellProps) {
 	return (
-		<PageReveal className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(45,80,22,0.12),_transparent_34%),linear-gradient(180deg,_#fafaf8_0%,_#f4f3ee_100%)] text-foreground">
+		<PageReveal className="relative min-h-[100svh] overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(45,80,22,0.12),_transparent_34%),linear-gradient(180deg,_#fafaf8_0%,_#f4f3ee_100%)] text-foreground">
 			<div
 				className="pointer-events-none absolute inset-0 opacity-[0.06] mix-blend-overlay"
 				style={{
@@ -41,7 +41,7 @@ export function AuthShell({ title, subtitle, children, footer, tagline = 'A prem
 				/>
 			))}
 
-			<div className="relative z-10 grid min-h-screen lg:grid-cols-[1.1fr_0.9fr]">
+			<div className="relative z-10 grid min-h-[100svh] lg:grid-cols-[1.1fr_0.9fr]">
 				<div className="hidden px-10 py-12 lg:flex lg:flex-col lg:justify-between xl:px-16">
 					<div>
 						<Link to="/" className="inline-flex items-center gap-2 text-sm text-foreground/60 transition-colors hover:text-foreground">
@@ -78,19 +78,19 @@ export function AuthShell({ title, subtitle, children, footer, tagline = 'A prem
 					</div>
 				</div>
 
-				<div className="flex items-center justify-center px-4 py-8 sm:px-6 lg:px-10">
-					<div className="w-full max-w-md rounded-[32px] border border-primary/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.9),rgba(255,255,255,0.78))] p-6 shadow-[0_22px_80px_rgba(32,45,20,0.12)] backdrop-blur-md sm:p-8">
-						<div className="mb-8 text-center">
+				<div className="flex items-center justify-center px-4 py-2 sm:px-6 lg:px-8">
+					<div className="w-full max-w-[27rem] rounded-[30px] border border-primary/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(255,255,255,0.8))] p-4 shadow-[0_24px_90px_rgba(32,45,20,0.13)] backdrop-blur-md sm:p-5">
+						<div className="mb-4 text-center">
 							<div className="mb-4 flex justify-center">
 								<Logo variant="emblem" animated />
 							</div>
-							<h2 className="text-3xl font-semibold tracking-[-0.03em] text-[#20251e]">{title}</h2>
-							<p className="mt-2 text-sm leading-6 text-foreground/65">{subtitle}</p>
+							<h2 className="text-[2rem] font-semibold tracking-[-0.03em] text-[#20251e]">{title}</h2>
+							<p className="mt-1.5 text-sm leading-5 text-foreground/65">{subtitle}</p>
 						</div>
 
 						{children}
 
-						{footer ? <div className="mt-8 border-t border-border/60 pt-5">{footer}</div> : null}
+						{footer ? <div className="mt-5 border-t border-border/60 pt-3">{footer}</div> : null}
 					</div>
 				</div>
 			</div>

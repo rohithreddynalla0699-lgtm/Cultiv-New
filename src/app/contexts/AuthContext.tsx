@@ -13,6 +13,7 @@ import type {
   OrderItem,
   OrderStatus,
   PlaceOrderInput,
+  CustomerCheckoutPaymentMethod,
   CreateCounterWalkInOrderInput,
   SavedPaymentMethod,
   SavedPaymentMethodInput,
@@ -25,6 +26,7 @@ import type {
   WalkInLinkInput,
 } from '../types/platform';
 import { setDraftCartScope } from '../data/cartDraft';
+import { resetShoppingSessionStorage } from '../data/shoppingSession';
 import { BOWL_BUILDER_STEPS, BREAKFAST_CUSTOMIZE_STEPS } from '../data/menuData';
 import { fetchOperationalOrdersFromSupabase, updateSupabaseOrderStatus } from '../data/orderRepository';
 import {
@@ -36,6 +38,7 @@ import {
 } from '../config/rewardsCatalog';
 import { DEFAULT_ORDER_STORE_ID } from '../constants/admin';
 import { POS_TAX_RATE, PRICE_EPSILON, REWARD_MAX_DISCOUNT_RATIO, REWARD_MIN_ORDER_SUBTOTAL } from '../constants/business';
+import type { CheckoutPaymentIntent, ConfirmCheckoutPaymentInput } from '../services/checkoutPaymentProvider';
 // @ts-ignore - Supabase client is defined in JS module.
 import { supabase } from '../../lib/supabase';
 
@@ -63,8 +66,16 @@ interface InternalAccessSessionSnapshot {
   scopeStoreId: string | null;
 }
 
+interface CustomerAccountSummary {
+  id: string;
+  reward_points: number;
+  phone_verified: boolean;
+  email_verified: boolean;
+}
+
 interface AuthContextType {
   user: User | null;
+  customerAccount: CustomerAccountSummary | null;
   isAuthenticated: boolean;
   orders: Order[];
   sharedOrders: Order[];
@@ -77,6 +88,8 @@ interface AuthContextType {
   resetPassword: (token: string, password: string) => Promise<AuthActionResult>;
   logout: () => void;
   placeOrder: (input: PlaceOrderInput) => Promise<Order>;
+  createCheckoutPaymentIntent: (input: PlaceOrderInput) => Promise<CheckoutPaymentIntent>;
+  confirmCheckoutPayment: (input: ConfirmCheckoutPaymentInput) => Promise<CheckoutPaymentResult>;
   createCounterWalkInOrder: (input: CreateCounterWalkInOrderInput) => Promise<Order>;
   linkWalkInOrder: (input: WalkInLinkInput) => Promise<AuthActionResult>;
   redeemReward: (offerId: string) => Promise<AuthActionResult>;
@@ -98,11 +111,19 @@ interface AuthContextType {
   rejectPendingGuestOrderClaims: () => void;
 }
 
+interface CheckoutPaymentResult {
+  success: boolean;
+  order?: Order;
+  message?: string;
+}
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const STORAGE_KEYS = {
   users: 'cultiv_users_v2',
   currentUserId: 'cultiv_current_user_v2',
+  customerAccount: 'cultiv_customer_account_v1',
+  customerSessionToken: 'cultiv_customer_session_token_v1',
   orders: 'cultiv_orders_v2',
   loyalty: 'cultiv_loyalty_v2',
   resetTokens: 'cultiv_reset_tokens_v2',
@@ -126,10 +147,16 @@ const createId = (prefix: string) => `${prefix}-${Math.random().toString(36).sli
 
 const normalizePhone = (phone: string) => phone.replace(/\D/g, '').slice(-10);
 
+// Note: Passwords are now stored only in the backend (Supabase customers table)
+// and hashed with bcrypt. These functions are kept only for backward compatibility
+// with old localStorage data and are deprecated for new code.
+
 const PASSWORD_HASH_PREFIX = 'h$';
 
 const hashPassword = (password: string) => {
-  // Demo-safe non-cryptographic hash to avoid storing plaintext passwords.
+  // DEPRECATED: DJB2 is not secure for passwords.
+  // Kept only for migrating old localStorage data.
+  // All new passwords are hashed with bcrypt on the backend.
   let hash = 5381;
   for (let index = 0; index < password.length; index += 1) {
     hash = ((hash << 5) + hash) ^ password.charCodeAt(index);
@@ -142,10 +169,12 @@ const ensureHashedPassword = (password: string) => (
 );
 
 const verifyPassword = (input: string, stored: string) => {
+  // DEPRECATED: Use backend login Edge Function instead.
+  // This function is kept only for migrating old data.
   if (stored.startsWith(PASSWORD_HASH_PREFIX)) {
     return hashPassword(input) === stored;
   }
-  // Backward compatibility for any older seed/session data.
+  // Backward compatibility for any older plaintext passwords
   return input === stored;
 };
 
@@ -366,45 +395,7 @@ const buildSelectionSnapshotRows = (orderItemId: string, selections: OrderItem['
   });
 };
 
-const ORDER_NUMBER_PREFIX = 'CULTIV';
-const ORDER_NUMBER_SEQUENCE_LENGTH = 4;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-const formatOrderNumberDate = (date: Date) => {
-  const yy = String(date.getUTCFullYear()).slice(-2);
-  const mm = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(date.getUTCDate()).padStart(2, '0');
-  return `${yy}${mm}${dd}`;
-};
-
-const getUtcDayRange = (date: Date) => {
-  const start = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0));
-  const end = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1, 0, 0, 0, 0));
-  return {
-    startIso: start.toISOString(),
-    endIso: end.toISOString(),
-  };
-};
-
-const generateOrderNumber = async () => {
-  const now = new Date();
-  const dateToken = formatOrderNumberDate(now);
-  const { startIso, endIso } = getUtcDayRange(now);
-
-  const { count, error } = await supabase
-    .from('orders')
-    .select('order_id', { count: 'exact', head: true })
-    .gte('created_at', startIso)
-    .lt('created_at', endIso);
-
-  if (error) {
-    throw new Error(`Could not generate order number: ${error.message}`);
-  }
-
-  const sequence = (count ?? 0) + 1;
-  const paddedSequence = String(sequence).padStart(ORDER_NUMBER_SEQUENCE_LENGTH, '0');
-  return `${ORDER_NUMBER_PREFIX}${dateToken}${paddedSequence}`;
-};
 
 const resolveMenuItemId = (itemId: string) => {
   const normalized = itemId.trim();
@@ -412,94 +403,168 @@ const resolveMenuItemId = (itemId: string) => {
   return UUID_PATTERN.test(normalized) ? normalized : null;
 };
 
-const persistOrderToSupabase = async (order: Order): Promise<void> => {
+const buildSelectionSnapshotPayload = (selections: OrderItem['selections']) => (
+  selections.flatMap((selection) => {
+    const groupMeta = resolveSnapshotGroupMeta(selection.section);
+
+    return selection.choices.map((choice) => {
+      const optionMeta = OPTION_META_BY_GROUP_AND_NAME[
+        `${groupMeta.groupId}::${normalizeSelectionToken(choice)}`
+      ];
+
+      return {
+        option_item_id: optionMeta?.optionItemId ?? null,
+        group_id_snapshot: groupMeta.groupId,
+        group_name_snapshot: groupMeta.groupName,
+        option_name: optionMeta?.optionItemName ?? choice,
+        price_modifier: optionMeta?.priceModifier ?? 0,
+      };
+    });
+  })
+);
+
+interface PersistOrderResult {
+  orderId: string;
+  orderNumber?: string;
+  orderStatus: OrderStatus;
+}
+
+const buildSupabaseOrderPayload = (order: Order) => {
+  const sourceChannel: SupabaseSourceChannel = order.source;
+  return {
+    order: {
+      customer_id: order.customerId ?? null,
+      user_id: null,
+      order_type: resolveSupabaseOrderType(order.orderType, sourceChannel),
+      source_channel: sourceChannel,
+      order_status: order.status,
+      store_id: order.storeId ?? DEFAULT_ORDER_STORE_ID,
+      customer_name: order.fullName,
+      customer_phone: order.phone,
+      customer_email: order.email,
+      payment_method: order.paymentMethod ?? null,
+      notes: null,
+      subtotal_amount: Math.round(order.subtotal),
+      discount_amount: Math.round(order.rewardDiscount),
+      tax_amount: Math.round(order.taxAmount ?? 0),
+      tip_amount: Math.round(order.tipAmount ?? 0),
+      total_amount: Math.round(order.total),
+    },
+    items: order.items.map((item) => ({
+      menu_item_id: resolveMenuItemId(item.id),
+      item_name: item.title,
+      item_category: item.category,
+      unit_price: Math.round(item.price),
+      quantity: item.quantity,
+      line_total: Math.round(item.price * item.quantity),
+      selections: buildSelectionSnapshotPayload(item.selections),
+    })),
+  };
+};
+
+const invokeCreateCheckoutPaymentIntent = async (
+  order: Order,
+  idempotencyKey: string,
+  customerSessionToken: string,
+): Promise<CheckoutPaymentIntent> => {
+  const payload = {
+    ...buildSupabaseOrderPayload(order),
+    idempotencyKey,
+    customerSessionToken,
+  };
+
+  const { data, error } = await supabase.functions.invoke('customer-create-payment-intent', {
+    body: payload,
+  });
+
+  if (error || !data?.success || !data?.paymentId || !data?.gateway) {
+    throw new Error(data?.message || error?.message || 'Payment is temporarily unavailable. Please try again.');
+  }
+
+  const gateway = String(data.gateway).trim().toLowerCase();
+  if (gateway !== 'razorpay' && gateway !== 'mock') {
+    throw new Error('Unsupported payment provider. Please try again.');
+  }
+
+  if (gateway === 'razorpay' && (!data?.gatewayOrderId || !data?.gatewayKeyId)) {
+    throw new Error('Payment gateway is unavailable right now. Please try again.');
+  }
+
+  return {
+    paymentId: data.paymentId,
+    idempotencyKey,
+    paymentMethod: order.paymentMethod as CustomerCheckoutPaymentMethod,
+    amount: Number(data.amount ?? order.total),
+    amountPaise: Number(data.amountPaise ?? Math.round(order.total * 100)),
+    currency: String(data.currency ?? 'INR'),
+    gateway,
+    gatewayOrderId: data?.gatewayOrderId ? String(data.gatewayOrderId) : undefined,
+    gatewayKeyId: data?.gatewayKeyId ? String(data.gatewayKeyId) : undefined,
+  };
+};
+
+const invokeConfirmCheckoutPayment = async (input: ConfirmCheckoutPaymentInput): Promise<PersistOrderResult> => {
+  const { data, error } = await supabase.functions.invoke('customer-confirm-payment-and-create-order', {
+    body: {
+      paymentId: input.paymentId,
+      outcome: input.outcome,
+      gatewayOrderId: input.gatewayOrderId,
+      gatewayPaymentId: input.gatewayPaymentId,
+      gatewaySignature: input.gatewaySignature,
+      failureReason: input.failureReason,
+    },
+  });
+
+  if (error || !data?.success) {
+    throw new Error(data?.message || error?.message || 'Payment could not be verified. Please try again.');
+  }
+
+  if (input.outcome !== 'succeeded') {
+    throw new Error(data?.message || 'Payment was not completed.');
+  }
+
+  if (!data?.orderId) {
+    throw new Error(data?.message || 'Payment succeeded but order could not be created. Please contact support.');
+  }
+
+  return {
+    orderId: data.orderId,
+    orderNumber: data.orderNumber,
+    orderStatus: (data.orderStatus ?? 'placed') as OrderStatus,
+  };
+};
+
+const persistOrderToSupabase = async (order: Order): Promise<PersistOrderResult> => {
   try {
-    const sourceChannel: SupabaseSourceChannel = order.source;
+    const payload = buildSupabaseOrderPayload(order);
 
-    let orderInsert: { order_id: string } | null = null;
-    let orderInsertError: { code?: string; message?: string } | null = null;
+    const { data, error } = await supabase.functions.invoke('customer-create-order', {
+      body: payload,
+    });
 
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const orderNumber = await generateOrderNumber();
-      const { data, error } = await supabase
-        .from('orders')
-        .insert({
-          order_type: resolveSupabaseOrderType(order.orderType, sourceChannel),
-          source_channel: sourceChannel,
-          order_status: order.status,
-          store_id: order.storeId ?? DEFAULT_ORDER_STORE_ID,
-          customer_name: order.fullName,
-          customer_phone: order.phone,
-          customer_email: order.email,
-          payment_method: order.paymentMethod ?? null,
-          notes: null,
-          subtotal_amount: Math.round(order.subtotal),
-          discount_amount: Math.round(order.rewardDiscount),
-          tax_amount: Math.round(order.taxAmount ?? 0),
-          tip_amount: Math.round(order.tipAmount ?? 0),
-          total_amount: Math.round(order.total),
-          order_number: orderNumber,
-        })
-        .select('order_id')
-        .single();
-
-      if (!error && data?.order_id) {
-        orderInsert = data as { order_id: string };
-        orderInsertError = null;
-        break;
-      }
-
-      orderInsertError = error ? { code: error.code, message: error.message } : { message: 'Could not create orders row.' };
-
-      if (error?.code !== '23505') {
-        break;
+    let errorPayload: { message?: string } | null = null;
+    if (error?.context && typeof error.context.json === 'function') {
+      try {
+        errorPayload = await error.context.json();
+      } catch {
+        errorPayload = null;
       }
     }
 
-    if (!orderInsert?.order_id) {
-      throw new Error(orderInsertError?.message ?? 'Could not create orders row.');
+    if (error || !data?.success || !data?.orderId) {
+      throw new Error(
+        data?.message
+        || errorPayload?.message
+        || error?.message
+        || 'Could not create orders row.'
+      );
     }
 
-    const supabaseOrderId = orderInsert.order_id as string;
-
-    try {
-      for (const item of order.items) {
-        const lineTotal = Math.round(item.price * item.quantity);
-        const { data: itemInsert, error: itemError } = await supabase
-          .from('order_items')
-          .insert({
-            order_id: supabaseOrderId,
-            menu_item_id: resolveMenuItemId(item.id),
-            item_name: item.title,
-            item_category: item.category,
-            unit_price: Math.round(item.price),
-            quantity: item.quantity,
-            line_total: lineTotal,
-          })
-          .select('order_item_id')
-          .single();
-
-        if (itemError || !itemInsert?.order_item_id) {
-          throw new Error(itemError?.message ?? 'Could not create order_items row.');
-        }
-
-        const selectionRows = buildSelectionSnapshotRows(itemInsert.order_item_id as string, item.selections);
-        if (selectionRows.length > 0) {
-          const { error: selectionError } = await supabase
-            .from('order_item_selections')
-            .insert(selectionRows);
-
-          if (selectionError) {
-            throw new Error(selectionError.message);
-          }
-        }
-      }
-
-      return;
-    } catch (error) {
-      await supabase.from('orders').delete().eq('order_id', supabaseOrderId);
-      throw error;
-    }
+    return {
+      orderId: data.orderId,
+      orderNumber: data.orderNumber,
+      orderStatus: (data.orderStatus ?? order.status) as OrderStatus,
+    };
   } catch (error) {
     console.error('Supabase order persistence failed.');
     throw error instanceof Error ? error : new Error('Supabase order persistence failed.');
@@ -654,7 +719,7 @@ const buildSeedState = () => {
     fullName: 'Aarav Menon',
     phone: '9876543210',
     email: 'member@cultiv.app',
-    password: hashPassword('cultiv123'),
+    password: '', // Passwords are now backend-only (stored in Supabase customers table)
     createdAt: daysAgo(120),
     savedAddresses: [
       {
@@ -867,8 +932,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [supabaseReadSuccessful, setSupabaseReadSuccessful] = useState(false);
   const [supabaseReadDegraded, setSupabaseReadDegraded] = useState(false);
   const [supabaseRefreshTick, setSupabaseRefreshTick] = useState(0);
+  const [customerAccount, setCustomerAccount] = useState<CustomerAccountSummary | null>(() => readStorage(STORAGE_KEYS.customerAccount, null));
+  const [customerSessionToken, setCustomerSessionToken] = useState<string | null>(() => readStorage(STORAGE_KEYS.customerSessionToken, null));
   const usersRef = useRef(users);
   const ordersRef = useRef(allOrders);
+  const previousUserIdRef = useRef<string | null>(currentUserId);
 
   useEffect(() => {
     usersRef.current = users;
@@ -905,7 +973,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, [currentUserId]);
 
   useEffect(() => {
+    writeStorage(STORAGE_KEYS.customerAccount, customerAccount);
+  }, [customerAccount]);
+
+  useEffect(() => {
+    writeStorage(STORAGE_KEYS.customerSessionToken, customerSessionToken);
+  }, [customerSessionToken]);
+
+  useEffect(() => {
     setDraftCartScope(currentUserId);
+  }, [currentUserId]);
+
+  useEffect(() => {
+    const previousUserId = previousUserIdRef.current;
+    if (previousUserId && currentUserId && previousUserId !== currentUserId) {
+      resetShoppingSessionStorage();
+      setDraftCartScope(currentUserId);
+    }
+    previousUserIdRef.current = currentUserId;
   }, [currentUserId]);
 
   useEffect(() => {
@@ -1025,13 +1110,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const userRecord = users.find((entry) => entry.id === currentUserId) ?? null;
   const user = userRecord ? ({ ...userRecord, password: undefined } as unknown as User) : null;
   const guestOrders = allOrders.filter((order) => !order.userId && order.source === 'app');
-  const orders = user ? allOrders.filter((order) => order.userId === user.id) : guestOrders;
+  const orders = user
+    ? allOrders.filter((order) => {
+      if (customerAccount?.id && order.customerId === customerAccount.id) {
+        return true;
+      }
+      return order.userId === user.id;
+    })
+    : guestOrders;
   const hasInternalOrdersSession = Boolean(readStorage<InternalAccessSessionSnapshot | null>(ADMIN_ACCESS_SESSION_STORAGE_KEY, null)?.internalSessionToken);
   const sharedOrders = hasInternalOrdersSession
     ? supabaseSharedOrders
     : ((supabaseReadSuccessful && !supabaseReadDegraded) ? supabaseSharedOrders : allOrders);
   const activeOrders = orders.filter((order) => order.status !== 'completed');
   const loyaltyProfile = user ? loyaltyProfiles[user.id] ?? null : null;
+
+  useEffect(() => {
+    if (!userRecord) {
+      setCustomerAccount(null);
+    }
+  }, [userRecord?.id]);
 
   const syncLoyaltyForOrder = (userId: string, total: number, category: string) => {
     setLoyaltyProfiles((previous) => {
@@ -1123,25 +1221,87 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const login = async ({ identifier, password }: LoginInput): Promise<AuthActionResult> => {
-    const normalized = normalizePhone(identifier);
-    const candidate = users.find(
-      (entry) => entry.email?.toLowerCase() === identifier.toLowerCase() || normalizePhone(entry.phone) === normalized
-    );
+    try {
+      const { data: loginResponse, error: loginError } = await supabase.functions.invoke('customer-login', {
+        body: { identifier, password },
+      });
 
-    if (!candidate || !verifyPassword(password, candidate.password)) {
-      return { success: false, message: 'Invalid phone, email, or password.' };
-    }
+      if (loginError || !loginResponse?.success) {
+        const message = loginResponse?.message || 'Invalid email, phone, or password.';
+        return { success: false, message };
+      }
 
-    setCurrentUserId(candidate.id);
-    const claimable = detectClaimableGuestOrders(candidate);
-    if (claimable.length > 0) {
-      setPendingGuestOrderClaims(claimable);
+      // Login succeeded - set up session
+      const customerId = loginResponse.customer_id;
+      const customerData = loginResponse.customer;
+      const customerSessionTokenFromLogin = loginResponse.customer_session_token;
+
+      if (!customerId || !customerData || !customerSessionTokenFromLogin) {
+        return { success: false, message: 'Invalid email, phone, or password.' };
+      }
+
+      // Check if user already exists in local state (by phone or email)
+      const existingUser = users.find(
+        (u) => normalizePhone(u.phone) === normalizePhone(customerData.phone) ||
+               normalizeEmail(u.email) === normalizeEmail(customerData.email)
+      );
+
+      if (existingUser) {
+        // Reuse existing user record
+        setCurrentUserId(existingUser.id);
+      } else {
+        // Create a new local session record (no password stored)
+        const newUserId = createId('user');
+        const newUser: AuthRecord = {
+          id: newUserId,
+          fullName: customerData.full_name,
+          phone: customerData.phone,
+          email: customerData.email,
+          password: '', // Empty - passwords are backend-only
+          createdAt: new Date().toISOString(),
+          savedAddresses: [],
+          preferences: {},
+          paymentProfile: {
+            preferredMethod: 'upi',
+            savedMethods: [],
+          },
+          defaultAddressId: undefined,
+          emailLocked: true,
+          phoneEditable: false,
+        };
+
+        setUsers((previous) => [...previous, newUser]);
+        setCurrentUserId(newUserId);
+      }
+
+      // Always update customer account from backend
+      setCustomerAccount({
+        id: customerId,
+        reward_points: customerData.reward_points,
+        phone_verified: customerData.phone_verified,
+        email_verified: customerData.email_verified,
+      });
+      setCustomerSessionToken(customerSessionTokenFromLogin);
+
+      // Get user for claimable orders check
+      const userToCheck = existingUser || users.find((u) => normalizePhone(u.phone) === normalizePhone(customerData.phone));
+      if (userToCheck) {
+        const claimable = detectClaimableGuestOrders(userToCheck);
+        if (claimable.length > 0) {
+          setPendingGuestOrderClaims(claimable);
+        }
+      }
+
+      return { success: true, message: loginResponse.message };
+    } catch (err) {
+      console.error('[login] unexpected error calling edge function', err);
+      return { success: false, message: 'Could not log in right now. Please try again.' };
     }
-    return { success: true, message: 'Welcome back to your CULTIV routine.' };
   };
 
   const signup = async ({ fullName, phone, email, password }: SignupInput): Promise<AuthActionResult> => {
     const normalizedEmail = normalizeEmail(email);
+
     if (!normalizedEmail) {
       return { success: false, message: 'Email is required for order confirmations.' };
     }
@@ -1155,62 +1315,115 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
     const normalizedPhone = normalizePhone(normalizedPhoneInput);
 
-    const phoneExists = users.some((entry) => normalizePhone(entry.phone) === normalizedPhone);
-    if (phoneExists) {
-      return { success: false, message: 'A CULTIV profile already exists for this phone number.' };
-    }
-
-    if (users.some((entry) => normalizeEmail(entry.email) === normalizedEmail)) {
-      return { success: false, message: 'This email is already attached to a CULTIV profile.' };
-    }
 
     const passwordPolicyMessage = isValidPasswordPolicy(password);
     if (passwordPolicyMessage) {
       return { success: false, message: passwordPolicyMessage };
     }
 
-    const newUserId = createId('user');
-    const newUser: AuthRecord = {
-      id: newUserId,
-      fullName,
-      phone: normalizedPhone,
-      email: normalizedEmail,
-      password: hashPassword(password),
-      createdAt: new Date().toISOString(),
-      savedAddresses: [],
-      preferences: {},
-    paymentProfile: {
-      preferredMethod: 'upi',
-      savedMethods: [],
-    },
-		defaultAddressId: undefined,
-		emailLocked: true,
-		phoneEditable: false,
-    };
+    // Phase 1: phone remains required + validated in frontend/backend,
+    // but phone OTP verification is deferred and not a blocking signup step.
+    // Call edge function to create customer account using service_role access
+    try {
+      const signupPayload = {
+        full_name: fullName.trim(),
+        email: normalizedEmail,
+        phone: normalizedPhone,
+        password,
+      };
+      const result = await supabase.functions.invoke('customer-signup', {
+        body: signupPayload,
+      });
 
-    setUsers((previous) => [...previous, newUser]);
-    setLoyaltyProfiles((previous) => ({
-      ...previous,
-      [newUserId]: {
-        userId: newUserId,
-        pointsBatches: [],
-        availablePoints: 0,
-        expiringSoonPoints: 0,
-        expiredPoints: 0,
-        availableRewards: [],
-        pointsActivity: [],
-        totalOrders: 0,
-        totalSpend: 0,
-        currentTier: 'Founding Member',
-      },
-    }));
-    setCurrentUserId(newUserId);
-    const claimable = detectClaimableGuestOrders(newUser);
-    if (claimable.length > 0) {
-      setPendingGuestOrderClaims(claimable);
+      const EdgeFunctionResponse = result?.data;
+      const edgeFunctionError = result?.error;
+
+      let edgeErrorPayload: { success?: boolean; code?: string; message?: string } | null = null;
+      if (edgeFunctionError?.context && typeof edgeFunctionError.context.json === 'function') {
+        try {
+          edgeErrorPayload = await edgeFunctionError.context.json();
+        } catch {
+          edgeErrorPayload = null;
+        }
+      }
+
+
+      const knownEdgeMessage =
+        (EdgeFunctionResponse?.success === false ? EdgeFunctionResponse?.message : undefined)
+        || (edgeErrorPayload?.success === false ? edgeErrorPayload?.message : undefined);
+
+      if (knownEdgeMessage) {
+        return { success: false, message: knownEdgeMessage };
+      }
+
+      if (edgeFunctionError || !EdgeFunctionResponse?.success) {
+        const message = EdgeFunctionResponse?.message || edgeErrorPayload?.message || 'Could not create your CULTIV profile right now. Please try again.';
+        return { success: false, message };
+      }
+
+      const customerId = EdgeFunctionResponse.customerId ?? EdgeFunctionResponse.customer_id;
+      const customerSessionTokenFromSignup = EdgeFunctionResponse.customer_session_token;
+      if (!customerId) {
+        return { success: false, message: 'Could not create your CULTIV profile right now. Please try again.' };
+      }
+
+      if (!customerSessionTokenFromSignup) {
+        return { success: false, message: 'Could not create a secure customer session right now. Please try signing in.' };
+      }
+
+      // Account created successfully
+
+      // Auto-login the newly created customer
+      // Create a minimal local record for session state (without password)
+      const newUserId = createId('user');
+      const newUser: AuthRecord = {
+        id: newUserId,
+        fullName,
+        phone: normalizedPhone,
+        email: normalizedEmail,
+        password: '', // Empty - passwords are now backend-only
+        createdAt: new Date().toISOString(),
+        savedAddresses: [],
+        preferences: {},
+        paymentProfile: {
+          preferredMethod: 'upi',
+          savedMethods: [],
+        },
+        defaultAddressId: undefined,
+        emailLocked: true,
+        phoneEditable: false,
+      };
+
+      setUsers((previous) => [...previous, newUser]);
+      setLoyaltyProfiles((previous) => ({
+        ...previous,
+        [newUserId]: {
+          userId: newUserId,
+          pointsBatches: [],
+          availablePoints: 0,
+          expiringSoonPoints: 0,
+          expiredPoints: 0,
+          availableRewards: [],
+          pointsActivity: [],
+          totalOrders: 0,
+          totalSpend: 0,
+          currentTier: 'Founding Member',
+        },
+      }));
+      setCurrentUserId(newUserId);
+      setCustomerAccount({ id: customerId, reward_points: 0, phone_verified: false, email_verified: false });
+      setCustomerSessionToken(customerSessionTokenFromSignup);
+
+      const claimable = detectClaimableGuestOrders(newUser);
+      if (claimable.length > 0) {
+        setPendingGuestOrderClaims(claimable);
+      }
+
+      return { success: true, message: 'Your CULTIV profile is ready.' };
+    } catch (err) {
+      console.error('[signup] unexpected error calling edge function', err);
+      return { success: false, message: 'Could not create your CULTIV profile right now. Please try again.' };
     }
-
-    return { success: true, message: 'Your CULTIV profile is ready.' };
   };
 
   const requestPasswordReset = async (identifier: string): Promise<AuthActionResult> => {
@@ -1249,9 +1462,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return { success: false, message: passwordPolicyMessage };
     }
 
-    setUsers((previous) => previous.map((entry) => (entry.id === tokenRecord.userId ? { ...entry, password: hashPassword(password) } : entry)));
+    // TODO: Implement backend password reset endpoint
+    // With the new backend-authenticated auth model, password reset should:
+    // 1. Call a resetPassword Edge Function
+    // 2. Edge Function validates token and hashes password with bcryptjs
+    // 3. Edge Function updates customers.password_hash in Supabase
+    // For now, this is a stub that clears the reset token.
+    
     setResetTokens((previous) => previous.filter((entry) => entry.token !== token));
-    return { success: true, message: 'Your password has been updated.' };
+    return { success: true, message: 'Password reset is not yet available. Please use login if you know your password.' };
   };
 
   const requestPhoneChangeVerification = async (newPhone: string): Promise<AuthActionResult> => {
@@ -1315,10 +1534,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return { success: true, message: 'Your phone number has been updated.' };
   };
 
-  const placeOrder = async (input: PlaceOrderInput): Promise<Order> => {
+  const prepareCheckoutOrder = (input: PlaceOrderInput): { order: Order; linkedUserId?: string; usedRewardIds: string[] } => {
     const normalizedStoreId = input.storeId.trim();
     if (!normalizedStoreId) {
       throw new Error('Pickup store selection is required.');
+    }
+
+    if (input.paymentMethod !== 'upi' && input.paymentMethod !== 'card') {
+      throw new Error('Choose UPI or Card to continue.');
     }
 
     const trimmedName = input.fullName.trim();
@@ -1355,6 +1578,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
 
     const linkedUserId = currentUserId ?? undefined;
+    const resolvedCustomerId = linkedUserId ? (customerAccount?.id ?? null) : null;
     const usedRewardIds = [...new Set(input.usedRewardIds ?? [])];
     const requestedDiscount = Math.max(0, input.rewardDiscount ?? 0);
     const foodSubtotal = input.items
@@ -1430,9 +1654,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const items: OrderItem[] = input.items.map((item) => ({ ...item, orderId }));
     const status = 'placed';
 
-    const newOrder: Order = {
+    const preparedOrder: Order = {
       id: orderId,
       userId: linkedUserId,
+      customerId: linkedUserId ? resolvedCustomerId : null,
       storeId: normalizedStoreId,
       category: input.category,
       items,
@@ -1447,23 +1672,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       fullName: trimmedName,
       email: normalizedEmail,
       source: input.source ?? 'app',
+      paymentMethod: input.paymentMethod,
       tipPercentage,
       tipAmount,
       fulfillmentWindow: buildFulfillmentWindow(),
       statusTimeline: buildStatusTimeline(createdAt),
     };
 
-    try {
-      await persistOrderToSupabase(newOrder);
-      setAllOrders((previous) => [newOrder, ...previous]);
-      setSupabaseReadSuccessful(true);
-      setSupabaseReadDegraded(false);
-      setSupabaseRefreshTick((value) => value + 1);
-    } catch {
-      setSupabaseReadDegraded(true);
-      throw new Error('Could not place order right now. Please try again.');
-    }
+    return {
+      order: preparedOrder,
+      linkedUserId,
+      usedRewardIds,
+    };
+  };
 
+  const commitPlacedOrderState = (placedOrder: Order, linkedUserId: string | undefined, usedRewardIds: string[]) => {
+    setAllOrders((previous) => [placedOrder, ...previous]);
+    setSupabaseReadSuccessful(true);
+    setSupabaseReadDegraded(false);
+    setSupabaseRefreshTick((value) => value + 1);
     if (linkedUserId) {
       if (usedRewardIds.length > 0) {
         setLoyaltyProfiles((previous) => {
@@ -1480,10 +1707,66 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           };
         });
       }
-      syncLoyaltyForOrder(linkedUserId, newOrder.total, newOrder.category);
+      syncLoyaltyForOrder(linkedUserId, placedOrder.total, placedOrder.category);
+    }
+  };
+
+  const createCheckoutPaymentIntent = async (input: PlaceOrderInput): Promise<CheckoutPaymentIntent> => {
+    const { order } = prepareCheckoutOrder(input);
+    const idempotencyKey = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : createId('checkout');
+
+    if (!customerSessionToken) {
+      throw new Error('Please sign in again to continue checkout securely.');
     }
 
-    return newOrder;
+    try {
+      return await invokeCreateCheckoutPaymentIntent(order, idempotencyKey, customerSessionToken);
+    } catch (error) {
+      setSupabaseReadDegraded(true);
+      throw (error instanceof Error ? error : new Error('Could not start payment. Please try again.'));
+    }
+  };
+
+  const confirmCheckoutPayment = async (input: ConfirmCheckoutPaymentInput): Promise<CheckoutPaymentResult> => {
+    try {
+      const persisted = await invokeConfirmCheckoutPayment(input);
+
+      if (input.outcome !== 'succeeded') {
+        return { success: false, message: 'Payment was not completed.' };
+      }
+
+      if (!input.orderInput) {
+        throw new Error('Order payload is missing for payment confirmation.');
+      }
+
+      const { order, linkedUserId, usedRewardIds } = prepareCheckoutOrder(input.orderInput);
+      const placedOrder: Order = {
+        ...order,
+        id: persisted.orderId,
+        status: persisted.orderStatus,
+        items: order.items.map((item) => ({ ...item, orderId: persisted.orderId })),
+      };
+
+      commitPlacedOrderState(placedOrder, linkedUserId, usedRewardIds);
+      return { success: true, order: placedOrder };
+    } catch (error) {
+      if (input.outcome === 'failed' || input.outcome === 'cancelled') {
+        return {
+          success: false,
+          message: error instanceof Error ? error.message : 'Payment was not completed.',
+        };
+      }
+
+      setSupabaseReadDegraded(true);
+      throw (error instanceof Error ? error : new Error('Could not place order right now. Please try again.'));
+    }
+  };
+
+  const placeOrder = async (input: PlaceOrderInput): Promise<Order> => {
+    prepareCheckoutOrder(input);
+    throw new Error('Direct order placement is disabled. Use Pay & Place Order for prepaid checkout.');
   };
 
   const createCounterWalkInOrder = async (input: CreateCounterWalkInOrderInput): Promise<Order> => {
@@ -1554,17 +1837,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
     try {
-      await persistOrderToSupabase(newOrder);
-      setAllOrders((previous) => [newOrder, ...previous]);
+      const persisted = await persistOrderToSupabase(newOrder);
+      const syncedOrder: Order = {
+        ...newOrder,
+        id: persisted.orderId,
+        status: persisted.orderStatus,
+        items: newOrder.items.map((item) => ({ ...item, orderId: persisted.orderId })),
+      };
+      setAllOrders((previous) => [syncedOrder, ...previous]);
       setSupabaseReadSuccessful(true);
       setSupabaseReadDegraded(false);
       setSupabaseRefreshTick((value) => value + 1);
+      return syncedOrder;
     } catch {
       setSupabaseReadDegraded(true);
       throw new Error('Could not create counter billing order right now. Please try again.');
     }
-
-    return newOrder;
   };
 
   const linkWalkInOrder = async ({ phone, reference }: WalkInLinkInput): Promise<AuthActionResult> => {
@@ -1604,6 +1892,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const linkedOrder: Order = {
       id: orderId,
       userId: candidate.id,
+      customerId: customerAccount?.id ?? null,
       storeId: DEFAULT_ORDER_STORE_ID,
       category: 'Walk-In Bowl',
       items: [
@@ -1638,11 +1927,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
     try {
-      await persistOrderToSupabase(linkedOrder);
-      setAllOrders((previous) => [linkedOrder, ...previous]);
+      const persisted = await persistOrderToSupabase(linkedOrder);
+      const syncedOrder: Order = {
+        ...linkedOrder,
+        id: persisted.orderId,
+        status: persisted.orderStatus,
+        items: linkedOrder.items.map((item) => ({ ...item, orderId: persisted.orderId })),
+      };
+      setAllOrders((previous) => [syncedOrder, ...previous]);
       setSupabaseReadSuccessful(true);
       setSupabaseReadDegraded(false);
       setSupabaseRefreshTick((value) => value + 1);
+      syncLoyaltyForOrder(candidate.id, syncedOrder.total, syncedOrder.category);
+
+      return {
+        success: true,
+        message: reference
+          ? `In-store order ${reference} is now attached to the CULTIV profile.`
+          : 'This walk-in order is now attached to the CULTIV profile.',
+        userExists: true,
+      };
     } catch {
       setSupabaseReadDegraded(true);
       return {
@@ -1651,16 +1955,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         userExists: true,
       };
     }
-
-    syncLoyaltyForOrder(candidate.id, linkedOrder.total, linkedOrder.category);
-
-    return {
-      success: true,
-		message: reference
-			? `In-store order ${reference} is now attached to the CULTIV profile.`
-			: 'This walk-in order is now attached to the CULTIV profile.',
-      userExists: true,
-    };
   };
 
   const redeemReward = async (offerId: string): Promise<AuthActionResult> => {
@@ -2006,12 +2300,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
 
   const logout = () => {
+    resetShoppingSessionStorage();
     setCurrentUserId(null);
+    setCustomerAccount(null);
+    setCustomerSessionToken(null);
     setPendingGuestOrderClaims([]);
   };
 
   const value: AuthContextType = {
     user,
+    customerAccount,
     isAuthenticated: Boolean(user),
     orders,
     sharedOrders,
@@ -2024,6 +2322,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     resetPassword,
     logout,
     placeOrder,
+    createCheckoutPaymentIntent,
+    confirmCheckoutPayment,
     createCounterWalkInOrder,
     linkWalkInOrder,
     redeemReward,

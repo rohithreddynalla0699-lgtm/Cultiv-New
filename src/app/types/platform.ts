@@ -4,6 +4,7 @@ export type OrderStatus = 'placed' | 'preparing' | 'ready_for_pickup' | 'complet
 
 export type OrderType = 'pickup' | 'walk-in';
 export type CounterPaymentMethod = 'cash' | 'card' | 'upi';
+export type CustomerCheckoutPaymentMethod = 'card' | 'upi';
 
 export interface Address {
 	id: string;
@@ -82,6 +83,7 @@ export interface OrderStatusEvent {
 export interface Order {
 	id: string;
 	userId?: string;
+	customerId?: string | null;
 	storeId?: string;
 	category: string;
 	items: OrderItem[];
@@ -165,6 +167,7 @@ export interface PlaceOrderInput {
 	items: Omit<OrderItem, 'orderId'>[];
 	storeId: string;
 	orderType: 'pickup';
+	paymentMethod: CustomerCheckoutPaymentMethod;
 	subtotal: number;
 	rewardDiscount?: number;
 	tipPercentage?: number;

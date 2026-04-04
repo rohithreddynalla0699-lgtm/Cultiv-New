@@ -1,7 +1,7 @@
 // OrderPage — full-page three-partition ordering (menu rail, presets, live cart).
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronLeft, ChevronRight, Minus, Plus, ShoppingBag } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, CreditCard, Minus, Plus, ShoppingBag, Smartphone } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { PageReveal } from '../core/motion/cultivMotion';
@@ -39,10 +39,19 @@ import {
   resolveProteinBlend,
 } from '../data/bowlConfigurations';
 import { AuthPromptBeforeCheckout } from './AuthPromptBeforeCheckout';
+import { MockCheckoutPaymentModal } from './MockCheckoutPaymentModal';
+import { OrderReviewModal } from './OrderReviewModal';
 import { useAuth } from '../contexts/AuthContext';
 import { DISCOUNT_REWARD_VALUES, FREE_ITEM_REWARD_DETAILS } from '../config/rewardsCatalog';
-import type { OrderPageLocationState, OrdersSuccessLocationState } from '../types/navigation';
+import type { OrderPageLocationState } from '../types/navigation';
+import type { CustomerCheckoutPaymentMethod, PlaceOrderInput } from '../types/platform';
+import { resolveCheckoutPaymentProvider, type CheckoutPaymentIntent } from '../services/checkoutPaymentProvider';
 import { getSelectedStore, loadSelectedStoreId, loadStores, requestOpenStoreSelector, subscribeSelectedStore, type StoreLocatorStore } from '../data/storeLocator';
+import {
+  CHECKOUT_CONTACT_STORAGE_KEY,
+  GUEST_AUTH_PROMPT_DISMISSED_KEY,
+  GUEST_CONFIRMATION_STORAGE_KEY,
+} from '../data/shoppingSession';
 import {
   DEFAULT_ACTIVE_ORDER_CATEGORY_SLUG,
   POS_TAX_RATE,
@@ -66,6 +75,42 @@ interface GuestOrderConfirmation {
   orderId: string;
   fulfillmentWindow?: string;
   createdAt: number;
+}
+
+interface GatewaySuccessPayload {
+  gatewayOrderId: string;
+  gatewayPaymentId?: string;
+  gatewaySignature?: string;
+}
+
+interface RazorpaySuccessPayload {
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+}
+
+interface PaymentLaunchResult {
+  outcome: 'succeeded' | 'failed' | 'cancelled';
+  message?: string;
+  payload?: GatewaySuccessPayload;
+}
+
+interface MockPaymentSession {
+  paymentMethod: CustomerCheckoutPaymentMethod;
+  amount: number;
+  itemCount: number;
+  customerName: string;
+  paymentReference: string;
+  idempotencyKey: string;
+}
+
+declare global {
+  interface Window {
+    Razorpay?: new (options: Record<string, unknown>) => {
+      open: () => void;
+      on: (eventName: string, callback: (payload: any) => void) => void;
+    };
+  }
 }
 
 interface CustomizeState {
@@ -134,10 +179,6 @@ const CATEGORY_CONTEXT: Record<string, { accentLabel?: string; helperText: strin
     helperText: 'All drinks visible with direct add speed.',
   },
 };
-
-const CHECKOUT_CONTACT_STORAGE_KEY = 'cultiv_checkout_contact_v1';
-const GUEST_CONFIRMATION_STORAGE_KEY = 'cultiv_guest_order_confirmation_v1';
-const GUEST_AUTH_PROMPT_DISMISSED_KEY = 'cultiv_guest_auth_prompt_dismissed_v1';
 
 function isBrowser() {
   return typeof window !== 'undefined' && typeof localStorage !== 'undefined';
@@ -287,10 +328,42 @@ function mapSelectionsToLabels(selections: Record<string, string[]>) {
     .filter((entry) => entry.choices.length > 0);
 }
 
+const RAZORPAY_CHECKOUT_SCRIPT = 'https://checkout.razorpay.com/v1/checkout.js';
+
+const ensureRazorpayScript = async () => {
+  if (typeof window === 'undefined') {
+    throw new Error('Payment checkout is unavailable in this environment.');
+  }
+
+  if (window.Razorpay) {
+    return;
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const existing = document.querySelector(`script[src="${RAZORPAY_CHECKOUT_SCRIPT}"]`) as HTMLScriptElement | null;
+    if (existing) {
+      existing.addEventListener('load', () => resolve(), { once: true });
+      existing.addEventListener('error', () => reject(new Error('Could not load payment checkout.')), { once: true });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = RAZORPAY_CHECKOUT_SCRIPT;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Could not load payment checkout.'));
+    document.body.appendChild(script);
+  });
+
+  if (!window.Razorpay) {
+    throw new Error('Payment checkout failed to initialize.');
+  }
+};
+
 export function OrderPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, placeOrder, loyaltyProfile, offers } = useAuth();
+  const { user, createCheckoutPaymentIntent, confirmCheckoutPayment, loyaltyProfile, offers } = useAuth();
   const locationState = (location.state as OrderPageLocationState | null) ?? null;
 
   const [activeCategorySlug, setActiveCategorySlug] = useState<string>(DEFAULT_ACTIVE_ORDER_CATEGORY_SLUG);
@@ -298,6 +371,7 @@ export function OrderPage() {
   const [customer, setCustomer] = useState<CustomerState>({ fullName: '', phone: '', email: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showReviewModal, setShowReviewModal] = useState(false);
   const [guestOrderConfirmation, setGuestOrderConfirmation] = useState<GuestOrderConfirmation | null>(null);
   const [customizing, setCustomizing] = useState<CustomizeState | null>(null);
   const [pendingCategorySlug, setPendingCategorySlug] = useState<string | null>(null);
@@ -309,7 +383,10 @@ export function OrderPage() {
   const [selectedRewardIds, setSelectedRewardIds] = useState<string[]>([]);
   const [selectedTipOption, setSelectedTipOption] = useState<TipOption>('none');
   const [customTipInput, setCustomTipInput] = useState('');
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<CustomerCheckoutPaymentMethod>('upi');
+  const [mockPaymentSession, setMockPaymentSession] = useState<MockPaymentSession | null>(null);
   const submissionLockRef = useRef(false);
+  const mockPaymentResolverRef = useRef<((result: PaymentLaunchResult) => void) | null>(null);
   const [stores, setStores] = useState<StoreLocatorStore[]>(() => loadStores());
   const [selectedStoreId, setSelectedStoreId] = useState<string>(() => loadSelectedStoreId(loadStores()));
   const selectedStore = useMemo(
@@ -357,9 +434,27 @@ export function OrderPage() {
   }, [user]);
 
   useEffect(() => {
+    if (user?.paymentProfile?.preferredMethod === 'card' || user?.paymentProfile?.preferredMethod === 'upi') {
+      setSelectedPaymentMethod(user.paymentProfile.preferredMethod);
+    }
+  }, [user]);
+
+  useEffect(() => {
     if (!isBrowser()) return;
     localStorage.setItem(CHECKOUT_CONTACT_STORAGE_KEY, JSON.stringify(customer));
   }, [customer]);
+
+  useEffect(() => {
+    return () => {
+      if (mockPaymentResolverRef.current) {
+        mockPaymentResolverRef.current({
+          outcome: 'cancelled',
+          message: 'Payment was cancelled. Your cart is still saved.',
+        });
+        mockPaymentResolverRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!isBrowser()) return;
@@ -934,6 +1029,10 @@ export function OrderPage() {
       next.store = 'Select a valid pickup store.';
     }
 
+    if (selectedPaymentMethod !== 'upi' && selectedPaymentMethod !== 'card') {
+      next.paymentMethod = 'Choose UPI or Card to continue.';
+    }
+
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -959,17 +1058,163 @@ export function OrderPage() {
     });
   };
 
-  const placeFromCart = async () => {
+  const placeFromCart = () => {
     if (submissionLockRef.current || isSubmitting) {
       return;
     }
     if (!validateOrder()) return;
 
+    // Show review modal instead of immediately placing order
+    setShowReviewModal(true);
+  };
+
+  const runRazorpayCheckout = async (intent: CheckoutPaymentIntent): Promise<PaymentLaunchResult> => {
+    if (!intent.gatewayOrderId || !intent.gatewayKeyId) {
+      return {
+        outcome: 'failed',
+        message: 'Payment gateway is unavailable for this checkout attempt. Please retry.',
+      };
+    }
+
+    await ensureRazorpayScript();
+
+    return new Promise((resolve) => {
+      if (!window.Razorpay) {
+        resolve({ outcome: 'failed', message: 'Could not initialize payment checkout. Please try again.' });
+        return;
+      }
+
+      const razorpay = new window.Razorpay({
+        key: intent.gatewayKeyId,
+        amount: intent.amountPaise,
+        currency: intent.currency,
+        name: 'CULTIV',
+        description: 'Pickup order payment',
+        order_id: intent.gatewayOrderId,
+        prefill: {
+          name: customer.fullName,
+          contact: normalizePhone(customer.phone),
+          email: normalizeEmail(customer.email),
+        },
+        method: {
+          upi: intent.paymentMethod === 'upi',
+          card: intent.paymentMethod === 'card',
+          netbanking: false,
+          wallet: false,
+          emi: false,
+          paylater: false,
+        },
+        modal: {
+          ondismiss: () => {
+            resolve({ outcome: 'cancelled', message: 'Payment was cancelled. Your cart is still saved.' });
+          },
+        },
+        handler: (response: RazorpaySuccessPayload) => {
+          resolve({
+            outcome: 'succeeded',
+            payload: {
+              gatewayOrderId: response.razorpay_order_id,
+              gatewayPaymentId: response.razorpay_payment_id,
+              gatewaySignature: response.razorpay_signature,
+            },
+          });
+        },
+      });
+
+      razorpay.on('payment.failed', (response: any) => {
+        resolve({
+          outcome: 'failed',
+          message: response?.error?.description || 'Payment failed. Please retry.',
+          payload: {
+            gatewayOrderId: response?.error?.metadata?.order_id ?? intent.gatewayOrderId,
+            gatewayPaymentId: response?.error?.metadata?.payment_id,
+          },
+        });
+      });
+
+      razorpay.open();
+    });
+  };
+
+  const runMockCheckout = async (intent: CheckoutPaymentIntent, orderInput: PlaceOrderInput): Promise<PaymentLaunchResult> => {
+    const paymentReference = intent.gatewayOrderId || `mock_order_${intent.paymentId.slice(0, 10)}`;
+
+    return new Promise((resolve) => {
+      mockPaymentResolverRef.current = resolve;
+      setMockPaymentSession({
+        paymentMethod: intent.paymentMethod,
+        amount: orderInput.total,
+        itemCount: orderInput.items.reduce((sum, item) => sum + item.quantity, 0),
+        customerName: orderInput.fullName,
+        paymentReference,
+        idempotencyKey: intent.idempotencyKey,
+      });
+    });
+  };
+
+  const finalizeMockPaymentDecision = (outcome: 'succeeded' | 'failed' | 'cancelled') => {
+    setMockPaymentSession((current) => {
+      if (!current) return current;
+
+      const resolver = mockPaymentResolverRef.current;
+      mockPaymentResolverRef.current = null;
+
+      const paymentReference = current.paymentReference;
+      if (outcome === 'succeeded') {
+        const mockGatewayPaymentId = `mock_pay_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        resolver?.({
+          outcome: 'succeeded',
+          payload: {
+            gatewayOrderId: paymentReference,
+            gatewayPaymentId: mockGatewayPaymentId,
+            gatewaySignature: `mock_sig_${mockGatewayPaymentId.slice(-6)}`,
+          },
+        });
+      } else if (outcome === 'failed') {
+        resolver?.({
+          outcome: 'failed',
+          message: 'Payment failed. Please retry.',
+          payload: {
+            gatewayOrderId: paymentReference,
+          },
+        });
+      } else {
+        resolver?.({
+          outcome: 'cancelled',
+          message: 'Payment was cancelled. Your cart is still saved.',
+          payload: {
+            gatewayOrderId: paymentReference,
+          },
+        });
+      }
+
+      return current;
+    });
+
+    setTimeout(() => {
+      setMockPaymentSession(null);
+    }, 120);
+  };
+
+  const launchCheckoutPayment = async (intent: CheckoutPaymentIntent, orderInput: PlaceOrderInput): Promise<PaymentLaunchResult> => {
+    const provider = resolveCheckoutPaymentProvider(intent.gateway);
+    if (provider === 'mock') {
+      return runMockCheckout(intent, orderInput);
+    }
+
+    return runRazorpayCheckout(intent);
+  };
+
+  const confirmAndPlaceOrder = async () => {
+    if (submissionLockRef.current || isSubmitting) {
+      return;
+    }
+
     submissionLockRef.current = true;
     setIsSubmitting(true);
     setGuestOrderConfirmation(null);
     try {
-      const placedOrder = await placeOrder({
+      const orderInput: PlaceOrderInput = {
         category: 'Central Ordering',
         storeId: selectedStoreId,
         items: [
@@ -990,40 +1235,68 @@ export function OrderPage() {
         tipAmount,
         usedRewardIds: selectedRewardIds,
         total: payableTotal,
+        paymentMethod: selectedPaymentMethod,
         fullName: customer.fullName.trim(),
         phone: normalizePhone(customer.phone),
         email: normalizeEmail(customer.email),
+      };
+
+      const paymentIntent = await createCheckoutPaymentIntent(orderInput);
+      const paymentResult = await launchCheckoutPayment(paymentIntent, orderInput);
+
+      if (paymentResult.outcome === 'cancelled') {
+        await confirmCheckoutPayment({
+          paymentId: paymentIntent.paymentId,
+          outcome: 'cancelled',
+          gatewayOrderId: paymentResult.payload?.gatewayOrderId ?? paymentIntent.gatewayOrderId,
+          gatewayPaymentId: paymentResult.payload?.gatewayPaymentId,
+          failureReason: paymentResult.message || 'Payment was cancelled.',
+        });
+        setErrors((previous) => ({ ...previous, submit: paymentResult.message || 'Payment was cancelled.' }));
+        return;
+      }
+
+      if (paymentResult.outcome === 'failed') {
+        await confirmCheckoutPayment({
+          paymentId: paymentIntent.paymentId,
+          outcome: 'failed',
+          gatewayOrderId: paymentResult.payload?.gatewayOrderId ?? paymentIntent.gatewayOrderId,
+          gatewayPaymentId: paymentResult.payload?.gatewayPaymentId,
+          failureReason: paymentResult.message || 'Payment failed.',
+        });
+        setErrors((previous) => ({ ...previous, submit: paymentResult.message || 'Payment failed.' }));
+        return;
+      }
+
+      if (!paymentResult.payload?.gatewayOrderId || !paymentResult.payload?.gatewayPaymentId) {
+        throw new Error('Payment response is incomplete. Please retry checkout.');
+      }
+
+      const confirmed = await confirmCheckoutPayment({
+        paymentId: paymentIntent.paymentId,
+        orderInput,
+        outcome: 'succeeded',
+        gatewayOrderId: paymentResult.payload.gatewayOrderId,
+        gatewayPaymentId: paymentResult.payload.gatewayPaymentId,
+        gatewaySignature: paymentResult.payload.gatewaySignature,
       });
+
+      if (!confirmed.success || !confirmed.order) {
+        throw new Error(confirmed.message || 'Payment captured but order could not be confirmed.');
+      }
+
+      const placedOrder = confirmed.order;
       clearDraftCart();
       setCartLines([]);
       setSelectedRewardIds([]);
       setErrors({ submit: '' });
+      setShowReviewModal(false);
 
-      if (user) {
-        if (isBrowser()) {
-          localStorage.removeItem(GUEST_CONFIRMATION_STORAGE_KEY);
-        }
-        navigate('/orders', {
-          state: {
-            orderPlaced: true,
-            orderId: placedOrder.id,
-            fulfillmentWindow: placedOrder.fulfillmentWindow,
-            orderType: 'pickup',
-          } satisfies OrdersSuccessLocationState,
-        });
-      } else {
-        if (isBrowser()) {
-          localStorage.removeItem(GUEST_AUTH_PROMPT_DISMISSED_KEY);
-        }
-        setShowGuestAuthPrompt(true);
-        setGuestOrderConfirmation({
-          orderId: placedOrder.id,
-          fulfillmentWindow: placedOrder.fulfillmentWindow,
-          createdAt: Date.now(),
-        });
-      }
-    } catch {
-      setErrors((previous) => ({ ...previous, submit: 'Could not place order. Please try again.' }));
+      // Navigate to new order success screen (not order history)
+      navigate(`/order-success/${placedOrder.id}`);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Could not place order. Please try again.';
+      setErrors((previous) => ({ ...previous, submit: errorMessage }));
     } finally {
       setIsSubmitting(false);
       submissionLockRef.current = false;
@@ -1491,37 +1764,37 @@ export function OrderPage() {
                   </div>
 
                   <div className="mt-3 rounded-2xl border border-primary/10 bg-white p-4">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-foreground/60">Items</span>
-                      <span className="font-medium">{cartCount}{customizing ? ' + 1 building' : ''}</span>
-                    </div>
-                    <div className="mt-2 flex items-center justify-between text-sm">
-                      <span className="text-foreground/60">Food subtotal</span>
-                      <span className="tabular-nums">₹{cartTotal.toFixed(2)}</span>
-                    </div>
-                    {customizing ? (
-                      <div className="mt-2 flex items-center justify-between text-sm text-foreground/60">
-                        <span>In progress</span>
-                        <span className="tabular-nums">₹{customizeUnitPrice}</span>
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/45">Order Summary</p>
+                    <div className="mt-3 space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-foreground/60">Items ({cartCount}{customizing ? ' + 1 building' : ''})</span>
+                        <span className="tabular-nums font-medium">₹{cartTotal.toFixed(2)}</span>
                       </div>
-                    ) : null}
-                      {rewardDiscount > 0 ? (
-                        <div className="mt-2 flex items-center justify-between text-sm text-primary/80">
-                          <span>Rewards discount</span>
-                          <span className="tabular-nums">-₹{rewardDiscount.toFixed(2)}</span>
+                      {customizing ? (
+                        <div className="flex items-center justify-between text-sm text-foreground/60">
+                          <span>Building</span>
+                          <span className="tabular-nums">₹{customizeUnitPrice}</span>
                         </div>
                       ) : null}
-                    <div className="mt-2 flex items-center justify-between text-sm text-foreground/60">
-                      <span>Taxable subtotal</span>
-                      <span className="tabular-nums">₹{taxableSubtotal.toFixed(2)}</span>
+                      {rewardDiscount > 0 ? (
+                        <div className="flex items-center justify-between text-sm text-primary/80">
+                          <span>Reward discount</span>
+                          <span className="tabular-nums font-medium">−₹{rewardDiscount.toFixed(2)}</span>
+                        </div>
+                      ) : null}
+                      <div className="flex items-center justify-between text-sm text-foreground/60">
+                        <span>Taxable subtotal</span>
+                        <span className="tabular-nums">₹{taxableSubtotal.toFixed(2)}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-sm text-foreground/60">
+                        <span>GST (5%)</span>
+                        <span className="tabular-nums">₹{gstAmount.toFixed(2)}</span>
+                      </div>
                     </div>
-                    <div className="mt-2 flex items-center justify-between text-sm text-foreground/60">
-                      <span>GST</span>
-                      <span className="tabular-nums">₹{gstAmount.toFixed(2)}</span>
-                    </div>
-                    <div className="mt-2">
-                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-foreground/55">Tip</p>
-                      <div className="mt-1 flex flex-wrap gap-2">
+                    
+                    <div className="mt-3 border-t border-primary/8 pt-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.08em] text-foreground/55">Tip (optional)</p>
+                      <div className="mt-1.5 flex flex-wrap gap-2">
                         {([
                           { value: 'none', label: 'No Tip' },
                           { value: '5', label: '5%' },
@@ -1533,7 +1806,7 @@ export function OrderPage() {
                             key={option.value}
                             type="button"
                             onClick={() => setSelectedTipOption(option.value)}
-                            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${selectedTipOption === option.value ? 'bg-primary text-primary-foreground' : 'border border-border text-foreground/70'}`}
+                            className={`rounded-full px-2.5 py-1 text-xs font-semibold transition-colors ${selectedTipOption === option.value ? 'bg-primary text-primary-foreground' : 'border border-border text-foreground/70 hover:border-primary/40'}`}
                           >
                             {option.label}
                           </button>
@@ -1547,27 +1820,30 @@ export function OrderPage() {
                           value={customTipInput}
                           onChange={(event) => setCustomTipInput(event.target.value)}
                           placeholder="Enter custom tip"
-                          className="mt-2 w-full rounded-xl border border-primary/14 bg-white px-3 py-2.5 text-sm outline-none"
+                          className="mt-2 w-full rounded-xl border border-primary/14 bg-white px-3 py-2.5 text-sm outline-none focus:border-primary/30"
                         />
                       ) : null}
+                      {tipAmount > 0 ? (
+                        <div className="mt-2 flex items-center justify-between text-sm">
+                          <span className="text-foreground/60">Tip amount</span>
+                          <span className="tabular-nums font-medium text-foreground/88">₹{tipAmount.toFixed(2)}</span>
+                        </div>
+                      ) : null}
                     </div>
-                    <div className="mt-2 flex items-center justify-between text-sm text-foreground/60">
-                      <span>Tip</span>
-                      <span className="tabular-nums">₹{tipAmount.toFixed(2)}</span>
-                    </div>
+
                     <motion.div 
                       key={`payable-${payableTotal}`}
                       initial={{ scale: 0.95, opacity: 0.7 }}
                       animate={{ scale: 1, opacity: 1 }}
                       transition={{ type: 'spring', stiffness: 280, damping: 18 }}
-                      className="mt-2 flex items-center justify-between text-base font-semibold"
+                      className="mt-3 flex items-center justify-between border-t border-primary/10 pt-3 text-lg font-semibold"
                     >
-                      <span>Total</span>
-                        <span className="tabular-nums">₹{payableTotal.toFixed(2)}</span>
+                      <span>Total Amount</span>
+                      <span className="tabular-nums text-primary text-xl">₹{payableTotal.toFixed(2)}</span>
                     </motion.div>
-                    <div className="mt-2 flex items-center justify-between text-sm text-foreground/60">
-                      <span>Pickup estimate</span>
-                      <span>{PICKUP_ESTIMATE_WINDOW}</span>
+                    <div className="mt-2 flex items-center justify-between text-xs text-foreground/50">
+                      <span>Pickup ready in</span>
+                      <span className="font-medium">{PICKUP_ESTIMATE_WINDOW}</span>
                     </div>
                   </div>
 
@@ -1611,6 +1887,42 @@ export function OrderPage() {
                     ) : null}
 
                   <div className="mt-3 space-y-2">
+                    <div className={`rounded-xl border bg-white px-3 py-3 ${errors.paymentMethod ? 'border-red-400' : 'border-primary/14'}`}>
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/55">Payment Method</p>
+                      <p className="mt-1 text-xs text-foreground/56">Prepaid checkout only. Cash at pickup is not available for website orders.</p>
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedPaymentMethod('upi');
+                            setErrors((current) => ({ ...current, paymentMethod: '' }));
+                          }}
+                          className={`rounded-xl border px-3 py-2.5 text-left transition-colors ${selectedPaymentMethod === 'upi' ? 'border-primary bg-primary/10' : 'border-primary/15 hover:border-primary/30'}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Smartphone className="h-4 w-4 text-primary" />
+                            <p className="text-sm font-semibold text-foreground/88">UPI</p>
+                          </div>
+                          <p className="mt-1 text-[11px] text-foreground/58">Pay instantly with any UPI app.</p>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedPaymentMethod('card');
+                            setErrors((current) => ({ ...current, paymentMethod: '' }));
+                          }}
+                          className={`rounded-xl border px-3 py-2.5 text-left transition-colors ${selectedPaymentMethod === 'card' ? 'border-primary bg-primary/10' : 'border-primary/15 hover:border-primary/30'}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <CreditCard className="h-4 w-4 text-primary" />
+                            <p className="text-sm font-semibold text-foreground/88">Card</p>
+                          </div>
+                          <p className="mt-1 text-[11px] text-foreground/58">Credit and debit cards supported.</p>
+                        </button>
+                      </div>
+                    </div>
+                    {errors.paymentMethod ? <p className="text-xs text-red-600">{errors.paymentMethod}</p> : null}
+
                     <div data-testid="order-store-select" className={`rounded-xl border bg-white px-3 py-2.5 ${errors.store ? 'border-red-400' : 'border-primary/14'}`}>
                       <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/55">Pickup from</p>
                       <div className="mt-1 flex items-center justify-between gap-3">
@@ -1676,7 +1988,7 @@ export function OrderPage() {
                     className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-full bg-primary py-3 text-sm font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
                   >
                     <ShoppingBag className="h-4 w-4" />
-                    {isSubmitting ? 'Placing Order...' : customizing ? 'Finish customization to place order' : `Place Order · ₹${payableTotal.toFixed(2)}`}
+                    {isSubmitting ? 'Processing Payment...' : customizing ? 'Finish customization to continue' : `Pay & Place Order · ₹${payableTotal.toFixed(2)}`}
                   </button>
 
                   {!user && showGuestAuthPrompt && cartCount > 0 ? (
@@ -1708,6 +2020,43 @@ export function OrderPage() {
           </button>
         </div>
       ) : null}
+
+      {/* Order Review Modal */}
+      <AnimatePresence>
+        {showReviewModal && (
+          <OrderReviewModal
+            items={cartLines}
+            store={selectedStore}
+            customer={customer}
+            subtotal={cartTotal}
+            rewardDiscount={rewardDiscount}
+            taxAmount={gstAmount}
+            tipAmount={tipAmount}
+            total={payableTotal}
+            pickupEstimate={PICKUP_ESTIMATE_WINDOW}
+            paymentMethod={selectedPaymentMethod}
+            isSubmitting={isSubmitting}
+            onConfirm={confirmAndPlaceOrder}
+            onEdit={() => setShowReviewModal(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {mockPaymentSession ? (
+          <MockCheckoutPaymentModal
+            paymentMethod={mockPaymentSession.paymentMethod}
+            amount={mockPaymentSession.amount}
+            itemCount={mockPaymentSession.itemCount}
+            customerName={mockPaymentSession.customerName}
+            paymentReference={mockPaymentSession.paymentReference}
+            idempotencyKey={mockPaymentSession.idempotencyKey}
+            onSimulateSuccess={() => finalizeMockPaymentDecision('succeeded')}
+            onSimulateFailure={() => finalizeMockPaymentDecision('failed')}
+            onSimulateCancel={() => finalizeMockPaymentDecision('cancelled')}
+          />
+        ) : null}
+      </AnimatePresence>
     </PageReveal>
   );
 }
