@@ -244,25 +244,28 @@ const toggleByPin = async (db: ReturnType<typeof createClient>, storeId: string,
     return { status: 400, error: 'pin must be a valid 6-digit string.' };
   }
 
-  const { data: matchedEmployee, error: employeeError } = await db
+  const { data: employee, error: employeeError } = await db
     .from('employees')
     .select('id, full_name, employee_role, store_id, pin_hash, is_active')
     .eq('id', employeeId)
     .eq('store_id', storeId)
-    .eq('is_active', true);
+    .eq('is_active', true)
+    .single();
 
   if (employeeError) {
-    return { status: 500, error: 'Could not validate employee PIN.' };
+    if (employeeError.code === 'PGRST116') {
+      return { status: 403, error: 'Employee is not active in this store.' };
+    }
+    return { status: 500, error: 'Could not validate selected employee.' };
   }
 
-  const employee = ((matchedEmployee ?? []) as EmployeeRow[])[0] ?? null;
   if (!employee) {
     return { status: 403, error: 'Employee is not active in this store.' };
   }
 
   const pinMatched = await verifyPin(pin.trim(), employee.pin_hash);
   if (!pinMatched) {
-    return { status: 401, error: 'Wrong PIN' };
+    return { status: 401, error: 'Incorrect PIN' };
   }
 
   const now = new Date();
@@ -319,7 +322,7 @@ const toggleByPin = async (db: ReturnType<typeof createClient>, storeId: string,
   const { data: insertedShift, error: insertShiftError } = await db
     .from('employee_shifts')
     .insert({
-    employee_id: employee.id,
+      employee_id: employee.id,
       store_id: storeId,
       shift_date: today,
       clock_in_at: nowIso,
