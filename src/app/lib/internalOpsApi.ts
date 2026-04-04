@@ -4,6 +4,7 @@ const INTERNAL_LOGIN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/in
 const INTERNAL_ORDERS_LIST_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-orders-list`;
 const INTERNAL_ORDER_STATUS_UPDATE_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-order-status-update`;
 const INTERNAL_SHIFT_CONTROL_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-shift-control`;
+const INTERNAL_EMPLOYEES_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-employees`;
 
 export interface InternalLoginResponse {
   userId: string;
@@ -97,6 +98,50 @@ export interface InternalShiftToggleResponse {
   employeeRole: 'manager' | 'kitchen' | 'counter';
 }
 
+export interface InternalEmployeeDashboardShift {
+  shiftId: string;
+  shiftDate: string;
+  clockInAt: string;
+  clockOutAt: string | null;
+  totalHours: number;
+}
+
+export type InternalEmployeeDashboardPeriod = 'this_week' | 'last_week' | 'this_month' | 'last_month';
+
+export interface InternalEmployeeDashboardRow {
+  employeeId: string;
+  name: string;
+  role: 'manager' | 'kitchen' | 'counter';
+  storeId: string;
+  storeCode: string;
+  isActive: boolean;
+  phone: string | null;
+  shiftStatus: 'on_shift' | 'off_shift';
+  summaryLabel: string;
+  summaryHours: number;
+  todayHours: number;
+  weekHours: number;
+  monthHours: number;
+  recentShifts: InternalEmployeeDashboardShift[];
+}
+
+export interface InternalEmployeesDashboardResponse {
+  employees: InternalEmployeeDashboardRow[];
+}
+
+export interface InternalEmployeeUpsertResponse {
+  employeeId: string;
+  name: string;
+  role: 'manager' | 'kitchen' | 'counter';
+  storeId: string;
+  isActive: boolean;
+}
+
+export interface InternalEmployeeDeleteResponse {
+  success: boolean;
+  message: string;
+}
+
 const postInternal = async <TResponse>(url: string, params: Record<string, unknown>, fallbackMessage: string): Promise<{ data: TResponse | null; error: string | null }> => {
   try {
     const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -170,4 +215,41 @@ export async function submitInternalShiftPin(params: {
   pin: string;
 }): Promise<{ data: InternalShiftToggleResponse | null; error: string | null }> {
   return postInternal<InternalShiftToggleResponse>(INTERNAL_SHIFT_CONTROL_URL, { ...params, action: 'submit_pin' }, 'Could not submit employee PIN.');
+}
+
+export async function loadInternalEmployeesDashboard(params: {
+  internalSessionToken: string;
+  roleKey: 'owner' | 'admin' | 'store';
+  scopeType: 'global' | 'store';
+  scopeStoreId: string | null;
+  period: InternalEmployeeDashboardPeriod;
+}): Promise<{ data: InternalEmployeesDashboardResponse | null; error: string | null }> {
+  return postInternal<InternalEmployeesDashboardResponse>(INTERNAL_EMPLOYEES_URL, { ...params, action: 'dashboard' }, 'Could not load employee dashboard.');
+}
+
+export async function upsertInternalEmployee(params: {
+  internalSessionToken: string;
+  roleKey: 'owner' | 'admin' | 'store';
+  scopeType: 'global' | 'store';
+  scopeStoreId: string | null;
+  employeeId?: string;
+  name: string;
+  role: 'manager' | 'kitchen' | 'counter';
+  storeId?: string;
+  storeCode?: string;
+  pin?: string;
+  phone?: string;
+  isActive: boolean;
+}): Promise<{ data: InternalEmployeeUpsertResponse | null; error: string | null }> {
+  return postInternal<InternalEmployeeUpsertResponse>(INTERNAL_EMPLOYEES_URL, { ...params, action: 'upsert_employee' }, 'Could not save employee.');
+}
+
+export async function deleteInternalEmployee(params: {
+  internalSessionToken: string;
+  roleKey: 'owner' | 'admin' | 'store';
+  scopeType: 'global' | 'store';
+  scopeStoreId: string | null;
+  employeeId: string;
+}): Promise<{ data: InternalEmployeeDeleteResponse | null; error: string | null }> {
+  return postInternal<InternalEmployeeDeleteResponse>(INTERNAL_EMPLOYEES_URL, { ...params, action: 'delete_employee' }, 'Could not delete employee.');
 }

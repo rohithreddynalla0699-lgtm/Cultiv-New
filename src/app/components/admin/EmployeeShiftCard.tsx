@@ -4,6 +4,8 @@ import { StatusBadge } from './StatusBadge';
 interface EmployeeShiftCardProps {
   employee: EmployeeRecord;
   storeName?: string;
+  summaryLabel?: string;
+  summaryHours?: number;
   todayHours: number;
   weekHours: number;
   monthHours: number;
@@ -18,7 +20,7 @@ const ROLE_LABELS = {
   manager: 'Manager',
 } as const;
 
-export function EmployeeShiftCard({ employee, storeName, todayHours, weekHours, monthHours, onClockIn, onClockOut, onEdit }: EmployeeShiftCardProps) {
+export function EmployeeShiftCard({ employee, storeName, summaryLabel = 'Today', summaryHours, todayHours, weekHours, monthHours, onClockIn, onClockOut, onEdit }: EmployeeShiftCardProps) {
   const activeShift = employee.shifts.find((shift) => !shift.logoutAt);
   const canStartShift = employee.status !== 'on_shift' && employee.isActive;
   const canEndShift = employee.status === 'on_shift' && employee.isActive;
@@ -41,8 +43,8 @@ export function EmployeeShiftCard({ employee, storeName, todayHours, weekHours, 
       </div>
 
       <div className="mt-3 rounded-xl bg-[#F7FAF3] px-3 py-3">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/58">Today</p>
-        <p className="mt-1.5 text-2xl font-semibold tracking-[-0.03em] text-foreground">{todayHours.toFixed(1)}h</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/58">{summaryLabel}</p>
+        <p className="mt-1.5 text-2xl font-semibold tracking-[-0.03em] text-foreground">{(summaryHours ?? todayHours).toFixed(1)}h</p>
       </div>
 
       <div className="mt-3 grid gap-3 sm:grid-cols-2">

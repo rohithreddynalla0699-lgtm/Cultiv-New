@@ -1,17 +1,36 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { SectionHeader } from './SectionHeader';
 import { EmployeeShiftCard } from './EmployeeShiftCard';
 import { useAdminDashboard } from '../../contexts/AdminDashboardContext';
-import type { EmployeeInput, EmployeeRole, EmployeeShift } from '../../types/admin';
-
-const isSameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
-
-const getShiftHours = (shift: EmployeeShift) => shift.totalHoursWorked;
+import type { EmployeeInput, EmployeeRole, EmployeeRecord, EmployeeShift } from '../../types/admin';
+import { employeeAdminService, type EmployeeDashboardRow } from '../../services/employeeAdminService';
+import type { InternalEmployeeDashboardPeriod } from '../../lib/internalOpsApi';
 
 const formatShiftTime = (value: string) => new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const formatShiftDate = (value: string) => new Date(value).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
 
 const ROLE_OPTIONS: EmployeeRole[] = ['kitchen', 'counter', 'manager'];
+const PERIOD_OPTIONS: Array<{ value: InternalEmployeeDashboardPeriod; label: string }> = [
+  { value: 'this_week', label: 'This week' },
+  { value: 'last_week', label: 'Last week' },
+  { value: 'this_month', label: 'This month' },
+  { value: 'last_month', label: 'Last month' },
+];
+const VISIBILITY_OPTIONS = [
+  { value: 'active', label: 'Active' },
+  { value: 'inactive', label: 'Inactive' },
+  { value: 'all', label: 'All' },
+] as const;
+
+type EmployeeVisibilityFilter = typeof VISIBILITY_OPTIONS[number]['value'];
+
+interface DeleteConfirmationState {
+  show: boolean;
+  employeeId: string | null;
+  employeeName: string;
+  isDeleting: boolean;
+}
 
 const createEmptyEmployeeForm = (storeId: string): EmployeeInput => ({
   name: '',
@@ -24,24 +43,107 @@ const createEmptyEmployeeForm = (storeId: string): EmployeeInput => ({
 
 export function EmployeesScreen() {
   const {
+    session,
     stores,
-    scopedEmployees,
-    addEmployee,
-    updateEmployee,
     permissions,
     activeStoreScope,
     activeStore,
-    getStoreName,
   } = useAdminDashboard();
   const defaultStoreId = activeStoreScope === 'all' ? (stores.find((store) => store.isActive)?.id ?? stores[0]?.id ?? '') : activeStoreScope;
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
   const [form, setForm] = useState<EmployeeInput>(createEmptyEmployeeForm(defaultStoreId));
   const [message, setMessage] = useState('Shift attendance stays lightweight while employee records stay clean.');
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [expandedHistory, setExpandedHistory] = useState<Record<string, boolean>>({});
+  const [employees, setEmployees] = useState<EmployeeDashboardRow[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [selectedPeriod, setSelectedPeriod] = useState<InternalEmployeeDashboardPeriod>('this_week');
+  const [visibilityFilter, setVisibilityFilter] = useState<EmployeeVisibilityFilter>('active');
+  const [deleteConfirmation, setDeleteConfirmation] = useState<DeleteConfirmationState>({
+    show: false,
+    employeeId: null,
+    employeeName: '',
+    isDeleting: false,
+  });
+  const latestDashboardRequestIdRef = useRef(0);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const activeStoreCode = activeStore?.code ?? null;
 
   const visibleStores = useMemo(() => stores.filter((store) => store.isActive || store.id === form.storeId), [form.storeId, stores]);
-  const historyCount = useMemo(() => scopedEmployees.reduce((sum, employee) => sum + employee.shifts.filter((shift) => activeStoreScope === 'all' || shift.storeId === activeStoreScope).length, 0), [activeStoreScope, scopedEmployees]);
+  const scopedEmployees = useMemo(
+    () => employees.filter((employee) => activeStoreScope === 'all' || employee.storeCode === activeStoreCode),
+    [activeStoreCode, activeStoreScope, employees],
+  );
+  const visibleEmployees = useMemo(
+    () => scopedEmployees.filter((employee) => {
+      if (visibilityFilter === 'active') return employee.isActive;
+      if (visibilityFilter === 'inactive') return !employee.isActive;
+      return true;
+    }),
+    [scopedEmployees, visibilityFilter],
+  );
+  const historyCount = useMemo(() => visibleEmployees.reduce((sum, employee) => sum + employee.recentShifts.length, 0), [visibleEmployees]);
+
+  const loadEmployees = useCallback(async (options?: { silent?: boolean }) => {
+    const requestId = latestDashboardRequestIdRef.current + 1;
+    latestDashboardRequestIdRef.current = requestId;
+
+    if (!session) {
+      if (requestId !== latestDashboardRequestIdRef.current) return;
+      setEmployees([]);
+      setLoadError(null);
+      setIsLoading(false);
+      return;
+    }
+
+    if (!options?.silent) {
+      setIsLoading(true);
+    }
+
+    try {
+      const dashboard = await employeeAdminService.loadDashboard(session, selectedPeriod);
+      if (requestId !== latestDashboardRequestIdRef.current) return;
+      setEmployees(dashboard.employees);
+      setLoadError(null);
+    } catch (error) {
+      if (requestId !== latestDashboardRequestIdRef.current) return;
+      const nextError = error instanceof Error ? error.message : 'Could not load employees.';
+      setLoadError(nextError);
+      setMessage(nextError);
+    } finally {
+      if (requestId !== latestDashboardRequestIdRef.current) return;
+      if (!options?.silent) {
+        setIsLoading(false);
+      }
+    }
+  }, [selectedPeriod, session]);
+
+  useEffect(() => {
+    void loadEmployees();
+  }, [loadEmployees]);
+
+  useEffect(() => {
+    if (!session) return;
+
+    const handleFocus = () => {
+      void loadEmployees({ silent: true });
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        void loadEmployees({ silent: true });
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [loadEmployees, session]);
 
   if (!permissions.canManageEmployees) {
     return <Navigate to="/operations" replace />;
@@ -54,25 +156,44 @@ export function EmployeesScreen() {
     setMessage('Add an employee and assign their home store and role.');
   };
 
-  const openEdit = (employee: { id: string; name: string; role: EmployeeRole; storeId: string; pin: string; phone?: string; isActive: boolean }) => {
+  const openEdit = (employee: { id: string; name: string; role: EmployeeRole; storeId: string; phone?: string | null; isActive: boolean }) => {
+    const matchedStore = stores.find((store) => store.code === employee.storeId) ?? null;
     setEditingEmployeeId(employee.id);
     setForm({
       name: employee.name,
       role: employee.role,
-      storeId: employee.storeId,
-      pin: employee.pin,
+      storeId: matchedStore?.id ?? defaultStoreId,
+      pin: '',
       phone: employee.phone ?? '',
       isActive: employee.isActive,
     });
     setEditorOpen(true);
-    setMessage(`Editing ${employee.name}.`);
+    setMessage(`Editing ${employee.name}. Leave PIN empty to keep the current PIN.`);
   };
 
-  const handleSubmit = () => {
-    const result = editingEmployeeId ? updateEmployee(editingEmployeeId, form) : addEmployee(form);
-    setMessage(result.message);
-    if (result.success) {
+  const handleSubmit = async () => {
+    if (!session) {
+      setMessage('Internal session expired. Please sign in again.');
+      return;
+    }
+
+    try {
+      const selectedStore = stores.find((store) => store.id === form.storeId) ?? null;
+      await employeeAdminService.upsertEmployee(session, {
+        employeeId: editingEmployeeId ?? undefined,
+        name: form.name,
+        role: form.role,
+        storeCode: selectedStore?.code,
+        pin: form.pin.trim() || undefined,
+        phone: form.phone?.trim() || undefined,
+        isActive: form.isActive,
+      });
+
+      setMessage(editingEmployeeId ? 'Employee updated.' : 'Employee added.');
       closeEditor();
+      await loadEmployees();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not save employee.');
     }
   };
 
@@ -82,12 +203,82 @@ export function EmployeesScreen() {
     setForm(createEmptyEmployeeForm(defaultStoreId));
   };
 
+  const openDeleteConfirmation = (employeeId: string, employeeName: string) => {
+    setDeleteConfirmation({ show: true, employeeId, employeeName, isDeleting: false });
+  };
+
+  const closeDeleteConfirmation = () => {
+    setDeleteConfirmation({ show: false, employeeId: null, employeeName: '', isDeleting: false });
+  };
+
+  const confirmDelete = async () => {
+    if (!session || !deleteConfirmation.employeeId) {
+      setMessage('Internal session expired. Please sign in again.');
+      closeDeleteConfirmation();
+      return;
+    }
+
+    setDeleteConfirmation((prev) => ({ ...prev, isDeleting: true }));
+
+    try {
+      await employeeAdminService.deleteEmployee(session, deleteConfirmation.employeeId);
+      setMessage(`${deleteConfirmation.employeeName} has been deleted.`);
+      closeEditor();
+      closeDeleteConfirmation();
+      await loadEmployees();
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Could not delete employee.';
+      setMessage(errorMessage);
+      setDeleteConfirmation((prev) => ({ ...prev, isDeleting: false }));
+    }
+  };
+
+  useEffect(() => {
+    if (editorOpen && editorRef.current) {
+      editorRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [editorOpen]);
+
   return (
     <div className="space-y-6">
-      <SectionHeader eyebrow="Employees" title="Track shifts with one tap." description="A lightweight view of who is on shift, how long they have worked today, and their running week/month hours for future payout calculations." action={<div className="flex flex-wrap gap-2"><div className="rounded-full bg-white/88 px-4 py-2 text-sm font-medium text-foreground/68">Shift entries: {historyCount}</div>{permissions.canManageEmployees ? <button data-testid="employees-add-btn" type="button" onClick={openCreate} className="rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">Add Employee</button> : null}</div>} />
+      <SectionHeader eyebrow="Employees" title="Track shifts with one tap." description="A lightweight view of who is on shift, how long they have worked, and recent real shift history for manual cash payout review." action={<div className="flex flex-wrap gap-2"><button type="button" onClick={() => void loadEmployees()} className="rounded-full border border-primary/16 bg-white px-4 py-2 text-sm font-medium text-foreground/72">Refresh</button><div className="rounded-full bg-white/88 px-4 py-2 text-sm font-medium text-foreground/68">Shift entries: {historyCount}</div><button data-testid="employees-add-btn" type="button" onClick={openCreate} className="rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">Add Employee</button></div>} />
 
-      {permissions.canManageEmployees ? (
-        <div className="rounded-[28px] border border-primary/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(247,250,243,0.9))] p-5 shadow-[0_18px_48px_rgba(45,80,22,0.08)]">
+      <div className="flex flex-wrap gap-2">
+        {PERIOD_OPTIONS.map((period) => (
+          <button
+            key={period.value}
+            type="button"
+            onClick={() => setSelectedPeriod(period.value)}
+            className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${selectedPeriod === period.value ? 'bg-primary text-primary-foreground' : 'border border-primary/12 bg-white text-foreground/72'}`}
+          >
+            {period.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {VISIBILITY_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => setVisibilityFilter(option.value)}
+            className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${visibilityFilter === option.value ? 'bg-primary text-primary-foreground' : 'border border-primary/12 bg-white text-foreground/72'}`}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      {loadError ? (
+        <div className="rounded-[24px] border border-[#D9A06A]/35 bg-[#FFF7F0] p-4 text-sm text-[#8A4B16]">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p>{loadError}</p>
+            <button type="button" onClick={() => void loadEmployees()} className="rounded-full border border-[#D9A06A]/35 bg-white px-4 py-2 text-sm font-medium text-[#8A4B16]">Retry</button>
+          </div>
+        </div>
+      ) : null}
+
+      <div ref={editorRef} className="rounded-[28px] border border-primary/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(247,250,243,0.9))] p-5 shadow-[0_18px_48px_rgba(45,80,22,0.08)]">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/58">Employee Records</p>
@@ -126,64 +317,106 @@ export function EmployeesScreen() {
                 <span className="font-medium">Employee active</span>
                 <input type="checkbox" checked={form.isActive} onChange={(event) => setForm((current) => ({ ...current, isActive: event.target.checked }))} className="h-4 w-4 accent-primary" />
               </label>
-              <div className="grid gap-2 sm:grid-cols-2 xl:col-span-3">
+              <div className={`grid gap-2 ${editingEmployeeId ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} xl:col-span-3`}>
                 <button data-testid="employee-form-submit" type="button" onClick={handleSubmit} className="rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground">{editingEmployeeId ? 'Save changes' : 'Create employee'}</button>
                 <button type="button" onClick={closeEditor} className="rounded-2xl border border-primary/16 bg-white px-4 py-3 text-sm font-medium text-foreground/72">Cancel</button>
+                {editingEmployeeId ? (
+                  <button
+                    type="button"
+                    onClick={() => openDeleteConfirmation(editingEmployeeId, form.name)}
+                    className="rounded-2xl border border-red-300/50 bg-red-50/60 px-4 py-3 text-sm font-medium text-red-700 hover:bg-red-50"
+                  >
+                    Delete
+                  </button>
+                ) : null}
               </div>
             </div>
           ) : null}
         </div>
-      ) : null}
 
       <div className="grid gap-4 xl:grid-cols-2">
-        {scopedEmployees.map((employee) => {
-          const today = new Date();
-          const weekStart = new Date();
-          weekStart.setDate(today.getDate() - 7);
-          const monthStart = new Date();
-          monthStart.setDate(today.getDate() - 30);
-
-          const relevantShifts = employee.shifts.filter((shift) => activeStoreScope === 'all' || shift.storeId === activeStoreScope);
-
-          const todayHours = relevantShifts.filter((shift) => isSameDay(new Date(shift.loginAt), today)).reduce((sum, shift) => sum + getShiftHours(shift), 0);
-          const weekHours = relevantShifts.filter((shift) => new Date(shift.loginAt) >= weekStart).reduce((sum, shift) => sum + getShiftHours(shift), 0);
-          const monthHours = relevantShifts.filter((shift) => new Date(shift.loginAt) >= monthStart).reduce((sum, shift) => sum + getShiftHours(shift), 0);
+        {visibleEmployees.map((employee) => {
+          const cardEmployee: EmployeeRecord = {
+            id: employee.employeeId,
+            name: employee.name,
+            role: employee.role,
+            storeId: employee.storeId,
+            pin: '',
+            phone: employee.phone ?? undefined,
+            isActive: employee.isActive,
+            createdAt: '',
+            status: employee.shiftStatus,
+            shifts: employee.recentShifts.map((shift): EmployeeShift => ({
+              id: shift.shiftId,
+              employeeId: employee.employeeId,
+              storeId: employee.storeId,
+              loginAt: shift.clockInAt,
+              logoutAt: shift.clockOutAt ?? undefined,
+              totalHoursWorked: shift.totalHours,
+            })),
+          };
 
           return (
-            <div key={employee.id} className="space-y-3">
+            <div key={employee.employeeId} className="space-y-3">
               <EmployeeShiftCard
-                employee={employee}
-                storeName={activeStoreScope === 'all' ? getStoreName(employee.storeId) : undefined}
-                todayHours={todayHours}
-                weekHours={weekHours}
-                monthHours={monthHours}
-                onEdit={permissions.canManageEmployees ? () => openEdit(employee) : undefined}
+                employee={cardEmployee}
+                storeName={activeStoreScope === 'all' ? (stores.find((store) => store.code === employee.storeCode)?.name ?? 'Unknown store') : undefined}
+                summaryLabel={employee.summaryLabel}
+                summaryHours={employee.summaryHours}
+                todayHours={employee.todayHours}
+                weekHours={employee.weekHours}
+                monthHours={employee.monthHours}
+                onEdit={() => openEdit({
+                  id: employee.employeeId,
+                  name: employee.name,
+                  role: employee.role,
+                  storeId: employee.storeCode,
+                  phone: employee.phone,
+                  isActive: employee.isActive,
+                })}
               />
 
               <div className="rounded-[24px] border border-primary/12 bg-white/88 p-4">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/58">Shift history</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/58">Shift history · {employee.summaryLabel}</p>
                   <button
                     type="button"
-                    onClick={() => setExpandedHistory((previous) => ({ ...previous, [employee.id]: !previous[employee.id] }))}
+                    onClick={() => setExpandedHistory((previous) => ({ ...previous, [employee.employeeId]: !previous[employee.employeeId] }))}
                     className="text-xs font-medium text-primary hover:underline"
                   >
-                    {expandedHistory[employee.id] ? 'Hide' : 'Show'} history
+                    {expandedHistory[employee.employeeId] ? 'Hide' : 'Show'} history
                   </button>
                 </div>
 
-                {expandedHistory[employee.id] ? (
-                  <div className="mt-3 space-y-2">
-                    {relevantShifts.slice(0, 4).map((shift) => (
-                      <div key={shift.id} className="rounded-2xl bg-[#F7FAF3] px-4 py-3 text-sm text-foreground/66">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span>{new Date(shift.loginAt).toLocaleDateString()}</span>
-                          <span className="font-medium text-foreground">{shift.totalHoursWorked.toFixed(1)}h</span>
+                {expandedHistory[employee.employeeId] ? (
+                  employee.recentShifts.length > 0 ? (
+                    <div className="mt-3 space-y-2">
+                    {employee.recentShifts.slice(0, 8).map((shift) => (
+                      <div key={shift.shiftId} className="rounded-2xl bg-[#F7FAF3] px-4 py-3 text-sm text-foreground/66">
+                        <div className="grid gap-3 sm:grid-cols-[1.1fr_1fr_1fr_auto] sm:items-center">
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-primary/55">Date</p>
+                            <p className="mt-1 text-sm text-foreground">{formatShiftDate(shift.clockInAt)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-primary/55">Clock in</p>
+                            <p className="mt-1 text-sm text-foreground">{formatShiftTime(shift.clockInAt)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-primary/55">Clock out</p>
+                            <p className="mt-1 text-sm text-foreground">{shift.clockOutAt ? formatShiftTime(shift.clockOutAt) : 'Active now'}</p>
+                          </div>
+                          <div className="sm:text-right">
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-primary/55">Total</p>
+                            <p className="mt-1 text-sm font-semibold text-foreground">{shift.totalHours.toFixed(1)}h</p>
+                          </div>
                         </div>
-                        <p className="mt-1">{formatShiftTime(shift.loginAt)} - {shift.logoutAt ? formatShiftTime(shift.logoutAt) : 'Active now'}{activeStoreScope === 'all' ? ` · ${getStoreName(shift.storeId)}` : ''}</p>
                       </div>
                     ))}
-                  </div>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm text-foreground/58">No shifts found for {employee.summaryLabel.toLowerCase()}.</p>
+                  )
                 ) : (
                   <p className="mt-2 text-sm text-foreground/58">Recent shifts are collapsed to keep the roster scannable.</p>
                 )}
@@ -191,7 +424,40 @@ export function EmployeesScreen() {
             </div>
           );
         })}
+
+        {!isLoading && visibleEmployees.length === 0 ? (
+          <div className="rounded-[24px] border border-primary/12 bg-white/92 p-5 text-sm text-foreground/62">
+            No employees found for the current scope.
+          </div>
+        ) : null}
       </div>
+
+      {deleteConfirmation.show ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-4">
+          <div className="max-w-sm rounded-[28px] border border-primary/12 bg-white p-6 shadow-lg">
+            <p className="text-sm font-semibold text-foreground">Delete this employee?</p>
+            <p className="mt-2 text-sm text-foreground/72">Delete {deleteConfirmation.employeeName}. This cannot be undone.</p>
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={closeDeleteConfirmation}
+                disabled={deleteConfirmation.isDeleting}
+                className="flex-1 rounded-2xl border border-primary/16 bg-white px-4 py-2 text-sm font-medium text-foreground/72 disabled:opacity-50"
+              >
+                Keep employee
+              </button>
+              <button
+                type="button"
+                onClick={confirmDelete}
+                disabled={deleteConfirmation.isDeleting}
+                className="flex-1 rounded-2xl border border-red-300/50 bg-red-50/60 px-4 py-2 text-sm font-medium text-red-700 disabled:opacity-50"
+              >
+                {deleteConfirmation.isDeleting ? 'Deleting...' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

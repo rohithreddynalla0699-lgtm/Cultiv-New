@@ -4,7 +4,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import { SectionHeader } from '../admin/SectionHeader';
 import { useAdminDashboard } from '../../contexts/AdminDashboardContext';
 import { useStoreSession } from '../../hooks/useStoreSession';
-import { employeeShiftService, type ShiftDashboardEmployee, type ShiftToggleResult } from '../../services/employeeShiftService';
+import { employeeShiftService, type ShiftDashboardEmployee, type ShiftToggleResult } from '../../services/employeeShiftService.ts';
 
 type CardFeedback = {
   tone: 'success' | 'error';

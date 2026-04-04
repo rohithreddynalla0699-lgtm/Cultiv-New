@@ -34,9 +34,6 @@ interface EmployeeRow {
   id: string;
   full_name: string;
   employee_role: EmployeeRole;
-  store_id: string;
-  pin_hash: string;
-  is_active: boolean;
 }
 
 interface EmployeeShiftRow {
@@ -172,9 +169,10 @@ const loadDashboard = async (db: ReturnType<typeof createClient>, storeId: strin
 
   const { data: employees, error: employeesError } = await db
     .from('employees')
-    .select('id, full_name, employee_role, store_id, pin_hash, is_active')
+    .select('id, full_name, employee_role')
     .eq('store_id', storeId)
     .eq('is_active', true)
+    .eq('is_deleted', false)
     .order('full_name', { ascending: true });
 
   if (employeesError) {
@@ -246,10 +244,11 @@ const toggleByPin = async (db: ReturnType<typeof createClient>, storeId: string,
 
   const { data: employee, error: employeeError } = await db
     .from('employees')
-    .select('id, full_name, employee_role, store_id, pin_hash, is_active')
+    .select('id, full_name, employee_role, pin_hash')
     .eq('id', employeeId)
     .eq('store_id', storeId)
     .eq('is_active', true)
+    .eq('is_deleted', false)
     .single();
 
   if (employeeError) {
