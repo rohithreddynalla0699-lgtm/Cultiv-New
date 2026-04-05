@@ -20,11 +20,7 @@ import {
 } from '../data/storeLocator';
 import { requestOpenAppWaitlist, subscribeOpenAppWaitlist } from '../data/appLaunch';
 
-interface HeaderProps {
-  onOrderClick?: () => void;
-}
-
-export function Header({ onOrderClick: _onOrderClick }: HeaderProps) {
+export function Header() {
   const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -321,6 +317,7 @@ export function Header({ onOrderClick: _onOrderClick }: HeaderProps) {
                     <button
                       onClick={() => {
                         logout();
+                        navigate('/', { replace: true });
                         setShowUserMenu(false);
                       }}
                       className="block w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"

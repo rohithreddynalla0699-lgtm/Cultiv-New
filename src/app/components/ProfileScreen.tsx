@@ -44,7 +44,7 @@ export function ProfileScreen() {
 	});
 
 	if (!user) {
-		return <Navigate to="/login" replace state={{ from: '/profile' }} />;
+		return <Navigate to="/" replace />;
 	}
 
 	const memberSince = new Date(user.createdAt).toLocaleDateString();
@@ -308,7 +308,7 @@ export function ProfileScreen() {
 										</div>
 										<ShieldCheck className="h-5 w-5 text-foreground/40" />
 									</div>
-									<motion.button onClick={() => { logout(); navigate('/'); }} className="flex items-center justify-between rounded-2xl border border-red-100 bg-red-50 px-5 py-4 text-red-700" whileHover={HoverLift.whileHover}>
+									<motion.button onClick={() => { logout(); navigate('/', { replace: true }); }} className="flex items-center justify-between rounded-2xl border border-red-100 bg-red-50 px-5 py-4 text-red-700" whileHover={HoverLift.whileHover}>
 										<div className="text-left">
 											<p className="font-medium">Sign Out</p>
 											<p className="mt-1 text-sm text-red-700/72">Leave this member space and return to the menu.</p>

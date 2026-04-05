@@ -30,7 +30,7 @@ export function RewardsScreen() {
 		: 100;
 
 	if (!user) {
-		return <Navigate to="/login" replace state={{ from: '/rewards' }} />;
+		return <Navigate to="/" replace />;
 	}
 
 	if (!loyaltyProfile) {

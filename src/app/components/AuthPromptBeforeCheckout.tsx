@@ -10,11 +10,9 @@ interface AuthPromptBeforeCheckoutProps {
 
 export function AuthPromptBeforeCheckout({ onDismiss, fromPath = '/order' }: AuthPromptBeforeCheckoutProps) {
 	return (
-		<div className="mt-3 rounded-2xl border border-primary/10 bg-primary/[0.03] px-4 py-3">
-			<p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-primary/55">Optional</p>
-			<p className="mt-1 text-sm font-medium text-foreground/80">Want to save this order?</p>
-			<p className="mt-0.5 text-xs leading-5 text-foreground/56">Sign in to keep your order history, rewards, and reorder access in one place.</p>
-			<div className="mt-3 flex flex-wrap items-center gap-2">
+		<div className="mt-2.5 rounded-xl border border-primary/10 bg-primary/[0.03] px-3 py-2.5">
+			<p className="text-xs text-foreground/62">Sign in to save this order and rewards.</p>
+			<div className="mt-2 flex flex-wrap items-center gap-2">
 				<Link
 					to="/login"
 					state={{ from: fromPath }}
@@ -23,19 +21,12 @@ export function AuthPromptBeforeCheckout({ onDismiss, fromPath = '/order' }: Aut
 					<LockKeyhole className="h-3.5 w-3.5" />
 					Sign In
 				</Link>
-				<Link
-					to="/signup"
-					state={{ from: fromPath }}
-					className="rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-opacity hover:opacity-92"
-				>
-					Create Account
-				</Link>
 				<button
 					type="button"
 					onClick={onDismiss}
 					className="text-xs font-medium text-foreground/48 transition-colors hover:text-foreground/68"
 				>
-					No thanks
+					Continue as guest
 				</button>
 			</div>
 		</div>

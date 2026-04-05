@@ -1,13 +1,13 @@
 // App — root component with routing, auth provider, and global floating bag state.
 
-import { BrowserRouter as Router, Navigate, Routes, Route, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { BrowserRouter as Router, Navigate, Outlet, Routes, Route, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { useAuth } from './contexts/AuthContext';
 import { StoreSessionProvider } from './contexts/StoreSessionContext';
 import { Header } from './components/Header';
 import { Hero } from './components/Hero';
 import { Footer } from './components/Footer';
-import { Suspense, lazy, useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { ShoppingBag, ChevronUp, ChevronRight } from 'lucide-react';
 import { HomeQuickActions } from './components/HomeQuickActions';
 import { HomeTimeSuggestions } from './components/HomeTimeSuggestions';
@@ -57,6 +57,16 @@ function MenuCategoryRedirect() {
   return <Navigate to="/order" replace state={nextState} />;
 }
 
+function CustomerProtectedRoute() {
+  const { user } = useAuth();
+
+  if (!user) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <Outlet />;
+}
+
 function HomePage({ onOrderClick, onCategorySelect }: { onOrderClick: () => void; onCategorySelect: (category: string) => void }) {
   const navigate = useNavigate();
 
@@ -80,9 +90,10 @@ function HomePage({ onOrderClick, onCategorySelect }: { onOrderClick: () => void
 function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { pendingGuestOrderClaims, claimPendingGuestOrders, rejectPendingGuestOrderClaims } = useAuth();
+  const { user, pendingGuestOrderClaims, claimPendingGuestOrders, rejectPendingGuestOrderClaims } = useAuth();
   const [isCartPanelOpen, setIsCartPanelOpen] = useState(false);
   const [draftCartLines, setDraftCartLines] = useState(() => loadDraftCart());
+  const previouslyAuthenticatedRef = useRef(Boolean(user));
 
   // Scroll to top on route change
   useEffect(() => {
@@ -125,6 +136,14 @@ function AppShell() {
     setIsCartPanelOpen(false);
   }, [location.pathname]);
 
+  useEffect(() => {
+    const previouslyAuthenticated = previouslyAuthenticatedRef.current;
+    if (!user && previouslyAuthenticated && location.pathname === '/order') {
+      navigate('/', { replace: true });
+    }
+    previouslyAuthenticatedRef.current = Boolean(user);
+  }, [user, location.pathname, navigate]);
+
   useEffect(() => subscribeDraftCart(() => setDraftCartLines(loadDraftCart())), []);
 
   const isAdminRoute = location.pathname.startsWith('/admin');
@@ -166,7 +185,7 @@ function AppShell() {
 
   return (
     <div className="size-full">
-      {!hideGlobalShell ? <Header onOrderClick={() => navigate('/order')} /> : null}
+      {!hideGlobalShell ? <Header /> : null}
       <main>
         <Suspense fallback={<div className="min-h-[35vh]" />}>
           <Routes>
@@ -182,11 +201,13 @@ function AppShell() {
             <Route path="/signup" element={<SignupScreen />} />
             <Route path="/forgot-password" element={<ForgotPasswordScreen />} />
             <Route path="/reset-password" element={<ResetPasswordScreen />} />
-            <Route path="/profile" element={<ProfileScreen />} />
-            <Route path="/orders" element={<OrderHistoryScreen />} />
-            <Route path="/orders/:orderId" element={<OrderDetailScreen />} />
-            <Route path="/order-success/:orderId" element={<OrderSuccessScreen />} />
-            <Route path="/rewards" element={<RewardsScreen />} />
+            <Route element={<CustomerProtectedRoute />}>
+              <Route path="/profile" element={<ProfileScreen />} />
+              <Route path="/orders" element={<OrderHistoryScreen />} />
+              <Route path="/orders/:orderId" element={<OrderDetailScreen />} />
+              <Route path="/order-success/:orderId" element={<OrderSuccessScreen />} />
+              <Route path="/rewards" element={<RewardsScreen />} />
+            </Route>
             <Route path="/careers" element={<CareersScreen />} />
             <Route path="/operations" element={<AdminDashboardProvider><AdminAccessScreen adminSuccessPath="/admin/summary" storeSuccessPath="/store/orders" /></AdminDashboardProvider>} />
             <Route path="/shift" element={<Navigate to="/store/shift" replace />} />

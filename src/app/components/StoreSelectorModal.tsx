@@ -85,14 +85,16 @@ export function StoreSelectorModal({
     };
   }, [isOpen, onClose]);
 
-  const filteredStores = useMemo(() => {
-    if (!appliedZipFilter.trim()) {
-      return stores;
-    }
+  const safeStores = Array.isArray(stores) ? stores : [];
 
-    const normalized = appliedZipFilter.trim();
-    return stores.filter((store) => store.zipCode.includes(normalized));
-  }, [appliedZipFilter, stores]);
+const filteredStores = useMemo(() => {
+  if (!appliedZipFilter.trim()) {
+    return safeStores;
+  }
+
+  const normalized = appliedZipFilter.trim();
+  return safeStores.filter((store) => store.zipCode.includes(normalized));
+}, [appliedZipFilter, safeStores]);
 
   const handleUseLocation = () => {
     if (!navigator.geolocation) {
@@ -102,8 +104,8 @@ export function StoreSelectorModal({
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        const activeStoresWithCoordinates = stores
-          .filter((store) => store.isActive)
+        const activeStoresWithCoordinates = safeStores
+        .filter((store) => store.isActive)
           .map((store) => {
             const coordinates = CITY_COORDINATES[store.city.toLowerCase()];
             if (!coordinates) {
@@ -143,7 +145,7 @@ export function StoreSelectorModal({
 
     setAppliedZipFilter(zipQuery.trim());
 
-    const match = stores.find((store) => store.zipCode.includes(zipQuery.trim()) && store.isActive);
+    const match = safeStores.find((store) => store.zipCode.includes(zipQuery.trim()) && store.isActive);
     if (!match) {
       setFeedback('No active store found for this zip code yet.');
       return;

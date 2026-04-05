@@ -24,7 +24,7 @@ export function OrderHistoryScreen() {
 	const successState = (location.state as OrdersSuccessLocationState | null) ?? null;
 
 	if (!user) {
-		return <Navigate to="/login" replace state={{ from: '/orders' }} />;
+		return <Navigate to="/" replace />;
 	}
 
 	const sortedOrders = orders.slice().sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());

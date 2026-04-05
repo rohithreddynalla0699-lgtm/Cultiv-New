@@ -275,6 +275,15 @@ const writeStorage = (key: string, value: unknown) => {
   localStorage.setItem(key, JSON.stringify(value));
 };
 
+const parseStorageEventValue = <T,>(raw: string | null): T | null => {
+  if (raw === null) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+};
+
 const buildFulfillmentWindow = () => {
   const now = Date.now();
   const startOffset = 18;
@@ -982,6 +991,46 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   useEffect(() => {
     setDraftCartScope(currentUserId);
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const onStorage = (event: StorageEvent) => {
+      if (event.storageArea !== window.localStorage || !event.key) {
+        return;
+      }
+
+      if (event.key === STORAGE_KEYS.currentUserId) {
+        const nextUserId = parseStorageEventValue<string | null>(event.newValue);
+        setCurrentUserId(nextUserId);
+        return;
+      }
+
+      if (event.key === STORAGE_KEYS.customerAccount) {
+        const nextCustomerAccount = parseStorageEventValue<CustomerAccountSummary | null>(event.newValue);
+        setCustomerAccount(nextCustomerAccount);
+        return;
+      }
+
+      if (event.key === STORAGE_KEYS.customerSessionToken) {
+        const nextCustomerSessionToken = parseStorageEventValue<string | null>(event.newValue);
+        setCustomerSessionToken(nextCustomerSessionToken);
+      }
+    };
+
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (currentUserId) return;
+
+    setPendingGuestOrderClaims([]);
+    setCustomerAccount(null);
+    setCustomerSessionToken(null);
   }, [currentUserId]);
 
   useEffect(() => {

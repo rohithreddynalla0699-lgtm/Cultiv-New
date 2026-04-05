@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { PageReveal } from '../core/motion/cultivMotion';
 import { Logo } from './Logo';
 import { ActiveOrderTracker } from './ActiveOrderTracker';
-import type { AuthRedirectState, HomeOrderLaunchState } from '../types/navigation';
+import type { HomeOrderLaunchState } from '../types/navigation';
 import { resolveCategorySlugFromLabel } from '../utils/categoryRouting';
 import { mapOrderItemsToDraftLines } from '../utils/orderReorder';
 import { DEFAULT_REORDER_FALLBACK_CATEGORY_SLUG, POS_TAX_RATE } from '../constants/business';
@@ -17,8 +17,7 @@ export function OrderDetailScreen() {
 	const navigate = useNavigate();
 
 	if (!user) {
-		const nextState: AuthRedirectState = { from: `/orders/${orderId ?? ''}` };
-		return <Navigate to="/login" replace state={nextState} />;
+		return <Navigate to="/" replace />;
 	}
 
 	const order = orderId ? getOrderById(orderId) : undefined;

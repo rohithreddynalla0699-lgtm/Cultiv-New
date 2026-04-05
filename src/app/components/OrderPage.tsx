@@ -387,12 +387,23 @@ export function OrderPage() {
   const [mockPaymentSession, setMockPaymentSession] = useState<MockPaymentSession | null>(null);
   const submissionLockRef = useRef(false);
   const mockPaymentResolverRef = useRef<((result: PaymentLaunchResult) => void) | null>(null);
-  const [stores, setStores] = useState<StoreLocatorStore[]>(() => loadStores());
-  const [selectedStoreId, setSelectedStoreId] = useState<string>(() => loadSelectedStoreId(loadStores()));
-  const selectedStore = useMemo(
-    () => getSelectedStore(stores),
-    [stores],
-  );
+  const menuScrollRef = useRef<HTMLDivElement | null>(null);
+  const [stores, setStores] = useState<StoreLocatorStore[]>([]);
+const [selectedStoreId, setSelectedStoreId] = useState<string>('');
+  const selectedStore = useMemo(() => {
+  if (!stores.length) {
+    return {
+      id: '',
+      name: 'Loading store...',
+      city: '',
+      code: '',
+      zipCode: '',
+      isActive: false,
+    };
+  }
+
+  return getSelectedStore(stores);
+}, [stores]);
 
   useEffect(() => {
     if (!isBrowser()) return;
@@ -471,18 +482,26 @@ export function OrderPage() {
   }, [guestOrderConfirmation, user]);
 
   useEffect(() => {
-    const syncStores = () => {
-      const nextStores = loadStores();
-      setStores(nextStores);
-      setSelectedStoreId(loadSelectedStoreId(nextStores));
-    };
+  const syncStores = async () => {
+    try {
+      const nextStores = await loadStores();
+      setStores(nextStores ?? []);
+      setSelectedStoreId(loadSelectedStoreId(nextStores ?? []));
+    } catch (error) {
+      console.error('Failed to load stores:', error);
+      setStores([]);
+      setSelectedStoreId('');
+    }
+  };
 
+  syncStores();
+
+  const unsubscribe = subscribeSelectedStore(() => {
     syncStores();
-    const unsubscribe = subscribeSelectedStore(() => {
-      syncStores();
-    });
-    return unsubscribe;
-  }, []);
+  });
+
+  return unsubscribe;
+}, []);
 
   useEffect(() => subscribeDraftCart(() => setCartLines(loadDraftCart())), []);
 
@@ -581,8 +600,9 @@ export function OrderPage() {
   }, [recentlyAddedItemId]);
 
   useEffect(() => {
-    setExpandedSections({});
-  }, [activeCategorySlug]);
+  setExpandedSections({});
+  menuScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+}, [activeCategorySlug]);
 
   const categories = useMemo(
     () => CATEGORY_PRIORITY.map((slug) => CATEGORY_INDEX[slug]).filter(Boolean),
@@ -1307,25 +1327,6 @@ export function OrderPage() {
     <PageReveal className="min-h-screen bg-[radial-gradient(circle_at_6%_10%,rgba(45,80,22,0.12),transparent_24%),radial-gradient(circle_at_94%_16%,rgba(126,153,108,0.16),transparent_28%),linear-gradient(160deg,#F1F4EC_0%,#F8F7F2_52%,#EEF3E8_100%)] pb-24 lg:h-screen lg:overflow-hidden lg:pb-0">
       <div className="pt-24 md:pt-28 lg:h-full lg:pb-6">
         <div className="mx-auto w-full h-full px-3 sm:px-5 lg:grid lg:grid-cols-[210px_minmax(0,1fr)_360px] lg:grid-rows-[auto_minmax(0,1fr)] lg:gap-x-4 xl:grid-cols-[230px_minmax(0,1fr)_390px] xl:gap-x-6 2xl:grid-cols-[250px_minmax(0,1fr)_420px] 2xl:gap-x-8">
-            <div className="px-3 py-3 text-sm text-foreground/58 lg:col-span-3 xl:px-2">
-              <div className="flex flex-wrap items-center gap-3">
-                <span>Siddipet Central</span>
-                <span className="h-1 w-1 rounded-full bg-foreground/35" />
-                <span>Pickup</span>
-                <span className="h-1 w-1 rounded-full bg-foreground/35" />
-                <span>{PICKUP_ESTIMATE_WINDOW}</span>
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-foreground/56">
-                <span className="rounded-full bg-white/82 px-2.5 py-1">Menu</span>
-                <span>→</span>
-                <span className="rounded-full bg-white/82 px-2.5 py-1">Cart</span>
-                <span>→</span>
-                <span className="rounded-full bg-white/82 px-2.5 py-1">Checkout</span>
-                <span>→</span>
-                <span className="rounded-full bg-white/82 px-2.5 py-1">Confirmation</span>
-              </div>
-            </div>
-
             <aside className="bg-transparent px-2 py-4 lg:min-h-0 lg:overflow-hidden xl:px-3">
               <p className="mb-3 px-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-foreground/45">Menu</p>
               <div className="flex gap-2 overflow-x-auto pb-1.5 pr-1 lg:block lg:space-y-1.5 lg:overflow-visible lg:pb-0 lg:pr-0">
@@ -1363,7 +1364,9 @@ export function OrderPage() {
               </div>
             </aside>
 
-            <section className="min-w-0 bg-transparent px-3 py-5 md:px-4 md:py-7 xl:px-2 xl:py-8 lg:min-h-0 lg:overflow-y-auto">
+            <section
+            ref={menuScrollRef}
+             className="min-w-0 bg-transparent px-3 py-5 md:px-4 md:py-7 xl:px-2 xl:py-8 lg:min-h-0 lg:overflow-y-auto">
               <AnimatePresence mode="wait" initial={false}>
                 {!customizing ? (
                   <motion.div
@@ -1633,10 +1636,30 @@ export function OrderPage() {
               <div className="flex h-full flex-col rounded-[24px] bg-[linear-gradient(180deg,rgba(255,255,255,0.96),rgba(248,250,244,0.94))] shadow-[0_18px_42px_rgba(20,35,10,0.085)]">
 
                 {/* ── Header (always visible) ── */}
-                <div className="flex-none px-4 pb-1 pt-4 md:px-5 md:pt-5">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-foreground/45">Your Order</p>
-                  <h2 className="mt-1.5 text-2xl font-semibold tracking-tight">Cart</h2>
+                {/* ── Header (always visible) ── */}
+            <div className="flex-none px-4 pb-1 pt-4 md:px-5 md:pt-5">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-foreground/45">Your Order</p>
+              <div className="mt-1.5 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="text-2xl font-semibold tracking-tight">Cart</h2>
+                  <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-foreground/56">
+                    <span>Pickup</span>
+                    <span className="h-1 w-1 rounded-full bg-foreground/25" />
+                    <span className="font-medium text-foreground/72">{selectedStore.name}</span>
+                    <span className="h-1 w-1 rounded-full bg-foreground/25" />
+                    <span>{PICKUP_ESTIMATE_WINDOW}</span>
+                  </div>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => requestOpenStoreSelector()}
+                  className="shrink-0 rounded-full border border-primary/22 bg-white px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary transition-colors hover:border-primary/38"
+                >
+                  Change
+                </button>
+              </div>
+            </div>
 
                 {/* ── Scrollable body ── */}
                 <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2 md:px-5">
@@ -1922,24 +1945,6 @@ export function OrderPage() {
                       </div>
                     </div>
                     {errors.paymentMethod ? <p className="text-xs text-red-600">{errors.paymentMethod}</p> : null}
-
-                    <div data-testid="order-store-select" className={`rounded-xl border bg-white px-3 py-2.5 ${errors.store ? 'border-red-400' : 'border-primary/14'}`}>
-                      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/55">Pickup from</p>
-                      <div className="mt-1 flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-semibold text-foreground/88">{selectedStore.name}</p>
-                          <p className="text-xs text-foreground/55">{selectedStore.city} • {selectedStore.zipCode}</p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => requestOpenStoreSelector()}
-                          className="rounded-full border border-primary/22 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-primary transition-colors hover:border-primary/38"
-                        >
-                          Change
-                        </button>
-                      </div>
-                    </div>
-                    {errors.store ? <p className="text-xs text-red-600">{errors.store}</p> : null}
                     <input
                       type="text"
                       value={customer.fullName}

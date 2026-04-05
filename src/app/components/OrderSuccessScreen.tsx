@@ -2,21 +2,13 @@
 
 import { motion } from 'framer-motion';
 import { ArrowRight, Check, Clock, MapPin, ShoppingBag } from 'lucide-react';
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { PageReveal } from '../core/motion/cultivMotion';
-import { Logo } from './Logo';
-import type { Order } from '../types/platform';
-
-interface OrderSuccessLocationState {
-  orderId: string;
-  orderType: 'pickup' | 'delivery';
-}
 
 export function OrderSuccessScreen() {
   const { orderId } = useParams();
-  const navigate = useNavigate();
-  const { user, getOrderById } = useAuth();
+  const { getOrderById } = useAuth();
 
   if (!orderId) {
     return <Navigate to="/" replace />;

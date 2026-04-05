@@ -1,3 +1,5 @@
+// @ts-ignore
+import { supabase } from '../../lib/supabase.js';
 import { DEFAULT_ORDER_STORE_ID } from '../constants/admin';
 
 export interface StoreLocatorStore {
@@ -14,37 +16,75 @@ const STORE_CHANGED_EVENT = 'cultiv:store-changed';
 const OPEN_SELECTOR_EVENT = 'cultiv:open-store-selector';
 
 export const CUSTOMER_STORE_METADATA: StoreLocatorStore[] = [
-  { id: 'store-siddipet', name: 'Siddipet Central', city: 'Siddipet', code: 'SID-CEN', zipCode: '502103', isActive: true },
-  { id: 'store-hyderabad', name: 'Banjara Hills', city: 'Hyderabad', code: 'HYD-BAN', zipCode: '500034', isActive: true },
-  { id: 'store-warangal', name: 'Warangal North', city: 'Warangal', code: 'WRG-NTH', zipCode: '506002', isActive: false },
+  {
+    id: 'store-siddipet',
+    name: 'CULTIV Siddipet',
+    city: 'Siddipet',
+    code: 'SID-CEN',
+    zipCode: '',
+    isActive: true,
+  },
 ];
 
 function isBrowser() {
   return typeof window !== 'undefined' && typeof localStorage !== 'undefined';
 }
 
-export function loadStores(): StoreLocatorStore[] {
-  // Store metadata source-of-truth is static app config, not mutable admin cache.
-  // This prevents stale admin localStorage from regressing customer-facing store details.
-  return CUSTOMER_STORE_METADATA;
+export async function loadStores(): Promise<StoreLocatorStore[]> {
+  const { data, error } = await supabase
+    .from('stores')
+    .select('id, name, city, code, postal_code, is_active')
+    .order('name', { ascending: true });
+
+  if (error || !data) {
+    console.error('Failed to load stores:', error);
+    return CUSTOMER_STORE_METADATA;
+  }
+
+  return data.map((store: any) => ({
+    id: store.id,
+    name: store.name,
+    city: store.city,
+    code: store.code,
+    zipCode: store.postal_code ?? '',
+    isActive: store.is_active,
+  }));
 }
 
-export function loadSelectedStoreId(stores = loadStores()) {
+export function loadSelectedStoreId(stores: StoreLocatorStore[] = CUSTOMER_STORE_METADATA) {
+  if (!Array.isArray(stores) || stores.length === 0) {
+    stores = CUSTOMER_STORE_METADATA;
+  }
+
   if (!isBrowser()) {
     return DEFAULT_ORDER_STORE_ID;
   }
 
   const storedId = localStorage.getItem(SELECTED_STORE_STORAGE_KEY) ?? DEFAULT_ORDER_STORE_ID;
   const activeStore = stores.find((store) => store.id === storedId && store.isActive);
-  return activeStore ? activeStore.id : (stores.find((store) => store.isActive)?.id ?? DEFAULT_ORDER_STORE_ID);
+
+  return activeStore
+    ? activeStore.id
+    : (stores.find((store) => store.isActive)?.id ?? DEFAULT_ORDER_STORE_ID);
 }
 
-export function getSelectedStore(stores = loadStores()) {
+export function getSelectedStore(stores: StoreLocatorStore[] = CUSTOMER_STORE_METADATA) {
+  if (!Array.isArray(stores) || stores.length === 0) {
+    stores = CUSTOMER_STORE_METADATA;
+  }
+
   const selectedStoreId = loadSelectedStoreId(stores);
   return stores.find((store) => store.id === selectedStoreId) ?? stores[0] ?? CUSTOMER_STORE_METADATA[0];
 }
 
-export function setSelectedStoreId(storeId: string, stores = loadStores()) {
+export function setSelectedStoreId(
+  storeId: string,
+  stores: StoreLocatorStore[] = CUSTOMER_STORE_METADATA,
+) {
+  if (!Array.isArray(stores) || stores.length === 0) {
+    stores = CUSTOMER_STORE_METADATA;
+  }
+
   const activeStore = stores.find((store) => store.id === storeId && store.isActive);
   if (!activeStore || !isBrowser()) {
     return false;
@@ -61,7 +101,7 @@ export function subscribeSelectedStore(listener: (storeId: string) => void) {
   }
 
   const handleChanged = () => {
-    listener(loadSelectedStoreId());
+    listener(loadSelectedStoreId(CUSTOMER_STORE_METADATA));
   };
 
   window.addEventListener(STORE_CHANGED_EVENT, handleChanged);

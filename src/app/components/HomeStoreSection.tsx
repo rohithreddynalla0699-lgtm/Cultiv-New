@@ -2,18 +2,18 @@ import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { ArrowRight, Clock3, MapPin, Navigation2 } from 'lucide-react';
 import { CardStagger, CardStaggerItem, HoverLift, SectionReveal } from '../core/motion/cultivMotion';
-import { getSelectedStore, loadStores, requestOpenStoreSelector, subscribeSelectedStore, type StoreLocatorStore } from '../data/storeLocator';
+import { CUSTOMER_STORE_METADATA, getSelectedStore, requestOpenStoreSelector, subscribeSelectedStore, type StoreLocatorStore } from '../data/storeLocator';
 
 interface HomeStoreSectionProps {
   onOrderClick: () => void;
 }
 
 export function HomeStoreSection({ onOrderClick }: HomeStoreSectionProps) {
-  const [stores, setStores] = useState<StoreLocatorStore[]>(() => loadStores());
+  const [stores, setStores] = useState<StoreLocatorStore[]>(CUSTOMER_STORE_METADATA);
 
   useEffect(() => {
     const unsubscribe = subscribeSelectedStore(() => {
-      setStores(loadStores());
+      setStores(CUSTOMER_STORE_METADATA);
     });
     return unsubscribe;
   }, []);
