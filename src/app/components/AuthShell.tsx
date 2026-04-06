@@ -79,18 +79,18 @@ export function AuthShell({ title, subtitle, children, footer, tagline = 'A prem
 				</div>
 
 				<div className="flex items-center justify-center px-4 py-2 sm:px-6 lg:px-8">
-					<div className="w-full max-w-[27rem] rounded-[30px] border border-primary/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(255,255,255,0.8))] p-4 shadow-[0_24px_90px_rgba(32,45,20,0.13)] backdrop-blur-md sm:p-5">
+					<div className="w-full max-w-[27rem] rounded-[30px] border border-primary/14 bg-[linear-gradient(180deg,#f8faf7_0%,#f4f3ee_100%)] p-4 shadow-[0_28px_90px_rgba(32,45,20,0.11)] backdrop-blur-md sm:p-6">
 						<div className="mb-4 text-center">
 							<div className="mb-4 flex justify-center">
 								<Logo variant="emblem" animated />
 							</div>
 							<h2 className="text-[2rem] font-semibold tracking-[-0.03em] text-[#20251e]">{title}</h2>
-							<p className="mt-1.5 text-sm leading-5 text-foreground/65">{subtitle}</p>
+							<p className="mt-1.5 text-[15px] leading-6 text-foreground/72 font-normal">{subtitle}</p>
 						</div>
 
 						{children}
 
-						{footer ? <div className="mt-5 border-t border-border/60 pt-3">{footer}</div> : null}
+						{footer ? <div className="mt-6 border-t border-border/50 pt-3">{footer}</div> : null}
 					</div>
 				</div>
 			</div>

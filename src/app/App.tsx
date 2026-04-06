@@ -7,6 +7,8 @@ import { StoreSessionProvider } from './contexts/StoreSessionContext';
 import { Header } from './components/Header';
 import { Hero } from './components/Hero';
 import { Footer } from './components/Footer';
+import { PrivacyPolicy } from './components/PrivacyPolicy';
+import { TermsOfUse } from './components/TermsOfUse';
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { ShoppingBag, ChevronUp, ChevronRight } from 'lucide-react';
 import { HomeQuickActions } from './components/HomeQuickActions';
@@ -201,6 +203,8 @@ function AppShell() {
             <Route path="/signup" element={<SignupScreen />} />
             <Route path="/forgot-password" element={<ForgotPasswordScreen />} />
             <Route path="/reset-password" element={<ResetPasswordScreen />} />
+            <Route path="/privacy" element={<PrivacyPolicy />} />
+            <Route path="/terms" element={<TermsOfUse />} />
             <Route element={<CustomerProtectedRoute />}>
               <Route path="/profile" element={<ProfileScreen />} />
               <Route path="/orders" element={<OrderHistoryScreen />} />
