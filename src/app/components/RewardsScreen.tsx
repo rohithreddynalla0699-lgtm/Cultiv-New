@@ -1,30 +1,36 @@
 // RewardsScreen — intuitive points-first rewards page with clear earning and redemption flow.
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import { ArrowLeft, Clock3, Coins, History, Zap, Gift } from 'lucide-react';
+import { ArrowLeft, Clock3, Coins, History, Zap } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { PageReveal } from '../core/motion/cultivMotion';
+import type { LoyaltyRecentActivityItem } from '../types/loyalty';
+import {
+	formatLoyaltyActivityDate,
+	formatLoyaltyActivityLabel,
+	formatLoyaltyActivityPoints,
+	getLoyaltyActivityPointsClassName,
+} from '../utils/loyaltyFormatters';
 import { AvailableRewardsList } from './AvailableRewardsList';
 
 export function RewardsScreen() {
-	const { user, loyaltyProfile, offers, redeemReward } = useAuth();
-	const availablePoints = loyaltyProfile?.availablePoints ?? 0;
+	const { user, loyaltyProfile, loyaltySummary, offers, redeemReward } = useAuth();
+	// Keep the legacy profile fallback because parts of the UI still read from it
+	// while point totals and history now come from the DB-backed loyaltySummary.
+	const availablePoints = loyaltySummary?.availablePoints ?? loyaltyProfile?.availablePoints ?? 0;
 	const [redeemMessage, setRedeemMessage] = useState('');
-	const recentActivity = useMemo(
-		() => [...loyaltyProfile?.pointsActivity ?? []].sort((a, b) => b.date - a.date).slice(0, 10),
-		[loyaltyProfile?.pointsActivity],
-	);
-	const nextRewardCost = useMemo(() => {
-		if (!loyaltyProfile) return null;
-		const sortedCosts = offers
-			.filter((offer) => offer.active && offer.pointCost && !offer.autoApply)
-			.map((offer) => offer.pointCost as number)
-			.sort((a, b) => a - b);
+	const recentActivity: LoyaltyRecentActivityItem[] = loyaltySummary?.recentActivity ?? [];
+	const availableRewardCount = loyaltyProfile?.availableRewards.length ?? 0;
+	const expiringSoonPoints = loyaltyProfile?.expiringSoonPoints ?? 0;
 
-		return sortedCosts.find((cost) => cost > availablePoints) ?? null;
-	}, [availablePoints, loyaltyProfile, offers]);
+	const nextRewardCost = offers
+		.filter((offer) => offer.active && offer.pointCost && !offer.autoApply)
+		.map((offer) => offer.pointCost as number)
+		.sort((a, b) => a - b)
+		.find((cost) => cost > availablePoints) ?? null;
+
 	const progressToNextReward = nextRewardCost
 		? Math.min(100, Math.round((availablePoints / nextRewardCost) * 100))
 		: 100;
@@ -56,8 +62,7 @@ export function RewardsScreen() {
 					</Link>
 				</motion.div>
 
-				{/* Header Section */}
-				<motion.div 
+				<motion.div
 					className="mb-7 rounded-[30px] border border-primary/10 bg-[linear-gradient(155deg,rgba(255,255,255,0.95),rgba(244,248,237,0.88))] p-6 shadow-[0_16px_38px_rgba(20,35,10,0.07)]"
 					initial={{ opacity: 0, y: 12 }}
 					animate={{ opacity: 1, y: 0 }}
@@ -73,8 +78,7 @@ export function RewardsScreen() {
 						</div>
 					</div>
 
-					{/* Points Card */}
-					<motion.div 
+					<motion.div
 						className="mt-5 rounded-2xl border border-primary/12 bg-white/80 p-5"
 						initial={{ opacity: 0 }}
 						animate={{ opacity: 1 }}
@@ -83,13 +87,12 @@ export function RewardsScreen() {
 						<div className="flex items-start justify-between gap-4">
 							<div className="flex-1">
 								<p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-primary/55">Available points</p>
-								<p className="mt-3 text-5xl font-bold tracking-[-0.04em] text-foreground">{loyaltyProfile.availablePoints}</p>
+								<p className="mt-3 text-5xl font-bold tracking-[-0.04em] text-foreground">{availablePoints}</p>
 								<p className="mt-2 text-xs text-foreground/55">Earn 1 point for every ₹10 spent. Valid for 90 days.</p>
 							</div>
 							<Zap className="h-8 w-8 text-primary/60 shrink-0" />
 						</div>
 
-						{/* Progress Bar */}
 						<div className="mt-5 space-y-2">
 							<div className="flex items-center justify-between text-xs">
 								<span className="text-foreground/60 font-medium">
@@ -107,9 +110,8 @@ export function RewardsScreen() {
 							</div>
 						</div>
 
-						{/* Ready to Use Status */}
-						{loyaltyProfile.availableRewards.length > 0 && (
-							<motion.div 
+						{availableRewardCount > 0 && (
+							<motion.div
 								className="mt-4 rounded-xl border border-primary/20 bg-primary/[0.08] px-3 py-2.5"
 								initial={{ opacity: 0, y: 4 }}
 								animate={{ opacity: 1, y: 0 }}
@@ -117,14 +119,13 @@ export function RewardsScreen() {
 							>
 								<p className="text-xs font-semibold text-primary flex items-center gap-1.5">
 									<span className="text-sm">🎁</span>
-									{loyaltyProfile.availableRewards.length} reward{loyaltyProfile.availableRewards.length > 1 ? 's are' : ' is'} ready to use at checkout!
+									{availableRewardCount} reward{availableRewardCount > 1 ? 's are' : ' is'} ready to use at checkout!
 								</p>
 							</motion.div>
 						)}
 					</motion.div>
 				</motion.div>
 
-				{/* Feedback Message */}
 				{redeemMessage && (
 					<motion.div
 						initial={{ opacity: 0, y: -8 }}
@@ -136,11 +137,9 @@ export function RewardsScreen() {
 					</motion.div>
 				)}
 
-				{/* Main Content */}
 				<div className="space-y-5 md:space-y-6">
-					{/* Expiring Soon Alert */}
-					{loyaltyProfile.expiringSoonPoints > 0 && (
-						<motion.div 
+					{expiringSoonPoints > 0 && (
+						<motion.div
 							className="rounded-[28px] border border-amber-200/70 bg-[linear-gradient(165deg,rgba(255,255,255,0.96),rgba(255,246,224,0.8))] p-6 md:p-7"
 							initial={{ opacity: 0, y: 12 }}
 							animate={{ opacity: 1, y: 0 }}
@@ -152,7 +151,7 @@ export function RewardsScreen() {
 								</div>
 								<div className="flex-1">
 									<p className="font-semibold text-amber-900">⏰ Points Expiring Soon</p>
-									<p className="mt-1 text-3xl font-bold text-amber-950">{loyaltyProfile.expiringSoonPoints} points</p>
+									<p className="mt-1 text-3xl font-bold text-amber-950">{expiringSoonPoints} points</p>
 									<p className="mt-2 text-sm text-amber-800/85 leading-6">
 										These points will expire in the next 14 days. Redeem a reward to use them before they're gone!
 									</p>
@@ -161,7 +160,6 @@ export function RewardsScreen() {
 						</motion.div>
 					)}
 
-					{/* Section 3: Redeem rewards */}
 					<motion.div
 						initial={{ opacity: 0, y: 12 }}
 						animate={{ opacity: 1, y: 0 }}
@@ -174,8 +172,7 @@ export function RewardsScreen() {
 						/>
 					</motion.div>
 
-					{/* Section 4: Points activity */}
-					<motion.div 
+					<motion.div
 						className="rounded-[28px] border border-primary/10 bg-white/88 p-6 md:p-7"
 						initial={{ opacity: 0, y: 12 }}
 						animate={{ opacity: 1, y: 0 }}
@@ -201,25 +198,23 @@ export function RewardsScreen() {
 							<div className="space-y-2.5">
 								{recentActivity.map((item, index) => (
 									<motion.div
-										key={`${item.date}-${index}`}
+										key={`${item.created_at}-${index}`}
 										initial={{ opacity: 0, x: -8 }}
 										animate={{ opacity: 1, x: 0 }}
 										transition={{ duration: 0.3, delay: index * 0.05 }}
 										className="flex items-center justify-between gap-4 rounded-2xl border border-primary/8 bg-primary/[0.03] px-4 py-3"
 									>
 										<div className="flex-1 min-w-0">
-											<p className="text-sm font-medium text-foreground/88">{item.description}</p>
-											<p className="mt-0.5 text-xs text-foreground/48">
-												{new Date(item.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-											</p>
+											<p className="text-sm font-medium text-foreground/88">{formatLoyaltyActivityLabel(item)}</p>
+											<p className="mt-0.5 text-xs text-foreground/48">{formatLoyaltyActivityDate(item.created_at)}</p>
 										</div>
 										<motion.span
-											className={`shrink-0 text-sm font-bold tabular-nums flex items-center gap-1 ${item.type === 'earn' ? 'text-primary' : 'text-foreground/68'}`}
+											className={`shrink-0 text-sm font-bold tabular-nums flex items-center gap-1 ${getLoyaltyActivityPointsClassName(item)}`}
 											initial={{ scale: 0.8 }}
 											animate={{ scale: 1 }}
 											transition={{ duration: 0.2, delay: index * 0.05 }}
 										>
-											{item.type === 'earn' ? '+' : '-'}{item.points}
+											{formatLoyaltyActivityPoints(item)}
 										</motion.span>
 									</motion.div>
 								))}

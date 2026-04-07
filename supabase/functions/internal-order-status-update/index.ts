@@ -221,6 +221,53 @@ Deno.serve(async (req) => {
     return json(404, { success: false, error: 'Order not found for update.' });
   }
 
+    if (nextStatus === 'completed') {
+    const { data: completedOrder, error: completedOrderError } = await db
+      .from('orders')
+      .select('order_id, customer_id, total_amount, order_status')
+      .eq('order_id', orderId)
+      .maybeSingle();
+
+    if (completedOrderError) {
+      console.error('Failed to load completed order for loyalty award', completedOrderError);
+    } else if (
+      completedOrder &&
+      completedOrder.customer_id &&
+      completedOrder.order_status === 'completed'
+    ) {
+      const points = Math.floor(Number(completedOrder.total_amount) / 10);
+
+      if (points > 0) {
+        const earnedAt = new Date();
+        const expiresAt = new Date(earnedAt.getTime() + 90 * 24 * 60 * 60 * 1000);
+
+        const { error: loyaltyInsertError } = await db
+          .from('loyalty_points_ledger')
+          .insert({
+            user_id: completedOrder.customer_id,
+            order_id: completedOrder.order_id,
+            entry_type: 'earn',
+            points,
+            points_remaining: points,
+            earned_at: earnedAt.toISOString(),
+            expires_at: expiresAt.toISOString(),
+            metadata: {
+              source: 'order_completion',
+              total_amount: completedOrder.total_amount,
+            },
+          });
+
+        if (loyaltyInsertError) {
+          if (loyaltyInsertError.code === '23505') {
+            console.info('Loyalty already awarded for order', completedOrder.order_id);
+          } else {
+            console.error('Failed to insert loyalty ledger row', loyaltyInsertError);
+          }
+        }
+      }
+    }
+  }
+
   return json(200, {
     success: true,
     orderId: updatedOrder.order_id,

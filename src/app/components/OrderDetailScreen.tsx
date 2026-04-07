@@ -5,6 +5,7 @@ import { Link, Navigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { PageReveal } from '../core/motion/cultivMotion';
 import { Receipt } from '../receipts/components/Receipt';
+import { printReceiptElement } from '../receipts/utils/printReceiptElement';
 import { getDisplayOrderNumber } from '../utils/orderDisplay';
 import { useReceiptData } from '../receipts/hooks/useReceiptData';
 import { ActiveOrderTracker } from './ActiveOrderTracker';
@@ -202,7 +203,7 @@ export function OrderDetailScreen() {
                   ✕
                 </button>
 
-                <Receipt data={receiptData} variant="screen" showActions />
+                <Receipt data={receiptData} variant="screen" showActions onPrint={printReceiptElement} />
               </motion.div>
             </motion.div>
           )}

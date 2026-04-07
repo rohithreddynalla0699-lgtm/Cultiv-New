@@ -4,6 +4,7 @@ import { Link, Navigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { PageReveal } from '../core/motion/cultivMotion';
 import { Receipt } from '../receipts/components/Receipt';
+import { printReceiptElement } from '../receipts/utils/printReceiptElement';
 
 
 import { getDisplayOrderNumber } from '../utils/orderDisplay';
@@ -62,7 +63,7 @@ export function OrderSuccessScreen() {
                 data={receiptData}
                 variant="screen"
                 showActions={true}
-                onPrint={() => window.print()}
+                onPrint={printReceiptElement}
               />
             </motion.div>
           ) : null}

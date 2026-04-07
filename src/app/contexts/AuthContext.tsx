@@ -25,6 +25,7 @@ import type {
   UserPreferences,
   WalkInLinkInput,
 } from '../types/platform';
+import { createEmptyLoyaltyProfile, type LoyaltyBatchSummary, type LoyaltySummary } from '../types/loyalty';
 import { setDraftCartScope } from '../data/cartDraft';
 import { resetShoppingSessionStorage } from '../data/shoppingSession';
 import { BOWL_BUILDER_STEPS, BREAKFAST_CUSTOMIZE_STEPS } from '../data/menuData';
@@ -82,6 +83,9 @@ interface AuthContextType {
   activeOrders: Order[];
   offers: Offer[];
   loyaltyProfile: LoyaltyProfile | null;
+  loyaltySummary: LoyaltySummary | null;
+  loyaltyLoading: boolean;
+  refreshLoyalty: () => Promise<void>;
   login: (input: LoginInput) => Promise<AuthActionResult>;
   signup: (input: SignupInput) => Promise<AuthActionResult>;
   requestPasswordReset: (identifier: string) => Promise<AuthActionResult>;
@@ -108,7 +112,7 @@ interface AuthContextType {
   updateOrderStatus: (orderId: string, status: OrderStatus, reason?: string) => Promise<AuthActionResult>;
   pendingGuestOrderClaims: Order[];
   claimPendingGuestOrders: () => void;
-  rejectPendingGuestOrderClaims: () => void;
+  rejectPendingGuestClaims: () => void;
 }
 
 interface CheckoutPaymentResult {
@@ -125,7 +129,6 @@ const STORAGE_KEYS = {
   customerAccount: 'cultiv_customer_account_v1',
   customerSessionToken: 'cultiv_customer_session_token_v1',
   orders: 'cultiv_orders_v2',
-  loyalty: 'cultiv_loyalty_v2',
   resetTokens: 'cultiv_reset_tokens_v2',
   phoneChangeVerifications: 'cultiv_phone_change_verifications_v1',
   rejectedGuestClaims: 'cultiv_rejected_guest_claims_v1',
@@ -190,7 +193,6 @@ const createDefaultPaymentProfile = () => ({
 });
 
 const createVerificationCode = () => `${Math.floor(100000 + Math.random() * 900000)}`;
-
 const normalizeUserRecord = (record: AuthRecord): AuthRecord => {
   const savedAddresses = (record.savedAddresses ?? []).map((address, index) => ({
     ...address,
@@ -373,7 +375,6 @@ const resolveSnapshotGroupMeta = (sectionLabel: string) => {
     groupName: sectionLabel,
   };
 };
-
 const buildSelectionSnapshotRows = (orderItemId: string, selections: OrderItem['selections']) => {
   return selections.flatMap((selection) => {
     const groupMeta = resolveSnapshotGroupMeta(selection.section);
@@ -570,12 +571,12 @@ const persistOrderToSupabase = async (order: Order): Promise<PersistOrderResult>
     throw error instanceof Error ? error : new Error('Supabase order persistence failed.');
   }
 };
+
 const deriveTier = (totalSpend: number) => {
   if (totalSpend >= 2500) return 'Cultiv House';
   if (totalSpend >= 1200) return 'Routine Member';
   return 'Founding Member';
 };
-
 const DAY_MS = 24 * 60 * 60 * 1000;
 const POINT_EXPIRY_MS = 90 * DAY_MS;
 const EXPIRING_SOON_WINDOW_MS = 14 * DAY_MS;
@@ -815,13 +816,12 @@ export const useAuth = () => {
 interface AuthProviderProps {
   children: ReactNode;
 }
-
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const seedState = useMemo(() => buildSeedState(), []);
   const [users, setUsers] = useState<AuthRecord[]>(() => normalizeUserRecords(readStorage(STORAGE_KEYS.users, seedState.users)));
   const [currentUserId, setCurrentUserId] = useState<string | null>(() => readStorage(STORAGE_KEYS.currentUserId, seedState.currentUserId));
   const [allOrders, setAllOrders] = useState<Order[]>([]);
-  const [loyaltyProfiles, setLoyaltyProfiles] = useState<Record<string, LoyaltyProfile>>(() => normalizeLoyaltyProfiles(readStorage(STORAGE_KEYS.loyalty, seedState.loyaltyProfiles)));
+  const [loyaltyProfiles, setLoyaltyProfiles] = useState<Record<string, LoyaltyProfile>>(() => normalizeLoyaltyProfiles(seedState.loyaltyProfiles));
   const [resetTokens, setResetTokens] = useState<ResetTokenRecord[]>(() => readStorage(STORAGE_KEYS.resetTokens, seedState.resetTokens));
   const [phoneChangeVerifications, setPhoneChangeVerifications] = useState<PhoneChangeVerificationRecord[]>(() => readStorage(STORAGE_KEYS.phoneChangeVerifications, seedState.phoneChangeVerifications));
   const [rejectedGuestClaimIds, setRejectedGuestClaimIds] = useState<string[]>(() => readStorage(STORAGE_KEYS.rejectedGuestClaims, []));
@@ -832,10 +832,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [supabaseRefreshTick, setSupabaseRefreshTick] = useState(0);
   const [customerAccount, setCustomerAccount] = useState<CustomerAccountSummary | null>(() => readStorage(STORAGE_KEYS.customerAccount, null));
   const [customerSessionToken, setCustomerSessionToken] = useState<string | null>(() => readStorage(STORAGE_KEYS.customerSessionToken, null));
+  const [loyaltySummary, setLoyaltySummary] = useState<LoyaltySummary | null>(null);
+  const [loyaltyLoading, setLoyaltyLoading] = useState(false);
+
   const usersRef = useRef(users);
   const ordersRef = useRef(allOrders);
   const previousUserIdRef = useRef<string | null>(currentUserId);
-    useEffect(() => {
+
+  useEffect(() => {
     usersRef.current = users;
   }, [users]);
 
@@ -919,6 +923,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setPendingGuestOrderClaims([]);
     setCustomerAccount(null);
     setCustomerSessionToken(null);
+    setLoyaltySummary(null);
     setAllOrders([]);
   }, [currentUserId]);
 
@@ -931,7 +936,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     previousUserIdRef.current = currentUserId;
   }, [currentUserId]);
 
-  // Optional cross-device sync for auth only (enabled by VITE_SYNC_SERVER_URL)
   useEffect(() => {
     if (!SYNC_URL) return;
     fetch(`${SYNC_URL}/api/state`, { signal: AbortSignal.timeout(4000) })
@@ -977,10 +981,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   useEffect(() => {
-    writeStorage(STORAGE_KEYS.loyalty, loyaltyProfiles);
-  }, [loyaltyProfiles]);
-
-  useEffect(() => {
     writeStorage(STORAGE_KEYS.resetTokens, resetTokens);
   }, [resetTokens]);
 
@@ -991,8 +991,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   useEffect(() => {
     writeStorage(STORAGE_KEYS.rejectedGuestClaims, rejectedGuestClaimIds);
   }, [rejectedGuestClaimIds]);
-
-  const refreshSharedOrdersFromSupabase = useCallback(async () => {
+    const refreshSharedOrdersFromSupabase = useCallback(async () => {
     try {
       const internalSession = readStorage<InternalAccessSessionSnapshot | null>(ADMIN_ACCESS_SESSION_STORAGE_KEY, null);
       if (!internalSession?.internalSessionToken) {
@@ -1019,87 +1018,123 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   const refreshCustomerOrdersFromSupabase = useCallback(async () => {
-  if (!customerSessionToken || !customerAccount?.id) {
-    setAllOrders([]);
-    return;
-  }
-
-  try {
-    const { data, error } = await supabase.functions.invoke('customer-list-orders', {
-      body: {
-        customerSessionToken,
-      },
-    });
-
-    if (error || !data?.success) {
-      throw new Error(data?.error || error?.message || 'Could not load customer orders.');
+    if (!customerSessionToken || !customerAccount?.id) {
+      setAllOrders([]);
+      return;
     }
 
-    const rows = (data.orders ?? []) as Array<any>;
+    try {
+      const { data, error } = await supabase.functions.invoke('customer-list-orders', {
+        body: {
+          customerSessionToken,
+        },
+      });
 
-    const nextOrders: Order[] = rows.map((row) => {
-      const orderItems: OrderItem[] = (row.order_items ?? []).map((itemRow: any) => {
-        const groupedSelections = (itemRow.order_item_selections ?? []).reduce(
-          (sectionAcc: Map<string, string[]>, selectionRow: any) => {
-            const section = selectionRow.group_name_snapshot || 'Selections';
-            const list = sectionAcc.get(section) ?? [];
-            list.push(selectionRow.option_name);
-            sectionAcc.set(section, list);
-            return sectionAcc;
-          },
-          new Map<string, string[]>(),
-        );
+      if (error || !data?.success) {
+        throw new Error(data?.error || error?.message || 'Could not load customer orders.');
+      }
 
-        const groupedEntries = Array.from(groupedSelections.entries()) as Array<[string, string[]]>;
+      const rows = (data.orders ?? []) as Array<any>;
 
-        const uiSelections = groupedEntries.map(([section, choices]) => ({
-          section,
-          choices,
-        }));
+      const nextOrders: Order[] = rows.map((row) => {
+        const orderItems: OrderItem[] = (row.order_items ?? []).map((itemRow: any) => {
+          const groupedSelections = (itemRow.order_item_selections ?? []).reduce(
+            (sectionAcc: Map<string, string[]>, selectionRow: any) => {
+              const section = selectionRow.group_name_snapshot || 'Selections';
+              const list = sectionAcc.get(section) ?? [];
+              list.push(selectionRow.option_name);
+              sectionAcc.set(section, list);
+              return sectionAcc;
+            },
+            new Map<string, string[]>(),
+          );
+
+          const groupedEntries = Array.from(groupedSelections.entries()) as Array<[string, string[]]>;
+
+          const uiSelections = groupedEntries.map(([section, choices]) => ({
+            section,
+            choices,
+          }));
+
+          return {
+            id: itemRow.order_item_id,
+            orderId: itemRow.order_id,
+            category: itemRow.item_category,
+            title: itemRow.item_name,
+            selections: uiSelections,
+            quantity: Number(itemRow.quantity),
+            price: Number(itemRow.unit_price),
+          };
+        });
 
         return {
-          id: itemRow.order_item_id,
-          orderId: itemRow.order_id,
-          category: itemRow.item_category,
-          title: itemRow.item_name,
-          selections: uiSelections,
-          quantity: Number(itemRow.quantity),
-          price: Number(itemRow.unit_price),
+          id: row.order_id,
+          customerId: row.customer_id,
+          storeId: row.store_id,
+          category: orderItems[0]?.category ?? 'Central Ordering',
+          items: orderItems,
+          orderType: row.order_type === 'walk_in' ? 'walk-in' : 'pickup',
+          subtotal: Number(row.subtotal_amount),
+          rewardDiscount: Number(row.discount_amount ?? 0),
+          taxAmount: Number(row.tax_amount ?? 0),
+          tipAmount: Number(row.tip_amount ?? 0),
+          total: Number(row.total_amount),
+          status: row.order_status as OrderStatus,
+          createdAt: row.created_at,
+          phone: row.customer_phone,
+          fullName: row.customer_name,
+          email: row.customer_email ?? '',
+          source: row.source_channel,
+          paymentMethod: row.payment_method ?? undefined,
+          fulfillmentWindow: '20-30 min',
+          statusTimeline: buildStatusTimeline(row.created_at),
+          cancellation_reason: row.cancellation_reason ?? undefined,
         };
       });
 
-      return {
-        id: row.order_id,
-        customerId: row.customer_id,
-        storeId: row.store_id,
-        category: orderItems[0]?.category ?? 'Central Ordering',
-        items: orderItems,
-        orderType: row.order_type === 'walk_in' ? 'walk-in' : 'pickup',
-        subtotal: Number(row.subtotal_amount),
-        rewardDiscount: Number(row.discount_amount ?? 0),
-        taxAmount: Number(row.tax_amount ?? 0),
-        tipAmount: Number(row.tip_amount ?? 0),
-        total: Number(row.total_amount),
-        status: row.order_status as OrderStatus,
-        createdAt: row.created_at,
-        phone: row.customer_phone,
-        fullName: row.customer_name,
-        email: row.customer_email ?? '',
-        source: row.source_channel,
-        paymentMethod: row.payment_method ?? undefined,
-        fulfillmentWindow: '20-30 min',
-        statusTimeline: buildStatusTimeline(row.created_at),
-        cancellation_reason: row.cancellation_reason ?? undefined,
-      };
-    });
+      setAllOrders(normalizeOrderRecords(nextOrders, usersRef.current));
+    } catch (err) {
+      console.error('Customer orders read failed.', err);
+      setAllOrders([]);
+    }
+  }, [customerAccount?.id, customerSessionToken]);
 
-    setAllOrders(normalizeOrderRecords(nextOrders, usersRef.current));
-  } catch (err) {
-    console.error('Customer orders read failed.', err);
-    setAllOrders([]);
+  const refreshLoyalty = useCallback(async () => {
+  if (!customerSessionToken) {
+    console.log('refreshLoyalty: no customerSessionToken');
+    setLoyaltySummary(null);
+    return;
   }
-}, [customerAccount?.id, customerSessionToken]);
-    useEffect(() => {
+
+  setLoyaltyLoading(true);
+  try {
+    const { data, error } = await supabase.functions.invoke('loyalty-summary', {
+  body: {
+    customerSessionToken,
+  },
+});
+
+    console.log('loyalty-summary result', { data, error });
+
+    if (error || !data) {
+      throw new Error(error?.message || 'Failed to fetch loyalty summary');
+    }
+
+    setLoyaltySummary({
+  availablePoints: data.availablePoints ?? 0,
+  activeBatches: Array.isArray(data.activeBatches) ? data.activeBatches as LoyaltyBatchSummary[] : [],
+  recentActivity: Array.isArray(data.recentActivity) ? data.recentActivity : [],
+  });
+  
+  } catch (err) {
+    console.error('Failed to refresh loyalty summary', err);
+    setLoyaltySummary(null);
+  } finally {
+    setLoyaltyLoading(false);
+  }
+}, [customerSessionToken]);
+
+  useEffect(() => {
     let active = true;
 
     const syncOrders = async () => {
@@ -1127,6 +1162,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     void refreshCustomerOrdersFromSupabase();
   }, [customerAccount?.id, customerSessionToken, currentUserId, refreshCustomerOrdersFromSupabase, supabaseRefreshTick]);
 
+  useEffect(() => {
+    if (!customerAccount?.id || !customerSessionToken) {
+      setLoyaltySummary(null);
+      return;
+    }
+
+    void refreshLoyalty();
+  }, [customerAccount?.id, customerSessionToken, refreshLoyalty, supabaseRefreshTick]);
+
   const userRecord = users.find((entry) => entry.id === currentUserId) ?? null;
   const user = userRecord ? ({ ...userRecord, password: undefined } as unknown as User) : null;
 
@@ -1145,74 +1189,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     (order) => order.status !== 'completed' && order.status !== 'cancelled',
   );
 
-  const loyaltyProfile = user ? loyaltyProfiles[user.id] ?? null : null;
+  const loyaltyProfileBase = user
+    ? (loyaltyProfiles[user.id] ?? createEmptyLoyaltyProfile(user.id))
+    : null;
+  const loyaltyProfile = loyaltyProfileBase
+    // Legacy profile fields are still used in the UI, but live point totals should
+    // follow the DB-backed summary whenever it is available.
+    ? { ...loyaltyProfileBase, availablePoints: loyaltySummary?.availablePoints ?? 0 }
+    : null;
 
   useEffect(() => {
     if (!userRecord) {
       setCustomerAccount(null);
+      setLoyaltySummary(null);
     }
   }, [userRecord?.id]);
-
-  const syncLoyaltyForOrder = (userId: string, total: number, category: string) => {
-    setLoyaltyProfiles((previous) => {
-      const now = Date.now();
-      const existing = purgeExpiredPoints(previous[userId] ?? {
-        userId,
-        pointsBatches: [],
-        availablePoints: 0,
-        expiringSoonPoints: 0,
-        expiredPoints: 0,
-        availableRewards: [],
-        pointsActivity: [],
-        totalOrders: 0,
-        totalSpend: 0,
-        currentTier: 'Founding Member',
-      }, now);
-
-      const earnedPoints = Math.max(0, Math.floor(total / 10));
-      const pointsBatches = earnedPoints > 0
-        ? sortBatchesByEarnedDate([
-          ...existing.pointsBatches,
-          {
-            points: earnedPoints,
-            earnedAt: now,
-            expiresAt: now + POINT_EXPIRY_MS,
-          },
-        ])
-        : existing.pointsBatches;
-
-      const totalOrders = existing.totalOrders + 1;
-      const totalSpend = existing.totalSpend + total;
-      const summary = summarizePoints(pointsBatches, now);
-      const earnedMessage = category === 'Kids Meals'
-        ? `Earned ${earnedPoints} points from your Kids Meals order.`
-        : `Earned ${earnedPoints} points from your order.`;
-
-      return {
-        ...previous,
-        [userId]: {
-          userId,
-          pointsBatches,
-          availablePoints: summary.availablePoints,
-          expiringSoonPoints: summary.expiringSoonPoints,
-          expiredPoints: summary.expiredPoints,
-          availableRewards: existing.availableRewards,
-          pointsActivity: earnedPoints > 0
-            ? addActivity(existing.pointsActivity, {
-              type: 'earn',
-              points: earnedPoints,
-              date: now,
-              description: earnedMessage,
-            })
-            : existing.pointsActivity,
-          totalOrders,
-          totalSpend,
-          currentTier: deriveTier(totalSpend),
-        },
-      };
-    });
-  };
-
   const detectClaimableGuestOrders = (targetUser: AuthRecord): Order[] => {
     const normalizedPhoneValue = normalizePhone(targetUser.phone);
     const targetEmail = normalizeEmail(targetUser.email);
@@ -1263,7 +1254,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       const existingUser = users.find(
         (u) => normalizePhone(u.phone) === normalizePhone(customerData.phone) ||
-               normalizeEmail(u.email) === normalizeEmail(customerData.email)
+               normalizeEmail(u.email) === normalizeEmail(customerData.email),
       );
 
       if (existingUser) {
@@ -1315,7 +1306,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return { success: false, message: 'Could not log in right now. Please try again.' };
     }
   };
-    const signup = async ({ fullName, phone, email, password }: SignupInput): Promise<AuthActionResult> => {
+
+  const signup = async ({ fullName, phone, email, password }: SignupInput): Promise<AuthActionResult> => {
     const normalizedEmail = normalizeEmail(email);
 
     if (!normalizedEmail) {
@@ -1349,8 +1341,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       const edgeFunctionResponse = result?.data;
       const edgeFunctionError = result?.error;
-
-      let edgeErrorPayload: { success?: boolean; code?: string; message?: string } | null = null;
+            let edgeErrorPayload: { success?: boolean; code?: string; message?: string } | null = null;
       if (edgeFunctionError?.context && typeof edgeFunctionError.context.json === 'function') {
         try {
           edgeErrorPayload = await edgeFunctionError.context.json();
@@ -1404,18 +1395,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setUsers((previous) => [...previous, newUser]);
       setLoyaltyProfiles((previous) => ({
         ...previous,
-        [newUserId]: {
-          userId: newUserId,
-          pointsBatches: [],
-          availablePoints: 0,
-          expiringSoonPoints: 0,
-          expiredPoints: 0,
-          availableRewards: [],
-          pointsActivity: [],
-          totalOrders: 0,
-          totalSpend: 0,
-          currentTier: 'Founding Member',
-        },
+        [newUserId]: createEmptyLoyaltyProfile(newUserId),
       }));
       setCurrentUserId(newUserId);
       setCustomerAccount({ id: customerId, reward_points: 0, phone_verified: false, email_verified: false });
@@ -1511,8 +1491,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       verificationCode: code,
     };
   };
-
-  const confirmPhoneChangeVerification = async (code: string): Promise<AuthActionResult> => {
+    const confirmPhoneChangeVerification = async (code: string): Promise<AuthActionResult> => {
     if (!userRecord) {
       return { success: false, message: 'Sign in to update your phone number.' };
     }
@@ -1595,18 +1574,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         throw new Error('Rewards can only be applied to food items.');
       }
 
-      const profile = purgeExpiredPoints(loyaltyProfiles[linkedUserId] ?? {
-        userId: linkedUserId,
-        pointsBatches: [],
-        availablePoints: 0,
-        expiringSoonPoints: 0,
-        expiredPoints: 0,
-        availableRewards: [],
-        pointsActivity: [],
-        totalOrders: 0,
-        totalSpend: 0,
-        currentTier: 'Founding Member',
-      });
+      const profile = purgeExpiredPoints(loyaltyProfiles[linkedUserId] ?? createEmptyLoyaltyProfile(linkedUserId));
 
       const allRewardsAvailable = usedRewardIds.every((rewardId) => profile.availableRewards.includes(rewardId));
       if (!allRewardsAvailable) {
@@ -1686,7 +1654,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       usedRewardIds,
     };
   };
-    const commitPlacedOrderState = (placedOrder: Order, linkedUserId: string | undefined, usedRewardIds: string[]) => {
+
+  const commitPlacedOrderState = (placedOrder: Order, linkedUserId: string | undefined, usedRewardIds: string[]) => {
     setAllOrders((previous) => [placedOrder, ...previous]);
     setSupabaseReadSuccessful(true);
     setSupabaseReadDegraded(false);
@@ -1707,11 +1676,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           };
         });
       }
-      syncLoyaltyForOrder(linkedUserId, placedOrder.total, placedOrder.category);
     }
   };
-
-  const createCheckoutPaymentIntent = async (input: PlaceOrderInput): Promise<CheckoutPaymentIntent> => {
+    const createCheckoutPaymentIntent = async (input: PlaceOrderInput): Promise<CheckoutPaymentIntent> => {
     const { order } = prepareCheckoutOrder(input);
     const idempotencyKey = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
       ? crypto.randomUUID()
@@ -1938,7 +1905,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setSupabaseReadSuccessful(true);
       setSupabaseReadDegraded(false);
       setSupabaseRefreshTick((value) => value + 1);
-      syncLoyaltyForOrder(candidate.id, syncedOrder.total, syncedOrder.category);
 
       return {
         success: true,
@@ -2006,7 +1972,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     return { success: true, message: `${offer.title} is now saved to your CULTIV profile.` };
   };
-    const updateProfile = async (updates: Partial<Pick<User, 'fullName'>> & { preferences?: Partial<UserPreferences> }): Promise<AuthActionResult> => {
+
+  const updateProfile = async (updates: Partial<Pick<User, 'fullName'>> & { preferences?: Partial<UserPreferences> }): Promise<AuthActionResult> => {
     if (!userRecord) {
       return { success: false, message: 'Sign in to update your profile.' };
     }
@@ -2019,8 +1986,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             ...updates,
             preferences: updates.preferences ? { ...entry.preferences, ...updates.preferences } : entry.preferences,
           }
-          : entry
-      )
+          : entry,
+      ),
     );
 
     return { success: true, message: 'Your CULTIV profile has been updated.' };
@@ -2289,7 +2256,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setAllOrders((previous) => previous.map((entry) => (
         entry.id === orderId ? { ...entry, status } : entry
       )));
-
+      setSupabaseSharedOrders((previous) => previous.map((entry) => (
+        entry.id === orderId ? { ...entry, status } : entry
+      )));
       setSupabaseReadSuccessful(true);
       setSupabaseReadDegraded(false);
       setSupabaseRefreshTick((value) => value + 1);
@@ -2317,6 +2286,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setCurrentUserId(null);
     setCustomerAccount(null);
     setCustomerSessionToken(null);
+    setLoyaltySummary(null);
     setPendingGuestOrderClaims([]);
     setAllOrders([]);
   };
@@ -2330,6 +2300,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     activeOrders,
     offers: OFFER_LIBRARY,
     loyaltyProfile,
+    loyaltySummary,
+    loyaltyLoading,
+    refreshLoyalty,
     login,
     signup,
     requestPasswordReset,
@@ -2356,8 +2329,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     updateOrderStatus,
     pendingGuestOrderClaims,
     claimPendingGuestOrders,
-    rejectPendingGuestOrders: rejectPendingGuestOrderClaims,
-  } as unknown as AuthContextType;
+    rejectPendingGuestClaims: rejectPendingGuestOrderClaims,
+  };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
