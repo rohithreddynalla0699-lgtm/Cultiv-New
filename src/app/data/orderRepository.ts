@@ -1,3 +1,67 @@
+// Fetch a single order by orderId from Supabase/internal API
+import type { InternalOrdersSessionPayload } from './orderRepository';
+import { listInternalOrders } from '../lib/internalOpsApi';
+
+/**
+ * Fetch a single order by orderId from Supabase/internal API.
+ * Returns the mapped Order or undefined if not found.
+ */
+export async function getOrderById(orderId: string, sessionPayload: InternalOrdersSessionPayload): Promise<Order | undefined> {
+  const { data, error } = await listInternalOrders({
+    ...sessionPayload,
+    filters: { ...sessionPayload.filters, search: orderId },
+  });
+  if (error || !data || !data.orders) return undefined;
+  const row = data.orders.find((o) => o.order_id === orderId);
+  if (!row) return undefined;
+
+  const orderItems = (row.order_items ?? []).map((itemRow) => {
+    const groupedSelections = (itemRow.order_item_selections ?? []).reduce((sectionAcc, selectionRow) => {
+      const section = selectionRow.group_name_snapshot || 'Selections';
+      const list = sectionAcc.get(section) ?? [];
+      list.push(selectionRow.option_name);
+      sectionAcc.set(section, list);
+      return sectionAcc;
+    }, new Map<string, string[]>());
+
+    const uiSelections: OrderItemSelection[] = Array.from(groupedSelections.entries()).map(
+      ([section, choices]) => ({ section, choices })
+    );
+
+    return {
+      id: itemRow.order_item_id,
+      orderId: itemRow.order_id,
+      category: itemRow.item_category,
+      title: itemRow.item_name,
+      selections: uiSelections,
+      quantity: itemRow.quantity,
+      price: itemRow.unit_price,
+    } satisfies OrderItem;
+  });
+
+  return {
+    id: row.order_id,
+    storeId: row.store_id,
+    category: orderItems[0]?.category ?? 'Central Ordering',
+    items: orderItems,
+    orderType: row.order_type === 'walk_in' ? 'walk-in' : 'pickup',
+    subtotal: row.subtotal_amount,
+    rewardDiscount: row.discount_amount,
+    taxAmount: row.tax_amount,
+    total: row.total_amount,
+    status: toUiStatus(row.order_status),
+    createdAt: row.created_at,
+    phone: row.customer_phone,
+    fullName: row.customer_name,
+    email: row.customer_email ?? '',
+    source: row.source_channel,
+    paymentMethod: row.payment_method ?? undefined,
+    tipAmount: row.tip_amount,
+    fulfillmentWindow: '20-30 min',
+    statusTimeline: buildStatusTimeline(row.created_at),
+    cancellation_reason: row.cancellation_reason ?? undefined,
+  } satisfies Order;
+}
 import type { Order, OrderItem, OrderItemSelection, OrderStatus } from '../types/platform';
 import {
   listInternalOrders,
