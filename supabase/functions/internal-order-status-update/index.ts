@@ -5,7 +5,7 @@ type RoleKey = 'owner' | 'admin' | 'store';
 type ScopeType = 'global' | 'store' | 'owner' | 'admin';
 type OrderStatus = 'pending' | 'placed' | 'preparing' | 'ready_for_pickup' | 'completed' | 'cancelled';
 
-type NextStatus = 'preparing' | 'ready_for_pickup' | 'completed';
+type NextStatus = 'preparing' | 'ready_for_pickup' | 'completed' | 'cancelled';
 
 interface InternalOrderStatusUpdateRequest {
   internalSessionToken?: string;
@@ -14,6 +14,7 @@ interface InternalOrderStatusUpdateRequest {
   scopeStoreId?: string | null;
   orderId?: string;
   nextStatus?: NextStatus;
+  cancellationReason?: string;
 }
 
 interface InternalAccessSessionRow {
@@ -39,10 +40,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
 };
 
-const ALLOWED_NEXT_STATUS: Record<'placed' | 'preparing' | 'ready_for_pickup', NextStatus> = {
-  placed: 'preparing',
-  preparing: 'ready_for_pickup',
-  ready_for_pickup: 'completed',
+const ALLOWED_NEXT_STATUS: Record<'placed' | 'preparing' | 'ready_for_pickup', NextStatus[]> = {
+  placed: ['preparing', 'cancelled'],
+  preparing: ['ready_for_pickup', 'cancelled'],
+  ready_for_pickup: ['completed'],
 };
 
 const json = (status: number, payload: Record<string, unknown>) =>
@@ -71,8 +72,8 @@ const normalizeUpdatePayload = (body: InternalOrderStatusUpdateRequest): { order
     return { error: 'orderId is required.' };
   }
 
-  if (nextStatus !== 'preparing' && nextStatus !== 'ready_for_pickup' && nextStatus !== 'completed') {
-    return { error: 'nextStatus must be one of preparing, ready_for_pickup, completed.' };
+  if (nextStatus !== 'preparing' && nextStatus !== 'ready_for_pickup' && nextStatus !== 'completed' && nextStatus !== 'cancelled') {
+    return { error: 'nextStatus must be one of preparing, ready_for_pickup, completed, cancelled.' };
   }
 
   return { orderId, nextStatus };
@@ -158,6 +159,7 @@ Deno.serve(async (req) => {
 
   const { role_key: roleKey, scope_type: scopeType, scope_store_id: scopeStoreId } = verifyResult.session;
   const { orderId, nextStatus } = normalizedUpdate;
+  const cancellationReason = typeof body.cancellationReason === 'string' ? body.cancellationReason : undefined;
 
   const isStoreScope = scopeType === 'store' || roleKey === 'store';
 
@@ -185,17 +187,22 @@ Deno.serve(async (req) => {
     return json(409, { success: false, error: 'Order status cannot transition from current state.' });
   }
 
-  const expectedNextStatus = ALLOWED_NEXT_STATUS[order.order_status];
-  if (nextStatus !== expectedNextStatus) {
-    return json(409, { success: false, error: `Invalid transition. Expected next status: ${expectedNextStatus}.` });
+  const allowedNextStatuses = ALLOWED_NEXT_STATUS[order.order_status];
+  if (!allowedNextStatuses.includes(nextStatus)) {
+    return json(409, { success: false, error: `Invalid transition. Allowed: ${allowedNextStatuses.join(', ')}.` });
+  }
+
+  let updatePayload: Record<string, unknown> = {
+    order_status: nextStatus,
+    updated_at: new Date().toISOString(),
+  };
+  if (nextStatus === 'cancelled' && cancellationReason) {
+    updatePayload.cancellation_reason = cancellationReason;
   }
 
   let updateQuery = db
     .from('orders')
-    .update({
-      order_status: nextStatus,
-      updated_at: new Date().toISOString(),
-    })
+    .update(updatePayload)
     .eq('order_id', orderId)
     .select('order_id, order_status')
     .maybeSingle();

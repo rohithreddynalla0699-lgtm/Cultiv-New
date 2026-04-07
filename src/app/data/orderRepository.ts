@@ -80,8 +80,8 @@ export async function fetchOperationalOrdersFromSupabase(sessionPayload: Interna
     });
 
     return {
-    id: row.order_id,
-    storeId: row.store_id,
+      id: row.order_id,
+      storeId: row.store_id,
       category: orderItems[0]?.category ?? 'Central Ordering',
       items: orderItems,
       orderType: toUiOrderType(row.order_type),
@@ -99,14 +99,20 @@ export async function fetchOperationalOrdersFromSupabase(sessionPayload: Interna
       tipAmount: row.tip_amount,
       fulfillmentWindow: '20-30 min',
       statusTimeline: buildStatusTimeline(row.created_at),
+      cancellation_reason: row.cancellation_reason ?? undefined,
     } satisfies Order;
   });
 }
 
-export async function updateSupabaseOrderStatus(orderId: string, status: OrderStatus, sessionPayload: InternalOrdersSessionPayload): Promise<void> {
-  if (status !== 'preparing' && status !== 'ready_for_pickup' && status !== 'completed') {
-    throw new Error('Unsupported status transition target.');
-  }
+export async function updateSupabaseOrderStatus(orderId: string, status: OrderStatus, reason: string | undefined, sessionPayload: InternalOrdersSessionPayload): Promise<void> {
+ if (
+  status !== 'preparing' &&
+  status !== 'ready_for_pickup' &&
+  status !== 'completed' &&
+  status !== 'cancelled'
+ ) {
+  throw new Error('Unsupported status transition target.');
+ }
 
   const { data, error } = await updateInternalOrderStatus({
     internalSessionToken: sessionPayload.internalSessionToken,
@@ -115,6 +121,7 @@ export async function updateSupabaseOrderStatus(orderId: string, status: OrderSt
     scopeStoreId: sessionPayload.scopeStoreId,
     orderId,
     nextStatus: status,
+    ...(status === 'cancelled' && reason ? { cancellationReason: reason } : {}),
   });
 
   if (error || !data?.success) {

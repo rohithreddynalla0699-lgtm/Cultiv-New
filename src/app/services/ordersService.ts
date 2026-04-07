@@ -1,5 +1,6 @@
 import { DEFAULT_ORDER_STORE_ID } from '../constants/admin';
 import { getAdminOrderBoardStatus, getOrderItemsSummary, getOrderStoreId } from '../utils/adminOrders';
+import { getDisplayOrderNumber } from '../utils/orderDisplay';
 import type { AdminOrderBoardStatus } from '../types/admin';
 import type { Order, OrderStatus } from '../types/platform';
 import type {
@@ -24,10 +25,11 @@ interface UpdateStatusInput {
 
 interface CancelOrderInput {
   orderId: string;
-  updateOrderStatus: (orderId: string, status: OrderStatus) => Promise<{ success: boolean; message: string }>;
+  reason: string;
+  updateOrderStatus: (orderId: string, status: OrderStatus, reason?: string) => Promise<{ success: boolean; message: string }>;
 }
 
-const ALL_COLUMNS: AdminOrderBoardStatus[] = ['new', 'preparing', 'ready', 'picked_up'];
+const ALL_COLUMNS: AdminOrderBoardStatus[] = ['new', 'preparing', 'ready', 'picked_up', 'cancelled'];
 
 const startOfDay = (date: Date) => {
   const cloned = new Date(date);
@@ -106,6 +108,7 @@ const emptyBoardState = (): OrdersBoardState => ({
     preparing: [],
     ready: [],
     picked_up: [],
+    cancelled: [],
   },
   total: 0,
   newOrdersCount: 0,
@@ -120,6 +123,7 @@ const groupByStatus = (orders: OrdersBoardOrder[]) => {
     preparing: [],
     ready: [],
     picked_up: [],
+    cancelled: [],
   };
 
   for (const order of orders) {
@@ -158,7 +162,7 @@ export const ordersService = {
       const orderType = inferBoardOrderType(order);
       return {
         id: order.id,
-        displayId: toDisplayId(order.id),
+        displayId: getDisplayOrderNumber(order),
         boardStatus: getAdminOrderBoardStatus(order),
         orderStatus: order.status,
         orderType,
@@ -214,9 +218,8 @@ export const ordersService = {
     return updateOrderStatus(orderId, status);
   },
 
-  async cancelOrder({ orderId, updateOrderStatus }: CancelOrderInput) {
-    // Current domain model does not expose a separate "cancelled" status in frontend OrderStatus.
-    // We close the order through the terminal state until cancelled is added end-to-end.
-    return updateOrderStatus(orderId, 'completed');
+  async cancelOrder({ orderId, reason, updateOrderStatus }: CancelOrderInput) {
+    // Now uses real 'cancelled' status and passes reason.
+    return updateOrderStatus(orderId, 'cancelled', reason);
   },
 };

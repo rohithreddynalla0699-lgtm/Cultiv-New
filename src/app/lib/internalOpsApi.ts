@@ -62,6 +62,7 @@ export interface InternalOrdersListOrderRow {
   total_amount: number;
   created_at: string;
   order_items: InternalOrdersListItemRow[];
+  cancellation_reason?: string;
 }
 
 export interface InternalOrdersListResponse {
@@ -192,7 +193,8 @@ export async function updateInternalOrderStatus(params: {
   scopeType: 'global' | 'store';
   scopeStoreId: string | null;
   orderId: string;
-  nextStatus: 'preparing' | 'ready_for_pickup' | 'completed';
+  nextStatus: 'preparing' | 'ready_for_pickup' | 'completed' | 'cancelled';
+  cancellationReason?: string;
 }): Promise<{ data: InternalOrderStatusUpdateResponse | null; error: string | null }> {
   return postInternal<InternalOrderStatusUpdateResponse>(INTERNAL_ORDER_STATUS_UPDATE_URL, params, 'Could not update order status.');
 }

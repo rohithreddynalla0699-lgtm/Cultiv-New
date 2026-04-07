@@ -1,6 +1,6 @@
 // platform.ts — shared TypeScript types for users, orders, loyalty profiles, addresses, and auth actions.
 
-export type OrderStatus = 'placed' | 'preparing' | 'ready_for_pickup' | 'completed';
+export type OrderStatus = 'placed' | 'preparing' | 'ready_for_pickup' | 'completed' | 'cancelled';
 
 export type OrderType = 'pickup' | 'walk-in';
 export type CounterPaymentMethod = 'cash' | 'card' | 'upi';
@@ -103,6 +103,7 @@ export interface Order {
 	tipAmount?: number;
 	fulfillmentWindow: string;
 	statusTimeline: OrderStatusEvent[];
+	cancellation_reason?: string;
 }
 
 export interface Offer {

@@ -66,7 +66,7 @@ export interface InventoryItem {
   updatedAt: string;
 }
 
-export type AdminOrderBoardStatus = 'new' | 'preparing' | 'ready' | 'picked_up';
+export type AdminOrderBoardStatus = 'new' | 'preparing' | 'ready' | 'picked_up' | 'cancelled';
 
 export interface AdminOrderNoteMap {
   [orderId: string]: string;

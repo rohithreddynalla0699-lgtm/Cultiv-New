@@ -22,6 +22,9 @@ import { ItemCustomizer } from './counter-billing/ItemCustomizer';
 import { CartPanel } from './counter-billing/CartPanel';
 import { PaymentPanel } from './counter-billing/PaymentPanel';
 import { ReceiptView } from './counter-billing/ReceiptView';
+import { useAuth } from '../../contexts/AuthContext';
+import { useReceiptData } from '../../receipts/hooks/useReceiptData';
+import { Receipt } from '../../receipts/components/Receipt';
 import type { CounterPaymentMethod, OrderItemSelection } from '../../types/platform';
 import type { PosCartLine, PosReceipt } from '../../types/pos';
 
@@ -132,6 +135,7 @@ export function CounterBillingScreen() {
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [customizerError, setCustomizerError] = useState('');
   const [receipt, setReceipt] = useState<PosReceipt | null>(null);
+  const [orderForReceipt, setOrderForReceipt] = useState<any | null>(null);
   const [message, setMessage] = useState<{ tone: 'info' | 'success' | 'warning' | 'error'; text: string }>({
     tone: 'info',
     text: '',
@@ -398,6 +402,9 @@ export function CounterBillingScreen() {
       });
 
       setReceipt(receiptResult);
+      // After POS order creation, fetch the full order for receipt rendering
+      const order = await getOrderById(receiptResult.orderId);
+      setOrderForReceipt(order);
       setCartLines([]);
       setSelectedTipOption('none');
       setCustomTipInput('');
@@ -415,6 +422,7 @@ export function CounterBillingScreen() {
 
   const resetForNewOrder = () => {
     setReceipt(null);
+    setOrderForReceipt(null);
     setCustomerName('');
     setCustomerPhone('');
     setPhoneSkipped(false);
@@ -487,9 +495,20 @@ export function CounterBillingScreen() {
         </section>
 
         <div className="space-y-3">
-          {receipt ? (
-            <ReceiptView receipt={receipt} onNewOrder={resetForNewOrder} />
+
+          {/* Shared Receipt UI for POS */}
+          {orderForReceipt ? (
+            <Receipt
+              data={useReceiptData(orderForReceipt) as any}
+              variant="screen"
+              showActions={true}
+              onPrint={() => window.print()}
+            />
           ) : null}
+          {/* Temporary: keep ReceiptView as a compatibility wrapper if needed */}
+          {/* {receipt && !orderForReceipt ? (
+            <ReceiptView receipt={receipt} onNewOrder={resetForNewOrder} />
+          ) : null} */}
 
           <CartPanel
             cartLines={cartLines}

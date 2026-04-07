@@ -196,6 +196,23 @@ export function OrderHistoryScreen() {
 							<CardStagger className="space-y-4">
 								{filteredOrders.map((order) => {
 									const statusLabel = order.statusTimeline.find((event) => event.status === order.status)?.label ?? order.status;
+									// Status badge color for customer
+									let statusBadgeClass = '';
+									let statusBadgeLabel = '';
+									switch (order.status) {
+										case 'cancelled':
+											statusBadgeClass = 'bg-rose-100 text-rose-700 border border-rose-200';
+											statusBadgeLabel = 'Cancelled';
+											break;
+										case 'completed':
+											statusBadgeClass = 'bg-primary/8 text-primary border border-primary/20';
+											statusBadgeLabel = 'Completed';
+											break;
+										default:
+											statusBadgeClass = 'bg-background/75 text-foreground/72 border border-border';
+											statusBadgeLabel = statusLabel.charAt(0).toUpperCase() + statusLabel.slice(1).replace(/_/g, ' ');
+											break;
+									}
 									const orderDate = new Date(order.createdAt);
 									const modeLabel = order.source === 'walk-in' ? 'In-Store' : 'Online';
 										const fulfillmentLabel = order.source === 'walk-in' ? 'In-Store' : 'Pickup';
@@ -218,7 +235,7 @@ export function OrderHistoryScreen() {
 														{order.source === 'walk-in' ? <Store className="h-3.5 w-3.5" /> : <Smartphone className="h-3.5 w-3.5" />}
 														{modeLabel}
 													</span>
-													<span className="inline-flex items-center rounded-full bg-background/75 px-3 py-1 text-xs font-medium text-foreground/72">{statusLabel}</span>
+													<span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${statusBadgeClass}`}>{statusBadgeLabel}</span>
 												</div>
 											</div>
 

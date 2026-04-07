@@ -6,7 +6,7 @@ import { useStoreSession } from '../../hooks/useStoreSession';
 import { ordersService } from '../../services/ordersService';
 import { OrdersBoardHeader } from './orders-board/OrdersBoardHeader';
 import { OrdersKanban } from './orders-board/OrdersKanban';
-import { CancelOrderDialog } from './orders-board/CancelOrderDialog';
+import CancelOrderDialog from './orders-board/CancelOrderDialog';
 import { OrderNotesDrawer } from './orders-board/OrderNotesDrawer';
 import { Navigate } from 'react-router-dom';
 import type {
@@ -143,29 +143,30 @@ export function OrdersBoardScreen() {
     });
   };
 
-  const handleCancelOrder = async () => {
+  const handleCancelOrder = async (orderId: string, reason: string) => {
     void touchActivity();
     if (!selectedOrderForCancel || !permissionsForBoard.canCancelOrder) return;
 
-    await withMutationGuard(selectedOrderForCancel.id, async () => {
-      setOptimisticStatusByOrderId((previous) => ({ ...previous, [selectedOrderForCancel.id]: 'completed' }));
+    await withMutationGuard(orderId, async () => {
+      setOptimisticStatusByOrderId((previous) => ({ ...previous, [orderId]: 'completed' }));
 
       const result = await ordersService.cancelOrder({
-        orderId: selectedOrderForCancel.id,
+        orderId,
+        reason,
         updateOrderStatus,
       });
 
       if (!result.success) {
         setOptimisticStatusByOrderId((previous) => {
           const next = { ...previous };
-          delete next[selectedOrderForCancel.id];
+          delete next[orderId];
           return next;
         });
         setFeedbackMessage({ tone: 'error', text: result.message });
         return;
       }
 
-      saveOrderNote(selectedOrderForCancel.id, `Cancelled by ${session?.roleName ?? 'Staff'} at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+      saveOrderNote(orderId, `Cancelled by ${session?.roleName ?? 'Staff'} at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
       setSelectedOrderForCancel(null);
       setFeedbackMessage({
         tone: 'info',
@@ -173,7 +174,7 @@ export function OrdersBoardScreen() {
       });
       setOptimisticStatusByOrderId((previous) => {
         const next = { ...previous };
-        delete next[selectedOrderForCancel.id];
+        delete next[orderId];
         return next;
       });
     });
@@ -261,15 +262,18 @@ export function OrdersBoardScreen() {
         onSave={handleSaveNote}
       />
 
-      <CancelOrderDialog
-        isOpen={Boolean(selectedOrderForCancel)}
-        orderId={selectedOrderForCancel?.displayId}
-        isSubmitting={Boolean(selectedOrderForCancel && mutatingOrderIds.has(selectedOrderForCancel.id))}
-        onClose={() => setSelectedOrderForCancel(null)}
-        onConfirm={() => {
-          void handleCancelOrder();
-        }}
-      />
+      {selectedOrderForCancel && (
+        <CancelOrderDialog
+          isOpen={true}
+          orderId={selectedOrderForCancel.id}
+          displayOrderId={selectedOrderForCancel.displayId}
+          isSubmitting={mutatingOrderIds.has(selectedOrderForCancel.id)}
+          onClose={() => setSelectedOrderForCancel(null)}
+          onConfirmCancel={async (orderId, reason) => {
+            await handleCancelOrder(orderId, reason);
+          }}
+        />
+      )}
     </motion.div>
   );
 }

@@ -105,7 +105,7 @@ interface AuthContextType {
   requestPhoneChangeVerification: (newPhone: string) => Promise<AuthActionResult>;
   confirmPhoneChangeVerification: (code: string) => Promise<AuthActionResult>;
   getOrderById: (orderId: string) => Order | undefined;
-  updateOrderStatus: (orderId: string, status: OrderStatus) => Promise<AuthActionResult>;
+  updateOrderStatus: (orderId: string, status: OrderStatus, reason?: string) => Promise<AuthActionResult>;
   pendingGuestOrderClaims: Order[];
   claimPendingGuestOrders: () => void;
   rejectPendingGuestOrderClaims: () => void;
@@ -2289,7 +2289,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const getOrderById = (orderId: string) => orders.find((order) => order.id === orderId);
 
-  const updateOrderStatus = async (orderId: string, status: OrderStatus): Promise<AuthActionResult> => {
+  const updateOrderStatus = async (orderId: string, status: OrderStatus, reason?: string): Promise<AuthActionResult> => {
     const internalSession = readStorage<InternalAccessSessionSnapshot | null>(ADMIN_ACCESS_SESSION_STORAGE_KEY, null);
     if (!internalSession?.internalSessionToken) {
       return { success: false, message: 'Internal access session is required.' };
@@ -2300,7 +2300,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return { success: false, message: 'Order not found.' };
     }
 
-    const supportedStatuses: OrderStatus[] = ['placed', 'preparing', 'ready_for_pickup', 'completed'];
+    const supportedStatuses: OrderStatus[] = ['placed', 'preparing', 'ready_for_pickup', 'completed', 'cancelled'];
     if (!supportedStatuses.includes(status)) {
       return { success: false, message: 'Unsupported order status.' };
     }
@@ -2309,22 +2309,32 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return { success: false, message: 'Order has an unsupported current status.' };
     }
 
-    if (existingOrder.status === 'completed') {
-      return { success: false, message: 'Completed orders cannot be changed.' };
+
+    if (existingOrder.status === 'completed' || existingOrder.status === 'cancelled') {
+      return { success: false, message: 'Completed or cancelled orders cannot be changed.' };
     }
 
-    const currentIndex = existingOrder.statusTimeline.findIndex((entry) => entry.status === existingOrder.status);
-    if (currentIndex < 0 || currentIndex >= existingOrder.statusTimeline.length - 1) {
-      return { success: false, message: 'Order cannot move to another status.' };
-    }
 
-    const nextExpectedStatus = existingOrder.statusTimeline[currentIndex + 1]?.status;
-    if (!nextExpectedStatus || status !== nextExpectedStatus) {
-      return { success: false, message: 'Use the next step in the order workflow.' };
+    // Allow explicit cancellation from placed or preparing
+    if (status === 'cancelled') {
+      if (existingOrder.status === 'placed' || existingOrder.status === 'preparing') {
+        // allow
+      } else {
+        return { success: false, message: 'Order can only be cancelled from placed or preparing.' };
+      }
+    } else {
+      const currentIndex = existingOrder.statusTimeline.findIndex((entry) => entry.status === existingOrder.status);
+      if (currentIndex < 0 || currentIndex >= existingOrder.statusTimeline.length - 1) {
+        return { success: false, message: 'Order cannot move to another status.' };
+      }
+      const nextExpectedStatus = existingOrder.statusTimeline[currentIndex + 1]?.status;
+      if (!nextExpectedStatus || status !== nextExpectedStatus) {
+        return { success: false, message: 'Use the next step in the order workflow.' };
+      }
     }
 
     try {
-      await updateSupabaseOrderStatus(orderId, status, {
+      await updateSupabaseOrderStatus(orderId, status, reason, {
         internalSessionToken: internalSession.internalSessionToken,
         roleKey: internalSession.roleKey,
         scopeType: internalSession.scopeType,
@@ -2338,10 +2348,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setSupabaseReadSuccessful(true);
       setSupabaseReadDegraded(false);
       setSupabaseRefreshTick((value) => value + 1);
-    } catch {
-      console.error('Supabase status update failed.');
+    } catch (err) {
+      console.error('Supabase status update failed.', err);
       setSupabaseReadDegraded(true);
-      return { success: false, message: 'Could not update order status. Please try again.' };
+      let message = 'Could not update order status. Please try again.';
+      if (err instanceof Error) {
+        message = err.message;
+      } else if (err && typeof err === 'object') {
+        // Try to extract message from known error shapes
+        if ('message' in err && typeof err.message === 'string') {
+          message = err.message;
+        } else if ('error' in err && typeof err.error === 'string') {
+          message = err.error;
+        }
+      }
+      return { success: false, message };
     }
 
     return { success: true, message: 'Order status updated.' };
