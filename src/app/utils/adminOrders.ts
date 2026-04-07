@@ -14,6 +14,8 @@ export function getAdminOrderBoardStatus(order: Order): AdminOrderBoardStatus {
       return 'preparing';
     case 'ready_for_pickup':
       return 'ready';
+    case 'cancelled':
+      return 'cancelled';
     case 'completed':
     default:
       return 'picked_up';

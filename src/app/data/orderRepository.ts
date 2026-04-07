@@ -1,5 +1,10 @@
 import type { Order, OrderItem, OrderItemSelection, OrderStatus } from '../types/platform';
-import { listInternalOrders, updateInternalOrderStatus, type InternalOrdersListFilters, type InternalOrdersListOrderRow } from '../lib/internalOpsApi';
+import {
+  listInternalOrders,
+  updateInternalOrderStatus,
+  type InternalOrdersListFilters,
+  type InternalOrdersListOrderRow,
+} from '../lib/internalOpsApi';
 
 interface InternalOrdersSessionPayload {
   internalSessionToken: string;
@@ -13,29 +18,36 @@ function toUiStatus(status: InternalOrdersListOrderRow['order_status']): OrderSt
   if (status === 'preparing') return 'preparing';
   if (status === 'ready_for_pickup') return 'ready_for_pickup';
   if (status === 'completed') return 'completed';
-  if (status === 'cancelled') return 'completed';
+  if (status === 'cancelled') return 'cancelled';
   return 'placed';
 }
 
 function buildStatusTimeline(createdAt: string) {
-  const steps: OrderStatus[] = ['placed', 'preparing', 'ready_for_pickup', 'completed'];
+  const steps: OrderStatus[] = ['placed', 'preparing', 'ready_for_pickup', 'completed', 'cancelled'];
   const createdAtMs = new Date(createdAt).getTime();
+
   return steps.map((status, index) => ({
     status,
-    label: status === 'placed'
-      ? 'Order Placed'
-      : status === 'preparing'
-        ? 'Preparing'
-        : status === 'ready_for_pickup'
-          ? 'Ready for Pickup'
-          : 'Completed',
-    description: status === 'placed'
-      ? 'Your order is in the CULTIV queue.'
-      : status === 'preparing'
-        ? 'Fresh ingredients are being assembled.'
-        : status === 'ready_for_pickup'
-          ? 'Your order is ready at the counter.'
-          : 'Your order has been fulfilled.',
+    label:
+      status === 'placed'
+        ? 'Order Placed'
+        : status === 'preparing'
+          ? 'Preparing'
+          : status === 'ready_for_pickup'
+            ? 'Ready for Pickup'
+            : status === 'completed'
+              ? 'Completed'
+              : 'Cancelled',
+    description:
+      status === 'placed'
+        ? 'Your order is in the CULTIV queue.'
+        : status === 'preparing'
+          ? 'Fresh ingredients are being assembled.'
+          : status === 'ready_for_pickup'
+            ? 'Your order is ready at the counter.'
+            : status === 'completed'
+              ? 'Your order has been fulfilled.'
+              : 'This order was cancelled.',
     at: new Date(createdAtMs + index * 12 * 60_000).toISOString(),
   }));
 }
@@ -44,7 +56,9 @@ function toUiOrderType(orderType: InternalOrdersListOrderRow['order_type']): 'pi
   return orderType === 'walk_in' ? 'walk-in' : 'pickup';
 }
 
-export async function fetchOperationalOrdersFromSupabase(sessionPayload: InternalOrdersSessionPayload): Promise<Order[]> {
+export async function fetchOperationalOrdersFromSupabase(
+  sessionPayload: InternalOrdersSessionPayload,
+): Promise<Order[]> {
   const { data, error } = await listInternalOrders(sessionPayload);
 
   if (error || !data) {
@@ -63,10 +77,12 @@ export async function fetchOperationalOrdersFromSupabase(sessionPayload: Interna
         return sectionAcc;
       }, new Map<string, string[]>());
 
-      const uiSelections: OrderItemSelection[] = Array.from(groupedSelections.entries()).map(([section, choices]) => ({
-        section,
-        choices,
-      }));
+      const uiSelections: OrderItemSelection[] = Array.from(groupedSelections.entries()).map(
+        ([section, choices]) => ({
+          section,
+          choices,
+        }),
+      );
 
       return {
         id: itemRow.order_item_id,
@@ -104,15 +120,20 @@ export async function fetchOperationalOrdersFromSupabase(sessionPayload: Interna
   });
 }
 
-export async function updateSupabaseOrderStatus(orderId: string, status: OrderStatus, reason: string | undefined, sessionPayload: InternalOrdersSessionPayload): Promise<void> {
- if (
-  status !== 'preparing' &&
-  status !== 'ready_for_pickup' &&
-  status !== 'completed' &&
-  status !== 'cancelled'
- ) {
-  throw new Error('Unsupported status transition target.');
- }
+export async function updateSupabaseOrderStatus(
+  orderId: string,
+  status: OrderStatus,
+  reason: string | undefined,
+  sessionPayload: InternalOrdersSessionPayload,
+): Promise<void> {
+  if (
+    status !== 'preparing' &&
+    status !== 'ready_for_pickup' &&
+    status !== 'completed' &&
+    status !== 'cancelled'
+  ) {
+    throw new Error('Unsupported status transition target.');
+  }
 
   const { data, error } = await updateInternalOrderStatus({
     internalSessionToken: sessionPayload.internalSessionToken,

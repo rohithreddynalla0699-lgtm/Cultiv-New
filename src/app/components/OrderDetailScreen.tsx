@@ -1,6 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Mail, Phone, ReceiptText } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { PageReveal } from '../core/motion/cultivMotion';
@@ -15,12 +15,56 @@ const fadeUp = {
   animate: { opacity: 1, y: 0 },
 };
 
-
 export function OrderDetailScreen() {
   const [showReceipt, setShowReceipt] = useState(false);
 
+  const { user, getOrderById } = useAuth();
+  const { orderId } = useParams();
 
-  // Lock body scroll when modal is open
+  // 🔥 FIX: safer order fetch
+  const order = orderId ? getOrderById(orderId) : undefined;
+
+  // 🔥 FIX: prevent blank screen crash
+  if (!user) return <Navigate to="/" replace />;
+  if (!order) return <Navigate to="/orders" replace />;
+    // 🔥 STORE NAME FIX (simple mapping)
+  const getStoreName = (storeId: string | undefined) => {
+    if (!storeId) return 'CULTIV Store';
+
+    if (storeId === '45b3f0ff-ce56-4060-ae55-a773cb2e181e') {
+      return 'CULTIV Siddipet';
+    }
+
+    return 'CULTIV Store';
+  };
+
+  const statusLabel =
+    order.statusTimeline?.find((event) => event.status === order.status)?.label ??
+    order.status;
+
+  const isCompleted = order.status === 'completed';
+  const isCancelled = order.status === 'cancelled';
+
+  let statusBadgeClass = '';
+  let statusBadgeLabel = '';
+
+  if (isCancelled) {
+    statusBadgeClass = 'bg-rose-100 text-rose-700 border border-rose-200';
+    statusBadgeLabel = 'Cancelled';
+  } else if (isCompleted) {
+    statusBadgeClass = 'bg-primary/8 text-primary border border-primary/20';
+    statusBadgeLabel = 'Completed';
+  } else {
+    statusBadgeClass = 'bg-background/75 text-foreground/72 border border-border';
+    statusBadgeLabel =
+      statusLabel.charAt(0).toUpperCase() +
+      statusLabel.slice(1).replace(/_/g, ' ');
+  }
+
+  const sourceLabel = order.source === 'walk-in' ? 'In-Store' : 'Online';
+  const receiptData = useReceiptData(order);
+
+  // Modal UX fixes
   useEffect(() => {
     if (showReceipt) {
       const originalStyle = window.getComputedStyle(document.body).overflow;
@@ -31,87 +75,134 @@ export function OrderDetailScreen() {
     }
   }, [showReceipt]);
 
-  // Auto-focus viewport to top when modal opens
   useEffect(() => {
     if (showReceipt) {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }, [showReceipt]);
-  const { user, getOrderById } = useAuth();
-  const { orderId } = useParams();
-
-  if (!user) {
-    return <Navigate to="/" replace />;
-  }
-
-  const order = orderId ? getOrderById(orderId) : undefined;
-  if (!order) {
-    return <Navigate to="/orders" replace />;
-  }
-
-  const statusLabel =
-    order.statusTimeline.find((event) => event.status === order.status)?.label ?? order.status;
-  const isCompleted = order.status === 'completed';
-  const isCancelled = order.status === 'cancelled';
-
-  // Status badge color for detail
-  let statusBadgeClass = '';
-  let statusBadgeLabel = '';
-  if (isCancelled) {
-    statusBadgeClass = 'bg-rose-100 text-rose-700 border border-rose-200';
-    statusBadgeLabel = 'Cancelled';
-  } else if (isCompleted) {
-    statusBadgeClass = 'bg-primary/8 text-primary border border-primary/20';
-    statusBadgeLabel = 'Completed';
-  } else {
-    statusBadgeClass = 'bg-background/75 text-foreground/72 border border-border';
-    statusBadgeLabel = statusLabel.charAt(0).toUpperCase() + statusLabel.slice(1).replace(/_/g, ' ');
-  }
-  const sourceLabel = order.source === 'walk-in' ? 'In-Store' : 'Online';
-  const gstAmount = order.taxAmount ?? 0;
-  const receiptData = useReceiptData(order);
-
-  return (
+    return (
     <PageReveal className="min-h-screen bg-gradient-to-br from-[#f5f5f0] via-background to-[#f7f6f2] pt-28 pb-12">
-      <div className="mx-auto w-full max-w-5xl px-4 sm:px-6 lg:px-8">
-        {/* ...existing main content, unchanged... */}
+      <div className="mx-auto w-full max-w-5xl px-4 sm:px-6 lg:px-8 space-y-6">
 
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <Link to="/orders" className="flex items-center gap-2 text-sm text-foreground/70 hover:text-foreground">
+            <ArrowLeft size={16} /> Back to Order History
+          </Link>
+
+          <button
+            onClick={() => setShowReceipt(true)}
+            className="flex items-center gap-2 rounded-full border px-4 py-2 text-sm hover:bg-background/60"
+          >
+            <ReceiptText size={16} /> View Receipt
+          </button>
+        </div>
+
+        {/* Order Card */}
+        <motion.div
+          variants={fadeUp}
+          initial="initial"
+          animate="animate"
+          className="rounded-2xl border bg-white p-6 shadow-sm space-y-6"
+        >
+          {/* Title */}
+          <div className="flex justify-between items-start">
+            <div>
+              <p className="text-xs tracking-widest text-muted-foreground">ORDER DETAILS</p>
+              <h2 className="text-xl font-semibold">
+                Order #{getDisplayOrderNumber(order)}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                {new Date(order.createdAt).toLocaleString()}
+              </p>
+            </div>
+
+            <div className={`px-3 py-1 rounded-full text-xs font-medium ${statusBadgeClass}`}>
+              {statusBadgeLabel}
+            </div>
+          </div>
+
+          {/* Cancel message */}
+          {isCancelled && (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 text-rose-700 px-4 py-2 text-sm">
+              This order was cancelled.
+            </div>
+          )}
+
+          {/* Items */}
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold text-muted-foreground">ITEMS</h3>
+            {order.items.map((item) => (
+              <div key={item.id} className="border rounded-xl p-3">
+                <div className="flex justify-between">
+                  <span>{item.title}</span>
+                  <span>₹{item.price}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">Qty {item.quantity}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Summary */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="border rounded-xl p-4 space-y-2">
+              <h3 className="text-sm font-semibold">SUMMARY</h3>
+              <div className="flex justify-between text-sm">
+                <span>Subtotal</span>
+                <span>₹{order.subtotal}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>GST</span>
+                <span>₹{order.taxAmount}</span>
+              </div>
+              <div className="flex justify-between font-semibold">
+                <span>Total</span>
+                <span>₹{order.total}</span>
+              </div>
+            </div>
+
+            {/* FIXED STORE DISPLAY */}
+            <div className="border rounded-xl p-4 space-y-2">
+              <h3 className="text-sm font-semibold">ORDER INFO</h3>
+              <div className="flex justify-between text-sm">
+                <span>Customer</span>
+                <span>{order.fullName}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>Store</span>
+                <span>{getStoreName(order.storeId)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>Source</span>
+                <span>{sourceLabel}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span>Payment</span>
+                <span>{order.paymentMethod}</span>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Receipt Modal */}
         <AnimatePresence>
           {showReceipt && receiptData && (
             <motion.div
-              key="receipt-modal-overlay"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.22, ease: 'easeOut' }}
-              className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4"
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
               onClick={() => setShowReceipt(false)}
-              aria-modal="true"
-              role="dialog"
             >
               <motion.div
-                key="receipt-modal"
-                initial={{ opacity: 0, y: 16, scale: 0.98 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 8, scale: 0.98 }}
-                transition={{ duration: 0.28, ease: 'easeOut' }}
-                className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-6 shadow-xl"
-                onClick={e => e.stopPropagation()}
+                className="bg-white rounded-2xl p-6 max-w-lg w-full"
+                onClick={(e) => e.stopPropagation()}
               >
                 <button
-                  type="button"
-                  className="absolute right-3 top-3 text-gray-400 hover:text-gray-700"
                   onClick={() => setShowReceipt(false)}
-                  aria-label="Close"
+                  className="absolute right-4 top-4"
                 >
-                  ×
+                  ✕
                 </button>
-                <Receipt
-                  data={receiptData}
-                  variant="screen"
-                  showActions={true}
-                  onPrint={() => window.print()}
-                />
+
+                <Receipt data={receiptData} variant="screen" showActions />
               </motion.div>
             </motion.div>
           )}

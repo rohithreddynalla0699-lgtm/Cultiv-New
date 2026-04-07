@@ -15,6 +15,12 @@ import type {
   OrdersBoardOrderTypeFilter,
 } from '../../types/ordersBoard';
 
+type OptimisticOrderStatus =
+  | 'preparing'
+  | 'ready_for_pickup'
+  | 'completed'
+  | 'cancelled';
+
 export function OrdersBoardScreen() {
   const { sharedOrders, updateOrderStatus } = useAuth();
   const { touchActivity } = useStoreSession();
@@ -36,13 +42,17 @@ export function OrdersBoardScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshTick, setRefreshTick] = useState(0);
   const [mutatingOrderIds, setMutatingOrderIds] = useState<Set<string>>(new Set());
-  const [optimisticStatusByOrderId, setOptimisticStatusByOrderId] = useState<Record<string, 'preparing' | 'ready_for_pickup' | 'completed'>>({});
-  const [feedbackMessage, setFeedbackMessage] = useState<{ tone: 'success' | 'error' | 'info'; text: string } | null>(null);
+  const [optimisticStatusByOrderId, setOptimisticStatusByOrderId] = useState<
+    Record<string, OptimisticOrderStatus>
+  >({});
+  const [feedbackMessage, setFeedbackMessage] = useState<{
+    tone: 'success' | 'error' | 'info';
+    text: string;
+  } | null>(null);
   const [selectedOrderForNotes, setSelectedOrderForNotes] = useState<OrdersBoardOrder | null>(null);
   const [selectedOrderForCancel, setSelectedOrderForCancel] = useState<OrdersBoardOrder | null>(null);
   const [isSavingNote, setIsSavingNote] = useState(false);
-
-  useEffect(() => {
+    useEffect(() => {
     const interval = window.setInterval(() => {
       setRefreshTick((previous) => previous + 1);
     }, 30000);
@@ -63,24 +73,30 @@ export function OrdersBoardScreen() {
     };
   }, [touchActivity]);
 
-  const mergedOrders = useMemo(() => (
-    sharedOrders.map((order) => ({
-      ...order,
-      status: optimisticStatusByOrderId[order.id] ?? order.status,
-    }))
-  ), [optimisticStatusByOrderId, sharedOrders]);
+  const mergedOrders = useMemo(
+    () =>
+      sharedOrders.map((order) => ({
+        ...order,
+        status: optimisticStatusByOrderId[order.id] ?? order.status,
+      })),
+    [optimisticStatusByOrderId, sharedOrders],
+  );
 
-  const boardState = useMemo(() => ordersService.getOrders({
-    orders: mergedOrders,
-    notesByOrderId: orderNotes,
-    filters: {
-      storeId: activeStoreScope,
-      orderType,
-      dateFilter,
-      customDate,
-      searchQuery,
-    },
-  }), [activeStoreScope, customDate, dateFilter, mergedOrders, orderNotes, orderType, refreshTick, searchQuery]);
+  const boardState = useMemo(
+    () =>
+      ordersService.getOrders({
+        orders: mergedOrders,
+        notesByOrderId: orderNotes,
+        filters: {
+          storeId: activeStoreScope,
+          orderType,
+          dateFilter,
+          customDate,
+          searchQuery,
+        },
+      }),
+    [activeStoreScope, customDate, dateFilter, mergedOrders, orderNotes, orderType, refreshTick, searchQuery],
+  );
 
   const permissionsForBoard = useMemo(() => {
     return ordersService.getPermissions({ hasPermission, hasAnyPermission });
@@ -142,13 +158,12 @@ export function OrdersBoardScreen() {
       });
     });
   };
-
-  const handleCancelOrder = async (orderId: string, reason: string) => {
+    const handleCancelOrder = async (orderId: string, reason: string) => {
     void touchActivity();
     if (!selectedOrderForCancel || !permissionsForBoard.canCancelOrder) return;
 
     await withMutationGuard(orderId, async () => {
-      setOptimisticStatusByOrderId((previous) => ({ ...previous, [orderId]: 'completed' }));
+      setOptimisticStatusByOrderId((previous) => ({ ...previous, [orderId]: 'cancelled' }));
 
       const result = await ordersService.cancelOrder({
         orderId,
@@ -166,7 +181,13 @@ export function OrdersBoardScreen() {
         return;
       }
 
-      saveOrderNote(orderId, `Cancelled by ${session?.roleName ?? 'Staff'} at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+      saveOrderNote(
+        orderId,
+        `Cancelled by ${session?.roleName ?? 'Staff'} at ${new Date().toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+        })}`,
+      );
       setSelectedOrderForCancel(null);
       setFeedbackMessage({
         tone: 'info',
@@ -197,8 +218,7 @@ export function OrdersBoardScreen() {
     const now = new Date();
     return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }, [refreshTick]);
-
-  return (
+    return (
     <motion.div
       className="space-y-6"
       initial={{ opacity: 0, y: 6 }}
@@ -238,7 +258,9 @@ export function OrdersBoardScreen() {
       {boardState.total === 0 ? (
         <div className="rounded-2xl border border-dashed border-border bg-background/80 px-4 py-6 text-center">
           <h3 className="text-base font-semibold text-foreground">No orders found for this filter.</h3>
-          <p className="mt-1 text-sm text-foreground/60">Try switching date, store, order type, or search query.</p>
+          <p className="mt-1 text-sm text-foreground/60">
+            Try switching date, store, order type, or search query.
+          </p>
         </div>
       ) : (
         <OrdersKanban

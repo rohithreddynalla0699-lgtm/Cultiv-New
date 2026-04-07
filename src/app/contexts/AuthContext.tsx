@@ -1,4 +1,4 @@
-// AuthContext — localStorage-backed auth, order management, loyalty tracking, and address storage.
+// AuthContext — DB-first customer order management, loyalty tracking, and address storage.
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type {
@@ -141,22 +141,16 @@ const STATUS_CONTENT: Record<OrderStatus, { label: string; description: string }
   preparing: { label: 'Preparing', description: 'Fresh ingredients are being assembled.' },
   ready_for_pickup: { label: 'Ready for Pickup', description: 'Your order is ready at the counter.' },
   completed: { label: 'Completed', description: 'Your order has been fulfilled.' },
+  cancelled: { label: 'Cancelled', description: 'This order was cancelled.' },
 };
 
 const createId = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
 
 const normalizePhone = (phone: string) => phone.replace(/\D/g, '').slice(-10);
 
-// Note: Passwords are now stored only in the backend (Supabase customers table)
-// and hashed with bcrypt. These functions are kept only for backward compatibility
-// with old localStorage data and are deprecated for new code.
-
 const PASSWORD_HASH_PREFIX = 'h$';
 
 const hashPassword = (password: string) => {
-  // DEPRECATED: DJB2 is not secure for passwords.
-  // Kept only for migrating old localStorage data.
-  // All new passwords are hashed with bcrypt on the backend.
   let hash = 5381;
   for (let index = 0; index < password.length; index += 1) {
     hash = ((hash << 5) + hash) ^ password.charCodeAt(index);
@@ -169,12 +163,9 @@ const ensureHashedPassword = (password: string) => (
 );
 
 const verifyPassword = (input: string, stored: string) => {
-  // DEPRECATED: Use backend login Edge Function instead.
-  // This function is kept only for migrating old data.
   if (stored.startsWith(PASSWORD_HASH_PREFIX)) {
     return hashPassword(input) === stored;
   }
-  // Backward compatibility for any older plaintext passwords
   return input === stored;
 };
 
@@ -453,19 +444,19 @@ const buildSupabaseOrderPayload = (order: Order) => {
       customer_email: order.email,
       payment_method: order.paymentMethod ?? null,
       notes: null,
-      subtotal_amount: Math.round(order.subtotal),
-      discount_amount: Math.round(order.rewardDiscount),
-      tax_amount: Math.round(order.taxAmount ?? 0),
-      tip_amount: Math.round(order.tipAmount ?? 0),
-      total_amount: Math.round(order.total),
+      subtotal_amount: Number(order.subtotal.toFixed(2)),
+      discount_amount: Number(order.rewardDiscount.toFixed(2)),
+      tax_amount: Number((order.taxAmount ?? 0).toFixed(2)),
+      tip_amount: Number((order.tipAmount ?? 0).toFixed(2)),
+      total_amount: Number(order.total.toFixed(2)),
     },
     items: order.items.map((item) => ({
       menu_item_id: resolveMenuItemId(item.id),
       item_name: item.title,
       item_category: item.category,
-      unit_price: Math.round(item.price),
+      unit_price: Number(item.price.toFixed(2)),
       quantity: item.quantity,
-      line_total: Math.round(item.price * item.quantity),
+      line_total: Number((item.price * item.quantity).toFixed(2)),
       selections: buildSelectionSnapshotPayload(item.selections),
     })),
   };
@@ -579,7 +570,6 @@ const persistOrderToSupabase = async (order: Order): Promise<PersistOrderResult>
     throw error instanceof Error ? error : new Error('Supabase order persistence failed.');
   }
 };
-
 const deriveTier = (totalSpend: number) => {
   if (totalSpend >= 2500) return 'Cultiv House';
   if (totalSpend >= 1200) return 'Routine Member';
@@ -728,7 +718,7 @@ const buildSeedState = () => {
     fullName: 'Aarav Menon',
     phone: '9876543210',
     email: 'member@cultiv.app',
-    password: '', // Passwords are now backend-only (stored in Supabase customers table)
+    password: '',
     createdAt: daysAgo(120),
     savedAddresses: [
       {
@@ -739,143 +729,42 @@ const buildSeedState = () => {
         landmark: 'Near Indiranagar Metro',
         city: 'Bengaluru',
         pincode: '560038',
-			isDefault: true,
+        isDefault: true,
       },
     ],
     preferences: {
       favoriteCategory: 'Rice Bowls',
       preferredOrderType: 'pickup',
       preferredProtein: 'Chicken',
-		dietaryPreference: 'High-protein balance',
+      dietaryPreference: 'High-protein balance',
       familyMealUsage: true,
-		kidsMealUsage: true,
+      kidsMealUsage: true,
     },
-  paymentProfile: {
-    preferredMethod: 'upi',
-    upiId: 'aarav@upi',
-    savedMethods: [
-      {
-        id: 'payment-seed-1',
-        type: 'upi',
-        label: 'Primary UPI',
-        upiId: 'aarav@upi',
-        billingName: 'Aarav Menon',
-        isDefault: true,
-      },
-      {
-        id: 'payment-seed-2',
-        type: 'card',
-        label: 'Visa ending 4821',
-        last4: '4821',
-        billingName: 'Aarav Menon',
-      },
-    ],
-  },
-	defaultAddressId: 'address-seed-1',
-	emailLocked: true,
-	phoneEditable: false,
+    paymentProfile: {
+      preferredMethod: 'upi',
+      upiId: 'aarav@upi',
+      savedMethods: [
+        {
+          id: 'payment-seed-1',
+          type: 'upi',
+          label: 'Primary UPI',
+          upiId: 'aarav@upi',
+          billingName: 'Aarav Menon',
+          isDefault: true,
+        },
+        {
+          id: 'payment-seed-2',
+          type: 'card',
+          label: 'Visa ending 4821',
+          last4: '4821',
+          billingName: 'Aarav Menon',
+        },
+      ],
+    },
+    defaultAddressId: 'address-seed-1',
+    emailLocked: true,
+    phoneEditable: false,
   };
-
-  const seedOrders: Order[] = [
-    {
-      id: 'order-seed-1',
-      userId: 'user-seed-1',
-      storeId: 'store-siddipet',
-      category: 'Rice Bowls',
-      items: [
-        {
-          id: 'item-seed-1',
-          orderId: 'order-seed-1',
-          category: 'Rice Bowls',
-          title: 'Brown Rice Bowl',
-          selections: [
-            { section: 'Rice', choices: ['Brown Rice'] },
-            { section: 'Protein', choices: ['Chicken (Meat-Based)'] },
-            { section: 'Toppings', choices: ['Roasted Chilli Corn Salsa', 'Green Chilli Salsa'] },
-          ],
-          quantity: 1,
-          price: 209,
-        },
-      ],
-      orderType: 'pickup',
-      subtotal: 209,
-      rewardDiscount: 0,
-      total: 209,
-      status: 'preparing',
-      createdAt: new Date(Date.now() - 35 * 60_000).toISOString(),
-      phone: '9876543210',
-      fullName: 'Aarav Menon',
-      email: 'member@cultiv.app',
-      source: 'app',
-      fulfillmentWindow: buildFulfillmentWindow(),
-      statusTimeline: buildStatusTimeline(new Date(Date.now() - 35 * 60_000).toISOString()),
-    },
-    {
-      id: 'order-seed-2',
-      userId: 'user-seed-1',
-      storeId: 'store-hyderabad',
-      category: 'High Protein',
-      items: [
-        {
-          id: 'item-seed-2',
-          orderId: 'order-seed-2',
-          category: 'High Protein',
-          title: 'High Protein Bowl',
-          selections: [
-            { section: 'Rice', choices: ['White Rice'] },
-            { section: 'Protein', choices: ['Chicken (Meat-Based)', 'Plant Protein'] },
-          ],
-          quantity: 1,
-          price: 269,
-        },
-      ],
-      orderType: 'pickup',
-      subtotal: 269,
-      rewardDiscount: 0,
-      total: 269,
-      status: 'completed',
-      createdAt: daysAgo(8),
-      phone: '9876543210',
-      fullName: 'Aarav Menon',
-      email: 'member@cultiv.app',
-      source: 'app',
-      fulfillmentWindow: '07:10 PM - 07:30 PM',
-      statusTimeline: buildStatusTimeline(daysAgo(8)),
-    },
-    {
-      id: 'order-seed-3',
-      userId: 'user-seed-1',
-      storeId: 'store-siddipet',
-      category: 'Kids Meals',
-      items: [
-        {
-          id: 'item-seed-3',
-          orderId: 'order-seed-3',
-          category: 'Kids Meals',
-          title: 'Mild Kids Bowl',
-          selections: [
-            { section: 'Base', choices: ['Soft Rice'] },
-            { section: 'Protein', choices: ['Egg'] },
-            { section: 'Treat', choices: ['Fresh Fruit'] },
-          ],
-          quantity: 1,
-          price: 99,
-        },
-      ],
-      orderType: 'walk-in',
-      subtotal: 99,
-      rewardDiscount: 0,
-      total: 99,
-      status: 'completed',
-      createdAt: daysAgo(18),
-      phone: '9876543210',
-      fullName: 'Aarav Menon',
-      email: 'member@cultiv.app',
-      source: 'walk-in',
-      fulfillmentWindow: '01:20 PM - 01:30 PM',
-      statusTimeline: buildStatusTimeline(daysAgo(18)),
-    },
-  ];
 
   const loyaltyProfiles: Record<string, LoyaltyProfile> = {
     'user-seed-1': {
@@ -907,7 +796,7 @@ const buildSeedState = () => {
 
   return {
     users: [seedUser],
-    orders: seedOrders,
+    orders: [] as Order[],
     loyaltyProfiles,
     currentUserId: null as string | null,
     resetTokens: [] as ResetTokenRecord[],
@@ -931,7 +820,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const seedState = useMemo(() => buildSeedState(), []);
   const [users, setUsers] = useState<AuthRecord[]>(() => normalizeUserRecords(readStorage(STORAGE_KEYS.users, seedState.users)));
   const [currentUserId, setCurrentUserId] = useState<string | null>(() => readStorage(STORAGE_KEYS.currentUserId, seedState.currentUserId));
-  const [allOrders, setAllOrders] = useState<Order[]>(() => normalizeOrderRecords(readStorage(STORAGE_KEYS.orders, seedState.orders), users));
+  const [allOrders, setAllOrders] = useState<Order[]>([]);
   const [loyaltyProfiles, setLoyaltyProfiles] = useState<Record<string, LoyaltyProfile>>(() => normalizeLoyaltyProfiles(readStorage(STORAGE_KEYS.loyalty, seedState.loyaltyProfiles)));
   const [resetTokens, setResetTokens] = useState<ResetTokenRecord[]>(() => readStorage(STORAGE_KEYS.resetTokens, seedState.resetTokens));
   const [phoneChangeVerifications, setPhoneChangeVerifications] = useState<PhoneChangeVerificationRecord[]>(() => readStorage(STORAGE_KEYS.phoneChangeVerifications, seedState.phoneChangeVerifications));
@@ -946,8 +835,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const usersRef = useRef(users);
   const ordersRef = useRef(allOrders);
   const previousUserIdRef = useRef<string | null>(currentUserId);
-
-  useEffect(() => {
+    useEffect(() => {
     usersRef.current = users;
   }, [users]);
 
@@ -1031,6 +919,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setPendingGuestOrderClaims([]);
     setCustomerAccount(null);
     setCustomerSessionToken(null);
+    setAllOrders([]);
   }, [currentUserId]);
 
   useEffect(() => {
@@ -1042,11 +931,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     previousUserIdRef.current = currentUserId;
   }, [currentUserId]);
 
-  useEffect(() => {
-    writeStorage(STORAGE_KEYS.orders, allOrders);
-  }, [allOrders]);
-
-  // Optional cross-device sync for auth + orders (enabled by VITE_SYNC_SERVER_URL)
+  // Optional cross-device sync for auth only (enabled by VITE_SYNC_SERVER_URL)
   useEffect(() => {
     if (!SYNC_URL) return;
     fetch(`${SYNC_URL}/api/state`, { signal: AbortSignal.timeout(4000) })
@@ -1054,9 +939,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       .then((state: Record<string, unknown>) => {
         if (Array.isArray(state.users) && state.users.length > 0) {
           setUsers(normalizeUserRecords(state.users as AuthRecord[]));
-        }
-        if (Array.isArray(state.orders) && state.orders.length > 0) {
-          setAllOrders(normalizeOrderRecords(state.orders as Order[], usersRef.current));
         }
       })
       .catch(() => {});
@@ -1069,11 +951,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       fetch(`${SYNC_URL}/api/state`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'X-Client-ID': AUTH_SYNC_CLIENT_ID },
-        body: JSON.stringify({ users, orders: allOrders }),
+        body: JSON.stringify({ users }),
       }).catch(() => {});
     }, 1200);
     return () => window.clearTimeout(id);
-  }, [users, allOrders]);
+  }, [users]);
 
   useEffect(() => {
     if (!SYNC_URL) return;
@@ -1086,9 +968,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (Array.isArray(state.users) && JSON.stringify(state.users) !== JSON.stringify(usersRef.current)) {
           const nextUsers = normalizeUserRecords(state.users as AuthRecord[]);
           setUsers(nextUsers);
-        }
-        if (Array.isArray(state.orders) && JSON.stringify(state.orders) !== JSON.stringify(ordersRef.current)) {
-          setAllOrders(normalizeOrderRecords(state.orders as Order[], usersRef.current));
         }
       } catch {
         // ignore malformed payloads
@@ -1139,7 +1018,88 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   }, []);
 
-  useEffect(() => {
+  const refreshCustomerOrdersFromSupabase = useCallback(async () => {
+  if (!customerSessionToken || !customerAccount?.id) {
+    setAllOrders([]);
+    return;
+  }
+
+  try {
+    const { data, error } = await supabase.functions.invoke('customer-list-orders', {
+      body: {
+        customerSessionToken,
+      },
+    });
+
+    if (error || !data?.success) {
+      throw new Error(data?.error || error?.message || 'Could not load customer orders.');
+    }
+
+    const rows = (data.orders ?? []) as Array<any>;
+
+    const nextOrders: Order[] = rows.map((row) => {
+      const orderItems: OrderItem[] = (row.order_items ?? []).map((itemRow: any) => {
+        const groupedSelections = (itemRow.order_item_selections ?? []).reduce(
+          (sectionAcc: Map<string, string[]>, selectionRow: any) => {
+            const section = selectionRow.group_name_snapshot || 'Selections';
+            const list = sectionAcc.get(section) ?? [];
+            list.push(selectionRow.option_name);
+            sectionAcc.set(section, list);
+            return sectionAcc;
+          },
+          new Map<string, string[]>(),
+        );
+
+        const groupedEntries = Array.from(groupedSelections.entries()) as Array<[string, string[]]>;
+
+        const uiSelections = groupedEntries.map(([section, choices]) => ({
+          section,
+          choices,
+        }));
+
+        return {
+          id: itemRow.order_item_id,
+          orderId: itemRow.order_id,
+          category: itemRow.item_category,
+          title: itemRow.item_name,
+          selections: uiSelections,
+          quantity: Number(itemRow.quantity),
+          price: Number(itemRow.unit_price),
+        };
+      });
+
+      return {
+        id: row.order_id,
+        customerId: row.customer_id,
+        storeId: row.store_id,
+        category: orderItems[0]?.category ?? 'Central Ordering',
+        items: orderItems,
+        orderType: row.order_type === 'walk_in' ? 'walk-in' : 'pickup',
+        subtotal: Number(row.subtotal_amount),
+        rewardDiscount: Number(row.discount_amount ?? 0),
+        taxAmount: Number(row.tax_amount ?? 0),
+        tipAmount: Number(row.tip_amount ?? 0),
+        total: Number(row.total_amount),
+        status: row.order_status as OrderStatus,
+        createdAt: row.created_at,
+        phone: row.customer_phone,
+        fullName: row.customer_name,
+        email: row.customer_email ?? '',
+        source: row.source_channel,
+        paymentMethod: row.payment_method ?? undefined,
+        fulfillmentWindow: '20-30 min',
+        statusTimeline: buildStatusTimeline(row.created_at),
+        cancellation_reason: row.cancellation_reason ?? undefined,
+      };
+    });
+
+    setAllOrders(normalizeOrderRecords(nextOrders, usersRef.current));
+  } catch (err) {
+    console.error('Customer orders read failed.', err);
+    setAllOrders([]);
+  }
+}, [customerAccount?.id, customerSessionToken]);
+    useEffect(() => {
     let active = true;
 
     const syncOrders = async () => {
@@ -1156,22 +1116,35 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
   }, [refreshSharedOrdersFromSupabase, supabaseRefreshTick]);
 
+  useEffect(() => {
+    if (!customerAccount?.id || !customerSessionToken) {
+      if (!currentUserId) {
+        setAllOrders([]);
+      }
+      return;
+    }
+
+    void refreshCustomerOrdersFromSupabase();
+  }, [customerAccount?.id, customerSessionToken, currentUserId, refreshCustomerOrdersFromSupabase, supabaseRefreshTick]);
+
   const userRecord = users.find((entry) => entry.id === currentUserId) ?? null;
   const user = userRecord ? ({ ...userRecord, password: undefined } as unknown as User) : null;
-  const guestOrders = allOrders.filter((order) => !order.userId && order.source === 'app');
-  const orders = user
-    ? allOrders.filter((order) => {
-      if (customerAccount?.id && order.customerId === customerAccount.id) {
-        return true;
-      }
-      return order.userId === user.id;
-    })
-    : guestOrders;
-  const hasInternalOrdersSession = Boolean(readStorage<InternalAccessSessionSnapshot | null>(ADMIN_ACCESS_SESSION_STORAGE_KEY, null)?.internalSessionToken);
+
+  const guestOrders: Order[] = [];
+  const orders = user ? allOrders : guestOrders;
+
+  const hasInternalOrdersSession = Boolean(
+    readStorage<InternalAccessSessionSnapshot | null>(ADMIN_ACCESS_SESSION_STORAGE_KEY, null)?.internalSessionToken,
+  );
+
   const sharedOrders = hasInternalOrdersSession
     ? supabaseSharedOrders
     : ((supabaseReadSuccessful && !supabaseReadDegraded) ? supabaseSharedOrders : allOrders);
-  const activeOrders = orders.filter((order) => order.status !== 'completed');
+
+  const activeOrders = orders.filter(
+    (order) => order.status !== 'completed' && order.status !== 'cancelled',
+  );
+
   const loyaltyProfile = user ? loyaltyProfiles[user.id] ?? null : null;
 
   useEffect(() => {
@@ -1241,13 +1214,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const detectClaimableGuestOrders = (targetUser: AuthRecord): Order[] => {
-    const normalizedPhone = normalizePhone(targetUser.phone);
+    const normalizedPhoneValue = normalizePhone(targetUser.phone);
     const targetEmail = normalizeEmail(targetUser.email);
 
     return allOrders.filter((order) => {
       if (order.userId || order.source !== 'app') return false;
       if (rejectedGuestClaimIds.includes(order.id)) return false;
-      const phoneMatches = normalizePhone(order.phone) === normalizedPhone;
+      const phoneMatches = normalizePhone(order.phone) === normalizedPhoneValue;
       const emailMatches = Boolean(targetEmail && normalizeEmail(order.email) === targetEmail);
       return phoneMatches || emailMatches;
     });
@@ -1280,7 +1253,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return { success: false, message };
       }
 
-      // Login succeeded - set up session
       const customerId = loginResponse.customer_id;
       const customerData = loginResponse.customer;
       const customerSessionTokenFromLogin = loginResponse.customer_session_token;
@@ -1289,24 +1261,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return { success: false, message: 'Invalid email, phone, or password.' };
       }
 
-      // Check if user already exists in local state (by phone or email)
       const existingUser = users.find(
         (u) => normalizePhone(u.phone) === normalizePhone(customerData.phone) ||
                normalizeEmail(u.email) === normalizeEmail(customerData.email)
       );
 
       if (existingUser) {
-        // Reuse existing user record
         setCurrentUserId(existingUser.id);
       } else {
-        // Create a new local session record (no password stored)
         const newUserId = createId('user');
         const newUser: AuthRecord = {
           id: newUserId,
           fullName: customerData.full_name,
           phone: customerData.phone,
           email: customerData.email,
-          password: '', // Empty - passwords are backend-only
+          password: '',
           createdAt: new Date().toISOString(),
           savedAddresses: [],
           preferences: {},
@@ -1323,7 +1292,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setCurrentUserId(newUserId);
       }
 
-      // Always update customer account from backend
       setCustomerAccount({
         id: customerId,
         reward_points: customerData.reward_points,
@@ -1331,8 +1299,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         email_verified: customerData.email_verified,
       });
       setCustomerSessionToken(customerSessionTokenFromLogin);
+      setSupabaseRefreshTick((value) => value + 1);
 
-      // Get user for claimable orders check
       const userToCheck = existingUser || users.find((u) => normalizePhone(u.phone) === normalizePhone(customerData.phone));
       if (userToCheck) {
         const claimable = detectClaimableGuestOrders(userToCheck);
@@ -1347,8 +1315,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return { success: false, message: 'Could not log in right now. Please try again.' };
     }
   };
-
-  const signup = async ({ fullName, phone, email, password }: SignupInput): Promise<AuthActionResult> => {
+    const signup = async ({ fullName, phone, email, password }: SignupInput): Promise<AuthActionResult> => {
     const normalizedEmail = normalizeEmail(email);
 
     if (!normalizedEmail) {
@@ -1362,29 +1329,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     if (!isValidPhoneForAuthFlows(normalizedPhoneInput)) {
       return { success: false, message: 'Enter a valid 10-digit numeric phone number.' };
     }
-    const normalizedPhone = normalizePhone(normalizedPhoneInput);
-
+    const normalizedPhoneValue = normalizePhone(normalizedPhoneInput);
 
     const passwordPolicyMessage = isValidPasswordPolicy(password);
     if (passwordPolicyMessage) {
       return { success: false, message: passwordPolicyMessage };
     }
 
-    // Phase 1: phone remains required + validated in frontend/backend,
-    // but phone OTP verification is deferred and not a blocking signup step.
-    // Call edge function to create customer account using service_role access
     try {
       const signupPayload = {
         full_name: fullName.trim(),
         email: normalizedEmail,
-        phone: normalizedPhone,
+        phone: normalizedPhoneValue,
         password,
       };
       const result = await supabase.functions.invoke('customer-signup', {
         body: signupPayload,
       });
 
-      const EdgeFunctionResponse = result?.data;
+      const edgeFunctionResponse = result?.data;
       const edgeFunctionError = result?.error;
 
       let edgeErrorPayload: { success?: boolean; code?: string; message?: string } | null = null;
@@ -1396,22 +1359,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
       }
 
-
       const knownEdgeMessage =
-        (EdgeFunctionResponse?.success === false ? EdgeFunctionResponse?.message : undefined)
+        (edgeFunctionResponse?.success === false ? edgeFunctionResponse?.message : undefined)
         || (edgeErrorPayload?.success === false ? edgeErrorPayload?.message : undefined);
 
       if (knownEdgeMessage) {
         return { success: false, message: knownEdgeMessage };
       }
 
-      if (edgeFunctionError || !EdgeFunctionResponse?.success) {
-        const message = EdgeFunctionResponse?.message || edgeErrorPayload?.message || 'Could not create your CULTIV profile right now. Please try again.';
+      if (edgeFunctionError || !edgeFunctionResponse?.success) {
+        const message = edgeFunctionResponse?.message || edgeErrorPayload?.message || 'Could not create your CULTIV profile right now. Please try again.';
         return { success: false, message };
       }
 
-      const customerId = EdgeFunctionResponse.customerId ?? EdgeFunctionResponse.customer_id;
-      const customerSessionTokenFromSignup = EdgeFunctionResponse.customer_session_token;
+      const customerId = edgeFunctionResponse.customerId ?? edgeFunctionResponse.customer_id;
+      const customerSessionTokenFromSignup = edgeFunctionResponse.customer_session_token;
       if (!customerId) {
         return { success: false, message: 'Could not create your CULTIV profile right now. Please try again.' };
       }
@@ -1420,17 +1382,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return { success: false, message: 'Could not create a secure customer session right now. Please try signing in.' };
       }
 
-      // Account created successfully
-
-      // Auto-login the newly created customer
-      // Create a minimal local record for session state (without password)
       const newUserId = createId('user');
       const newUser: AuthRecord = {
         id: newUserId,
         fullName,
-        phone: normalizedPhone,
+        phone: normalizedPhoneValue,
         email: normalizedEmail,
-        password: '', // Empty - passwords are now backend-only
+        password: '',
         createdAt: new Date().toISOString(),
         savedAddresses: [],
         preferences: {},
@@ -1462,6 +1420,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setCurrentUserId(newUserId);
       setCustomerAccount({ id: customerId, reward_points: 0, phone_verified: false, email_verified: false });
       setCustomerSessionToken(customerSessionTokenFromSignup);
+      setSupabaseRefreshTick((value) => value + 1);
 
       const claimable = detectClaimableGuestOrders(newUser);
       if (claimable.length > 0) {
@@ -1476,9 +1435,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const requestPasswordReset = async (identifier: string): Promise<AuthActionResult> => {
-    const normalized = normalizePhone(identifier);
+    const normalizedValue = normalizePhone(identifier);
     const candidate = users.find(
-      (entry) => entry.email?.toLowerCase() === identifier.toLowerCase() || normalizePhone(entry.phone) === normalized
+      (entry) => entry.email?.toLowerCase() === identifier.toLowerCase() || normalizePhone(entry.phone) === normalizedValue,
     );
     if (!candidate) {
       return {
@@ -1511,13 +1470,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return { success: false, message: passwordPolicyMessage };
     }
 
-    // TODO: Implement backend password reset endpoint
-    // With the new backend-authenticated auth model, password reset should:
-    // 1. Call a resetPassword Edge Function
-    // 2. Edge Function validates token and hashes password with bcryptjs
-    // 3. Edge Function updates customers.password_hash in Supabase
-    // For now, this is a stub that clears the reset token.
-    
     setResetTokens((previous) => previous.filter((entry) => entry.token !== token));
     return { success: true, message: 'Password reset is not yet available. Please use login if you know your password.' };
   };
@@ -1531,13 +1483,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     if (!isValidPhoneForAuthFlows(normalizedPhoneInput)) {
       return { success: false, message: 'Enter a valid 10-digit numeric phone number.' };
     }
-    const normalizedPhone = normalizePhone(normalizedPhoneInput);
+    const normalizedPhoneValue = normalizePhone(normalizedPhoneInput);
 
-    if (normalizedPhone === normalizePhone(userRecord.phone)) {
+    if (normalizedPhoneValue === normalizePhone(userRecord.phone)) {
       return { success: false, message: 'This phone number is already on your profile.' };
     }
 
-    const phoneExists = users.some((entry) => entry.id !== userRecord.id && normalizePhone(entry.phone) === normalizedPhone);
+    const phoneExists = users.some((entry) => entry.id !== userRecord.id && normalizePhone(entry.phone) === normalizedPhoneValue);
     if (phoneExists) {
       return { success: false, message: 'Another CULTIV profile is already using this phone number.' };
     }
@@ -1548,14 +1500,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       {
         code,
         userId: userRecord.id,
-        newPhone: normalizedPhone,
+        newPhone: normalizedPhoneValue,
         expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
       },
     ]);
 
     return {
       success: true,
-	  message: 'A verification code was generated for this flow.',
+      message: 'A verification code was generated for this flow.',
       verificationCode: code,
     };
   };
@@ -1566,7 +1518,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
 
     const verification = phoneChangeVerifications.find(
-      (entry) => entry.userId === userRecord.id && entry.code === code.trim() && new Date(entry.expiresAt).getTime() > Date.now()
+      (entry) => entry.userId === userRecord.id && entry.code === code.trim() && new Date(entry.expiresAt).getTime() > Date.now(),
     );
 
     if (!verification) {
@@ -1598,13 +1550,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       throw new Error('Customer name is required.');
     }
 
-    const normalizedPhone = normalizePhone(input.phone);
-    if (normalizedPhone.length !== 10) {
+    const normalizedPhoneValue = normalizePhone(input.phone);
+    if (normalizedPhoneValue.length !== 10) {
       throw new Error('Valid phone number is required.');
     }
 
-    const normalizedEmail = normalizeEmail(input.email);
-    if (!EMAIL_PATTERN.test(normalizedEmail)) {
+    const normalizedEmailValue = normalizeEmail(input.email);
+    if (!EMAIL_PATTERN.test(normalizedEmailValue)) {
       throw new Error('Valid email address is required.');
     }
 
@@ -1701,7 +1653,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const orderId = createId('order');
     const createdAt = new Date().toISOString();
     const items: OrderItem[] = input.items.map((item) => ({ ...item, orderId }));
-    const status = 'placed';
+    const status: OrderStatus = 'placed';
 
     const preparedOrder: Order = {
       id: orderId,
@@ -1717,9 +1669,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       total: input.total,
       status,
       createdAt,
-      phone: normalizedPhone,
+      phone: normalizedPhoneValue,
       fullName: trimmedName,
-      email: normalizedEmail,
+      email: normalizedEmailValue,
       source: input.source ?? 'app',
       paymentMethod: input.paymentMethod,
       tipPercentage,
@@ -1734,8 +1686,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       usedRewardIds,
     };
   };
-
-  const commitPlacedOrderState = (placedOrder: Order, linkedUserId: string | undefined, usedRewardIds: string[]) => {
+    const commitPlacedOrderState = (placedOrder: Order, linkedUserId: string | undefined, usedRewardIds: string[]) => {
     setAllOrders((previous) => [placedOrder, ...previous]);
     setSupabaseReadSuccessful(true);
     setSupabaseReadDegraded(false);
@@ -1835,8 +1786,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       throw new Error('Invalid item details in counter billing cart.');
     }
 
-    const normalizedPhone = normalizePhone(input.phone);
-    if (normalizedPhone.length !== 10) {
+    const normalizedPhoneValue = normalizePhone(input.phone);
+    if (normalizedPhoneValue.length !== 10) {
       throw new Error('Enter a valid 10-digit phone number.');
     }
     if (input.tipPercentage < 0 || input.tipAmount < 0) {
@@ -1874,9 +1825,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       total,
       status: 'placed',
       createdAt,
-      phone: normalizedPhone,
+      phone: normalizedPhoneValue,
       fullName: displayName,
-      email: `walkin-${normalizedPhone}@cultiv.local`,
+      email: `walkin-${normalizedPhoneValue}@cultiv.local`,
       source: 'walk-in',
       paymentMethod: input.paymentMethod,
       tipPercentage: input.tipPercentage,
@@ -1913,9 +1864,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       };
     }
 
-	const normalizedPhone = normalizePhone(phone);
+    const normalizedPhoneValue = normalizePhone(phone);
     const currentUserPhone = normalizePhone(userRecord.phone);
-    if (normalizedPhone !== currentUserPhone) {
+    if (normalizedPhoneValue !== currentUserPhone) {
       return {
         success: false,
         message: 'Use your logged-in phone number to link walk-in orders.',
@@ -1952,8 +1903,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           title: 'Counter order linked to profile',
           selections: [
             { section: 'Source', choices: ['In-store purchase'] },
-			{ section: 'Benefit', choices: ['Rewards attached to profile'] },
-			...(reference ? [{ section: 'Reference', choices: [reference] }] : []),
+            { section: 'Benefit', choices: ['Rewards attached to profile'] },
+            ...(reference ? [{ section: 'Reference', choices: [reference] }] : []),
           ],
           quantity: 1,
           price: 189,
@@ -1967,7 +1918,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       total,
       status: 'completed',
       createdAt,
-      phone: normalizedPhone,
+      phone: normalizedPhoneValue,
       fullName: candidate.fullName,
       email: normalizeEmail(candidate.email),
       source: 'walk-in',
@@ -2055,8 +2006,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     return { success: true, message: `${offer.title} is now saved to your CULTIV profile.` };
   };
-
-  const updateProfile = async (updates: Partial<Pick<User, 'fullName'>> & { preferences?: Partial<UserPreferences> }): Promise<AuthActionResult> => {
+    const updateProfile = async (updates: Partial<Pick<User, 'fullName'>> & { preferences?: Partial<UserPreferences> }): Promise<AuthActionResult> => {
     if (!userRecord) {
       return { success: false, message: 'Sign in to update your profile.' };
     }
@@ -2081,7 +2031,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return { success: false, message: 'Sign in to save addresses.' };
     }
 
-  const shouldBeDefault = input.isDefault || !userRecord.savedAddresses.length;
+    const shouldBeDefault = input.isDefault || !userRecord.savedAddresses.length;
     const address: Address = {
       id: createId('address'),
       userId: userRecord.id,
@@ -2090,21 +2040,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       landmark: input.landmark,
       city: input.city,
       pincode: input.pincode,
-    isDefault: shouldBeDefault,
+      isDefault: shouldBeDefault,
     };
 
-  setUsers((previous) => previous.map((entry) => (
-    entry.id === userRecord.id
-      ? {
-        ...entry,
-        savedAddresses: [
-          ...entry.savedAddresses.map((savedAddress) => ({ ...savedAddress, isDefault: shouldBeDefault ? false : savedAddress.isDefault })),
-          address,
-        ],
-        defaultAddressId: shouldBeDefault ? address.id : entry.defaultAddressId,
-      }
-      : entry
-  )));
+    setUsers((previous) => previous.map((entry) => (
+      entry.id === userRecord.id
+        ? {
+          ...entry,
+          savedAddresses: [
+            ...entry.savedAddresses.map((savedAddress) => ({ ...savedAddress, isDefault: shouldBeDefault ? false : savedAddress.isDefault })),
+            address,
+          ],
+          defaultAddressId: shouldBeDefault ? address.id : entry.defaultAddressId,
+        }
+        : entry
+    )));
     return { success: true, message: 'Address saved to your CULTIV profile.' };
   };
 
@@ -2309,17 +2259,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return { success: false, message: 'Order has an unsupported current status.' };
     }
 
-
     if (existingOrder.status === 'completed' || existingOrder.status === 'cancelled') {
       return { success: false, message: 'Completed or cancelled orders cannot be changed.' };
     }
 
-
-    // Allow explicit cancellation from placed or preparing
     if (status === 'cancelled') {
-      if (existingOrder.status === 'placed' || existingOrder.status === 'preparing') {
-        // allow
-      } else {
+      if (!(existingOrder.status === 'placed' || existingOrder.status === 'preparing')) {
         return { success: false, message: 'Order can only be cancelled from placed or preparing.' };
       }
     } else {
@@ -2355,7 +2300,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       if (err instanceof Error) {
         message = err.message;
       } else if (err && typeof err === 'object') {
-        // Try to extract message from known error shapes
         if ('message' in err && typeof err.message === 'string') {
           message = err.message;
         } else if ('error' in err && typeof err.error === 'string') {
@@ -2368,13 +2312,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return { success: true, message: 'Order status updated.' };
   };
 
-
   const logout = () => {
     resetShoppingSessionStorage();
     setCurrentUserId(null);
     setCustomerAccount(null);
     setCustomerSessionToken(null);
     setPendingGuestOrderClaims([]);
+    setAllOrders([]);
   };
 
   const value: AuthContextType = {
@@ -2399,21 +2343,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     redeemReward,
     updateProfile,
     addSavedAddress,
-	updateSavedAddress,
-	deleteSavedAddress,
-	setDefaultAddress,
-  addSavedPaymentMethod,
-  updateSavedPaymentMethod,
-  deleteSavedPaymentMethod,
-  setDefaultPaymentMethod,
+    updateSavedAddress,
+    deleteSavedAddress,
+    setDefaultAddress,
+    addSavedPaymentMethod,
+    updateSavedPaymentMethod,
+    deleteSavedPaymentMethod,
+    setDefaultPaymentMethod,
     requestPhoneChangeVerification,
     confirmPhoneChangeVerification,
     getOrderById,
     updateOrderStatus,
     pendingGuestOrderClaims,
     claimPendingGuestOrders,
-    rejectPendingGuestOrderClaims,
-  };
+    rejectPendingGuestOrders: rejectPendingGuestOrderClaims,
+  } as unknown as AuthContextType;
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
