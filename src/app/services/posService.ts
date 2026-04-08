@@ -18,7 +18,7 @@ const mapToCounterOrderInput = (payload: PosOrderPayload): CreateCounterWalkInOr
     paymentMethod: payload.paymentMethod,
     tipPercentage: payload.tipPercentage,
     tipAmount: payload.tipAmount,
-    orderChannel: payload.orderChannel,
+    orderChannel: payload.orderChannel === 'walk-in' ? 'walk_in' : payload.orderChannel,
     placedBy: payload.placedBy,
     items: payload.items.map((item) => ({
       category: item.category,

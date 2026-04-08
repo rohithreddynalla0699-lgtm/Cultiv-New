@@ -7,6 +7,9 @@ import { listInternalOrders } from '../lib/internalOpsApi';
  * Returns the mapped Order or undefined if not found.
  */
 export async function getOrderById(orderId: string, sessionPayload: InternalOrdersSessionPayload): Promise<Order | undefined> {
+  if (!window.location.pathname.includes('/store/orders')) {
+    return undefined;
+  }
   const { data, error } = await listInternalOrders({
     ...sessionPayload,
     filters: { ...sessionPayload.filters, search: orderId },
@@ -44,7 +47,7 @@ export async function getOrderById(orderId: string, sessionPayload: InternalOrde
     storeId: row.store_id,
     category: orderItems[0]?.category ?? 'Central Ordering',
     items: orderItems,
-    orderType: row.order_type === 'walk_in' ? 'walk-in' : 'pickup',
+    orderType: row.order_type === 'walk_in' ? 'walk_in' : 'pickup',
     subtotal: row.subtotal_amount,
     rewardDiscount: row.discount_amount,
     taxAmount: row.tax_amount,
@@ -123,6 +126,9 @@ function toUiOrderType(orderType: InternalOrdersListOrderRow['order_type']): 'pi
 export async function fetchOperationalOrdersFromSupabase(
   sessionPayload: InternalOrdersSessionPayload,
 ): Promise<Order[]> {
+  if (!window.location.pathname.includes('/store/orders')) {
+    return [];
+  }
   const { data, error } = await listInternalOrders(sessionPayload);
 
   if (error || !data) {

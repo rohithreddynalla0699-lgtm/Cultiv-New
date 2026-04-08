@@ -159,101 +159,118 @@ const verifyAndLoadSession = async (
   return { valid: true, session: data as InternalAccessSessionRow };
 };
 
+// MAIN HANDLER (no nested Deno.serve)
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
-
-  if (req.method !== 'POST') {
-    return json(405, { error: 'Method not allowed' });
-  }
-
-  const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-
-  if (!supabaseUrl || !serviceRoleKey) {
-    return json(500, { error: 'Server is not configured for internal orders access.' });
-  }
-
-  let body: InternalOrdersListRequest;
   try {
-    body = (await req.json()) as InternalOrdersListRequest;
-  } catch {
-    return json(400, { error: 'Invalid JSON body.' });
-  }
-
-  const tokenResult = extractSessionToken(body);
-  if (tokenResult.error || !tokenResult.value) {
-    return json(400, { error: tokenResult.error ?? 'Invalid session payload.' });
-  }
-
-  const normalizedFilters = normalizeFilters(body.filters);
-  if (normalizedFilters.error) {
-    return json(400, { error: normalizedFilters.error });
-  }
-
-  const db = createClient(supabaseUrl, serviceRoleKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  });
-
-  const verifyResult = await verifyAndLoadSession(db, tokenResult.value);
-  if (!verifyResult.valid) {
-    return json(401, { error: verifyResult.error });
-  }
-
-  const { role_key: roleKey, scope_type: scopeType, scope_store_id: scopeStoreId } = verifyResult.session;
-  const { date, orderType, status, search } = normalizedFilters.value;
-
-  const isStoreScope = scopeType === 'store' || roleKey === 'store';
-
-  let query = db
-    .from('orders')
-    .select(
-      'order_id, order_type, source_channel, order_status, store_id, customer_name, customer_phone, customer_email, payment_method, subtotal_amount, discount_amount, tax_amount, tip_amount, total_amount, created_at, order_items(order_item_id, order_id, item_name, item_category, unit_price, quantity, order_item_selections(order_item_selection_id, order_item_id, group_name_snapshot, option_name))'
-    )
-    .order('created_at', { ascending: false });
-
-  if (isStoreScope && scopeStoreId) {
-    query = query.eq('store_id', scopeStoreId);
-  }
-
-  if (date?.from) {
-    query = query.gte('created_at', date.from);
-  }
-
-  if (date?.to) {
-    query = query.lte('created_at', date.to);
-  }
-
-  if (orderType && orderType !== 'all') {
-    query = query.eq('order_type', orderType);
-  }
-
-  if (status && status !== 'all') {
-    query = query.eq('order_status', status);
-  }
-
-  if (search) {
-    const sanitizedSearch = sanitizeSearchForPostgrest(search);
-    if (sanitizedSearch) {
-      const safePattern = `%${escapeIlikeValue(sanitizedSearch)}%`;
-      // Match order id or customer identity fields.
-      query = query.or(
-        `order_id.ilike.${safePattern},customer_name.ilike.${safePattern},customer_phone.ilike.${safePattern},customer_email.ilike.${safePattern}`
-      );
+    // ...removed debug log...
+    if (req.method === 'OPTIONS') {
+      return new Response('ok', { headers: corsHeaders });
     }
+
+    if (req.method !== 'POST') {
+      return json(405, { error: 'Method not allowed' });
+    }
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+    if (!supabaseUrl || !serviceRoleKey) {
+      return json(500, { error: 'Server is not configured for internal orders access.' });
+    }
+
+    let body: InternalOrdersListRequest;
+    try {
+      body = (await req.json()) as InternalOrdersListRequest;
+    } catch (err) {
+      console.log('[internal-orders-list] invalid JSON body', err?.message);
+      return json(400, { error: 'Invalid JSON body.' });
+    }
+
+    // ...removed debug log...
+    const tokenResult = extractSessionToken(body);
+    // ...removed debug log...
+    if (tokenResult.error || !tokenResult.value) {
+      return json(400, { error: tokenResult.error ?? 'Invalid session payload.' });
+    }
+
+    const normalizedFilters = normalizeFilters(body.filters);
+    if (normalizedFilters.error) {
+      return json(400, { error: normalizedFilters.error });
+    }
+
+    const db = createClient(supabaseUrl, serviceRoleKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+
+    const verifyResult = await verifyAndLoadSession(db, tokenResult.value);
+    if (!verifyResult.valid) {
+      return json(401, { error: verifyResult.error });
+    }
+
+    const { role_key: roleKey, scope_type: scopeType, scope_store_id: scopeStoreId } = verifyResult.session;
+    // ...removed debug log...
+    const { date, orderType, status, search } = normalizedFilters.value;
+
+    const isStoreScope = scopeType === 'store' || roleKey === 'store';
+
+    // Validate store scope UUID
+    if (isStoreScope && (!isValidUuid(scopeStoreId))) {
+      return json(400, { error: 'Invalid store scope in session' });
+    }
+
+    let query = db
+      .from('orders')
+      .select(
+        'order_id, order_type, source_channel, order_status, store_id, customer_name, customer_phone, customer_email, payment_method, subtotal_amount, discount_amount, tax_amount, tip_amount, total_amount, created_at, order_items(order_item_id, order_id, item_name, item_category, unit_price, quantity, order_item_selections(order_item_selection_id, order_item_id, group_name_snapshot, option_name))'
+      )
+      .order('created_at', { ascending: false });
+
+    if (isStoreScope && scopeStoreId) {
+      query = query.eq('store_id', scopeStoreId);
+    }
+
+    if (date?.from) {
+      query = query.gte('created_at', date.from);
+    }
+
+    if (date?.to) {
+      query = query.lte('created_at', date.to);
+    }
+
+    if (orderType && orderType !== 'all') {
+      query = query.eq('order_type', orderType);
+    }
+
+    if (status && status !== 'all') {
+      query = query.eq('order_status', status);
+    }
+
+    if (search) {
+      const sanitizedSearch = sanitizeSearchForPostgrest(search);
+      if (sanitizedSearch) {
+        const safePattern = `%${escapeIlikeValue(sanitizedSearch)}%`;
+        // Match order id or customer identity fields.
+        query = query.or(
+          `order_id.ilike.${safePattern},customer_name.ilike.${safePattern},customer_phone.ilike.${safePattern},customer_email.ilike.${safePattern}`
+        );
+      }
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.log('[internal-orders-list] query error', error?.message);
+      return json(500, { error: error?.message || 'Could not fetch internal orders.' });
+    }
+
+    return json(200, {
+      orders: data ?? [],
+    });
+  } catch (err) {
+    console.log('[internal-orders-list] handler error', err?.message);
+    return json(500, { error: err?.message || 'Internal server error' });
   }
-
-  const { data, error } = await query;
-
-  if (error) {
-    return json(500, { error: 'Could not fetch internal orders.' });
-  }
-
-  return json(200, {
-    orders: data ?? [],
-  });
 });

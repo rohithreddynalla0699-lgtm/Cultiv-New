@@ -1,3 +1,18 @@
+// --- Missing API response types for status update and shift toggle ---
+export interface InternalOrderStatusUpdateResponse {
+  success: boolean;
+  orderId: string;
+  updatedStatus: 'placed' | 'preparing' | 'ready_for_pickup' | 'completed' | 'cancelled' | 'pending';
+}
+
+export interface InternalShiftToggleResponse {
+  success: boolean;
+  employeeId: string;
+  shiftId: string;
+  clockInAt: string;
+  clockOutAt: string | null;
+  status: 'on_shift' | 'off_shift';
+}
 /// <reference types="vite/client" />
 
 const INTERNAL_LOGIN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-login`;
@@ -67,10 +82,6 @@ export interface InternalOrdersListOrderRow {
 
 export interface InternalOrdersListResponse {
   orders: InternalOrdersListOrderRow[];
-}
-
-export interface InternalOrderStatusUpdateResponse {
-  success: boolean;
   orderId: string;
   updatedStatus: 'placed' | 'preparing' | 'ready_for_pickup' | 'completed' | 'cancelled' | 'pending';
 }
@@ -86,18 +97,12 @@ export interface InternalShiftDashboardEmployee {
   monthHours: number;
 }
 
+
 export interface InternalShiftDashboardResponse {
   employees: InternalShiftDashboardEmployee[];
   currentlyOnShift: number;
 }
 
-export interface InternalShiftToggleResponse {
-  action: 'clock_in' | 'clock_out';
-  shiftId: string;
-  employeeId: string;
-  employeeName: string;
-  employeeRole: 'manager' | 'kitchen' | 'counter';
-}
 
 export interface InternalEmployeeDashboardShift {
   shiftId: string;
@@ -117,13 +122,13 @@ export interface InternalEmployeeDashboardRow {
   storeCode: string;
   isActive: boolean;
   phone: string | null;
-  shiftStatus: 'on_shift' | 'off_shift';
-  summaryLabel: string;
-  summaryHours: number;
-  todayHours: number;
-  weekHours: number;
-  monthHours: number;
-  recentShifts: InternalEmployeeDashboardShift[];
+    shiftStatus: 'on_shift' | 'off_shift';
+    summaryLabel: string;
+    summaryHours: number;
+    todayHours: number;
+    weekHours: number;
+    monthHours: number;
+    recentShifts: InternalEmployeeDashboardShift[];
 }
 
 export interface InternalEmployeesDashboardResponse {
@@ -143,9 +148,14 @@ export interface InternalEmployeeDeleteResponse {
   message: string;
 }
 
-const postInternal = async <TResponse>(url: string, params: Record<string, unknown>, fallbackMessage: string): Promise<{ data: TResponse | null; error: string | null }> => {
+const postInternal = async <TResponse>(
+  url: string,
+  params: Record<string, unknown>,
+  fallbackMessage: string
+): Promise<{ data: TResponse | null; error: string | null }> => {
   try {
     const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -184,7 +194,67 @@ export async function listInternalOrders(params: {
   scopeStoreId: string | null;
   filters?: InternalOrdersListFilters;
 }): Promise<{ data: InternalOrdersListResponse | null; error: string | null }> {
-  return postInternal<InternalOrdersListResponse>(INTERNAL_ORDERS_LIST_URL, params, 'Could not fetch internal orders.');
+  const cleanFilters = (obj: unknown): Record<string, unknown> => {
+    if (!obj || typeof obj !== 'object') {
+      return {};
+    }
+
+    const out: Record<string, unknown> = {};
+
+    for (const [key, value] of Object.entries(obj)) {
+      if (value === undefined || value === null || value === '') {
+        continue;
+      }
+
+      out[key] = value;
+    }
+
+    return out;
+  };
+
+  const cleanedFilters = cleanFilters(params.filters ?? {});
+  const sessionToken = params.internalSessionToken;
+
+  console.log('[internal-orders-list] POST', {
+    sessionToken,
+    filters: cleanedFilters,
+  });
+
+  try {
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+    const response = await fetch(INTERNAL_ORDERS_LIST_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+      },
+      body: JSON.stringify({
+        ...params,
+        filters: cleanedFilters,
+      }),
+    });
+
+    const rawText = await response.text();
+
+    console.log('[internal-orders-list] response', {
+      status: response.status,
+      rawText,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch internal orders list: ${response.status} ${rawText}`);
+    }
+
+    return {
+      data: JSON.parse(rawText) as InternalOrdersListResponse,
+      error: null,
+    };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Network error. Please try again.';
+    return { data: null, error: message };
+  }
 }
 
 export async function updateInternalOrderStatus(params: {
@@ -196,7 +266,11 @@ export async function updateInternalOrderStatus(params: {
   nextStatus: 'preparing' | 'ready_for_pickup' | 'completed' | 'cancelled';
   cancellationReason?: string;
 }): Promise<{ data: InternalOrderStatusUpdateResponse | null; error: string | null }> {
-  return postInternal<InternalOrderStatusUpdateResponse>(INTERNAL_ORDER_STATUS_UPDATE_URL, params, 'Could not update order status.');
+  return postInternal<InternalOrderStatusUpdateResponse>(
+    INTERNAL_ORDER_STATUS_UPDATE_URL,
+    params,
+    'Could not update order status.'
+  );
 }
 
 export async function loadInternalShiftDashboard(params: {
@@ -205,7 +279,11 @@ export async function loadInternalShiftDashboard(params: {
   scopeType: 'global' | 'store';
   scopeStoreId: string | null;
 }): Promise<{ data: InternalShiftDashboardResponse | null; error: string | null }> {
-  return postInternal<InternalShiftDashboardResponse>(INTERNAL_SHIFT_CONTROL_URL, { ...params, action: 'dashboard' }, 'Could not load shift dashboard.');
+  return postInternal<InternalShiftDashboardResponse>(
+    INTERNAL_SHIFT_CONTROL_URL,
+    { ...params, action: 'dashboard' },
+    'Could not load shift dashboard.'
+  );
 }
 
 export async function submitInternalShiftPin(params: {
@@ -216,7 +294,11 @@ export async function submitInternalShiftPin(params: {
   employeeId: string;
   pin: string;
 }): Promise<{ data: InternalShiftToggleResponse | null; error: string | null }> {
-  return postInternal<InternalShiftToggleResponse>(INTERNAL_SHIFT_CONTROL_URL, { ...params, action: 'submit_pin' }, 'Could not submit employee PIN.');
+  return postInternal<InternalShiftToggleResponse>(
+    INTERNAL_SHIFT_CONTROL_URL,
+    { ...params, action: 'submit_pin' },
+    'Could not submit employee PIN.'
+  );
 }
 
 export async function loadInternalEmployeesDashboard(params: {
@@ -226,7 +308,11 @@ export async function loadInternalEmployeesDashboard(params: {
   scopeStoreId: string | null;
   period: InternalEmployeeDashboardPeriod;
 }): Promise<{ data: InternalEmployeesDashboardResponse | null; error: string | null }> {
-  return postInternal<InternalEmployeesDashboardResponse>(INTERNAL_EMPLOYEES_URL, { ...params, action: 'dashboard' }, 'Could not load employee dashboard.');
+  return postInternal<InternalEmployeesDashboardResponse>(
+    INTERNAL_EMPLOYEES_URL,
+    { ...params, action: 'dashboard' },
+    'Could not load employee dashboard.'
+  );
 }
 
 export async function upsertInternalEmployee(params: {
@@ -243,7 +329,11 @@ export async function upsertInternalEmployee(params: {
   phone?: string;
   isActive: boolean;
 }): Promise<{ data: InternalEmployeeUpsertResponse | null; error: string | null }> {
-  return postInternal<InternalEmployeeUpsertResponse>(INTERNAL_EMPLOYEES_URL, { ...params, action: 'upsert_employee' }, 'Could not save employee.');
+  return postInternal<InternalEmployeeUpsertResponse>(
+    INTERNAL_EMPLOYEES_URL,
+    { ...params, action: 'upsert_employee' },
+    'Could not save employee.'
+  );
 }
 
 export async function deleteInternalEmployee(params: {
@@ -253,5 +343,9 @@ export async function deleteInternalEmployee(params: {
   scopeStoreId: string | null;
   employeeId: string;
 }): Promise<{ data: InternalEmployeeDeleteResponse | null; error: string | null }> {
-  return postInternal<InternalEmployeeDeleteResponse>(INTERNAL_EMPLOYEES_URL, { ...params, action: 'delete_employee' }, 'Could not delete employee.');
+  return postInternal<InternalEmployeeDeleteResponse>(
+    INTERNAL_EMPLOYEES_URL,
+    { ...params, action: 'delete_employee' },
+    'Could not delete employee.'
+  );
 }

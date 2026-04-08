@@ -303,6 +303,14 @@ const buildStatusTimeline = (createdAt: string) => {
   }));
 };
 
+const buildCompletedWalkInStatusTimeline = (createdAt: string) => ([
+  {
+    status: 'completed' as OrderStatus,
+    label: STATUS_CONTENT.completed.label,
+    description: 'Order was billed, paid, and handed to the customer at the counter.',
+    at: createdAt,
+  },
+]);
 const hasValidOrderItems = (items: Array<{
   title: string;
   category: string;
@@ -318,7 +326,7 @@ const hasValidOrderItems = (items: Array<{
 ));
 
 type SupabaseOrderType = 'online' | 'walk_in' | 'phone';
-type SupabaseSourceChannel = 'app' | 'walk-in' | 'phone';
+type SupabaseSourceChannel = 'app' | 'walk_in' | 'phone';
 
 const SELECTION_STEP_CATALOG = [...BOWL_BUILDER_STEPS, ...BREAKFAST_CUSTOMIZE_STEPS];
 
@@ -356,9 +364,9 @@ const OPTION_META_BY_GROUP_AND_NAME = Object.fromEntries(
   priceModifier: number;
 }>;
 
-const resolveSupabaseOrderType = (orderType: 'pickup' | 'walk-in', source: SupabaseSourceChannel): SupabaseOrderType => {
+const resolveSupabaseOrderType = (orderType: 'pickup' | 'walk_in', source: SupabaseSourceChannel): SupabaseOrderType => {
   if (source === 'phone') return 'phone';
-  return orderType === 'walk-in' ? 'walk_in' : 'online';
+  return orderType === 'walk_in' ? 'walk_in' : 'online';
 };
 
 const resolveSnapshotGroupMeta = (sectionLabel: string) => {
@@ -431,12 +439,12 @@ interface PersistOrderResult {
 }
 
 const buildSupabaseOrderPayload = (order: Order) => {
-  const sourceChannel: SupabaseSourceChannel = order.source;
+  const sourceChannel: SupabaseSourceChannel = order.source as SupabaseSourceChannel;
   return {
     order: {
       customer_id: order.customerId ?? null,
       user_id: null,
-      order_type: resolveSupabaseOrderType(order.orderType, sourceChannel),
+      order_type: resolveSupabaseOrderType(order.orderType as 'pickup' | 'walk_in', sourceChannel),
       source_channel: sourceChannel,
       order_status: order.status,
       store_id: order.storeId ?? DEFAULT_ORDER_STORE_ID,
@@ -1073,7 +1081,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           storeId: row.store_id,
           category: orderItems[0]?.category ?? 'Central Ordering',
           items: orderItems,
-          orderType: row.order_type === 'walk_in' ? 'walk-in' : 'pickup',
+          orderType: row.order_type === 'walk_in' ? 'walk_in' : 'pickup',
           subtotal: Number(row.subtotal_amount),
           rewardDiscount: Number(row.discount_amount ?? 0),
           taxAmount: Number(row.tax_amount ?? 0),
@@ -1737,90 +1745,95 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const createCounterWalkInOrder = async (input: CreateCounterWalkInOrderInput): Promise<Order> => {
-    if (!input.storeId.trim()) {
-      throw new Error('Store is required for walk-in billing.');
-    }
-    if (!input.items.length) {
-      throw new Error('Add at least one item before billing.');
-    }
+  const normalizedStoreId = input.storeId.trim();
 
-    if (!hasValidOrderItems(input.items.map((item) => ({
-      title: item.title,
-      category: item.category,
-      quantity: item.quantity,
-      price: item.price,
-    })))) {
-      throw new Error('Invalid item details in counter billing cart.');
-    }
+  if (!normalizedStoreId) {
+    throw new Error('Store is required for walk-in billing.');
+  }
+  if (!input.items.length) {
+    throw new Error('Add at least one item before billing.');
+  }
 
-    const normalizedPhoneValue = normalizePhone(input.phone);
-    if (normalizedPhoneValue.length !== 10) {
-      throw new Error('Enter a valid 10-digit phone number.');
-    }
-    if (input.tipPercentage < 0 || input.tipAmount < 0) {
-      throw new Error('Tip details are invalid.');
-    }
+  if (!hasValidOrderItems(input.items.map((item) => ({
+    title: item.title,
+    category: item.category,
+    quantity: item.quantity,
+    price: item.price,
+  })))) {
+    throw new Error('Invalid item details in counter billing cart.');
+  }
 
-    const displayName = input.fullName?.trim() || 'Walk-in Customer';
-    const createdAt = new Date().toISOString();
-    const orderId = createId('walkin');
-    const items: OrderItem[] = input.items.map((item) => ({
-      id: createId('item'),
-      orderId,
-      category: item.category,
-      title: item.title,
-      selections: item.selections,
-      quantity: item.quantity,
-      price: item.price,
-    }));
-    const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const taxAmount = Math.round(subtotal * POS_TAX_RATE * 100) / 100;
-    const total = subtotal + taxAmount + input.tipAmount;
-    if (!Number.isFinite(total) || total < 0) {
-      throw new Error('Computed billing total is invalid.');
-    }
+  const normalizedPhoneValue = normalizePhone(input.phone);
+  if (normalizedPhoneValue.length !== 10) {
+    throw new Error('Enter a valid 10-digit phone number.');
+  }
+  if (input.tipPercentage < 0 || input.tipAmount < 0) {
+    throw new Error('Tip details are invalid.');
+  }
 
-    const newOrder: Order = {
-      id: orderId,
-      storeId: input.storeId,
-      category: items[0]?.category ?? 'Counter Billing',
-      items,
-      orderType: 'walk-in',
-      subtotal,
-      rewardDiscount: 0,
-      taxAmount,
-      total,
-      status: 'placed',
-      createdAt,
-      phone: normalizedPhoneValue,
-      fullName: displayName,
-      email: `walkin-${normalizedPhoneValue}@cultiv.local`,
-      source: 'walk-in',
-      paymentMethod: input.paymentMethod,
-      tipPercentage: input.tipPercentage,
-      tipAmount: input.tipAmount,
-      fulfillmentWindow: buildFulfillmentWindow(),
-      statusTimeline: buildStatusTimeline(createdAt),
-    };
+  const displayName = input.fullName?.trim() || 'Walk-in Customer';
+  const createdAt = new Date().toISOString();
+  const orderId = createId('walkin');
 
-    try {
-      const persisted = await persistOrderToSupabase(newOrder);
-      const syncedOrder: Order = {
-        ...newOrder,
-        id: persisted.orderId,
-        status: persisted.orderStatus,
-        items: newOrder.items.map((item) => ({ ...item, orderId: persisted.orderId })),
-      };
-      setAllOrders((previous) => [syncedOrder, ...previous]);
-      setSupabaseReadSuccessful(true);
-      setSupabaseReadDegraded(false);
-      setSupabaseRefreshTick((value) => value + 1);
-      return syncedOrder;
-    } catch {
-      setSupabaseReadDegraded(true);
-      throw new Error('Could not create counter billing order right now. Please try again.');
-    }
+  const items: OrderItem[] = input.items.map((item) => ({
+    id: createId('item'),
+    orderId,
+    category: item.category,
+    title: item.title,
+    selections: item.selections,
+    quantity: item.quantity,
+    price: item.price,
+  }));
+
+  const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const taxAmount = Math.round(subtotal * POS_TAX_RATE * 100) / 100;
+  const total = Math.round((subtotal + taxAmount + input.tipAmount) * 100) / 100;
+
+  if (!Number.isFinite(total) || total < 0) {
+    throw new Error('Computed billing total is invalid.');
+  }
+
+  const newOrder: Order = {
+    id: orderId,
+    storeId: normalizedStoreId,
+    category: items[0]?.category ?? 'Counter Billing',
+    items,
+    orderType: 'walk_in',
+    subtotal,
+    rewardDiscount: 0,
+    taxAmount,
+    total,
+    status: 'completed',
+    createdAt,
+    phone: normalizedPhoneValue,
+    fullName: displayName,
+    email: `walkin-${normalizedPhoneValue}@cultiv.local`,
+    source: 'walk_in',
+    paymentMethod: input.paymentMethod,
+    tipPercentage: input.tipPercentage,
+    tipAmount: input.tipAmount,
+    fulfillmentWindow: 'Handed to customer at counter',
+    statusTimeline: buildCompletedWalkInStatusTimeline(createdAt),
   };
+
+  try {
+    const persisted = await persistOrderToSupabase(newOrder);
+    const syncedOrder: Order = {
+      ...newOrder,
+      id: persisted.orderId,
+      status: persisted.orderStatus,
+      items: newOrder.items.map((item) => ({ ...item, orderId: persisted.orderId })),
+    };
+    setAllOrders((previous) => [syncedOrder, ...previous]);
+    setSupabaseReadSuccessful(true);
+    setSupabaseReadDegraded(false);
+    setSupabaseRefreshTick((value) => value + 1);
+    return syncedOrder;
+  } catch {
+    setSupabaseReadDegraded(true);
+    throw new Error('Could not create counter billing order right now. Please try again.');
+  }
+};
 
   const linkWalkInOrder = async ({ phone, reference }: WalkInLinkInput): Promise<AuthActionResult> => {
     if (!userRecord) {
@@ -1877,7 +1890,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           price: 189,
         },
       ],
-      orderType: 'walk-in',
+      orderType: 'walk_in',
       subtotal,
       rewardDiscount: 0,
       taxAmount,
@@ -1888,7 +1901,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       phone: normalizedPhoneValue,
       fullName: candidate.fullName,
       email: normalizeEmail(candidate.email),
-      source: 'walk-in',
+      source: 'walk_in',
       fulfillmentWindow: 'In-store linked successfully',
       statusTimeline: buildStatusTimeline(createdAt),
     };

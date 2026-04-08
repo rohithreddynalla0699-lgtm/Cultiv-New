@@ -467,29 +467,35 @@ export function CounterBillingScreen() {
     setMessage({ tone: 'info', text: 'Creating order and recording payment...' });
 
     try {
-      const receiptResult = await posService.createOrder(
-        {
-          storeId: activeStoreScope,
-          orderChannel: 'in_store',
-          customerName: customerName.trim() || undefined,
-          customerPhone: normalizePhoneInput(customerPhone),
-          paymentMethod,
-          tipPercentage,
-          tipAmount,
-          placedBy: permissions.canManageEmployees ? 'manager-session' : 'staff-session',
-          items: cartLines.map((line) => ({
-            itemId: line.itemId,
-            title: line.title,
-            category: line.category,
-            quantity: line.quantity,
-            price: line.unitPrice,
-            selections: line.selections,
-          })),
-        },
-        {
-          createCounterWalkInOrder,
-        },
-      );
+      const resolvedStoreId = session?.scopeStoreId?.trim();
+
+if (!resolvedStoreId) {
+  throw new Error('Active store session is missing. Please sign in again.');
+}
+
+const receiptResult = await posService.createOrder(
+  {
+    storeId: resolvedStoreId,
+    orderChannel: 'in_store',
+    customerName: customerName.trim() || undefined,
+    customerPhone: normalizePhoneInput(customerPhone),
+    paymentMethod,
+    tipPercentage,
+    tipAmount,
+    placedBy: permissions.canManageEmployees ? 'manager-session' : 'staff-session',
+    items: cartLines.map((line) => ({
+      itemId: line.itemId,
+      title: line.title,
+      category: line.category,
+      quantity: line.quantity,
+      price: line.unitPrice,
+      selections: line.selections,
+    })),
+  },
+  {
+    createCounterWalkInOrder,
+  },
+);
 
       await posService.recordPayment({
         orderId: receiptResult.orderId,

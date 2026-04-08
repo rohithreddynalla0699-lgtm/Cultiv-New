@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Navigate } from 'react-router-dom';
 
@@ -185,39 +185,47 @@ export function OrdersBoardScreen() {
   const [selectedOrderForCancel, setSelectedOrderForCancel] = useState<OrdersBoardOrder | null>(null);
   const [isSavingNote, setIsSavingNote] = useState(false);
 
+  const inFlightRef = useRef(false);
   const loadOrders = useCallback(async () => {
-    if (!session?.internalSessionToken) {
-      setInternalOrders([]);
+    if (!window.location.pathname.includes('/store/orders')) {
       return;
     }
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    try {
+      if (!session?.internalSessionToken) {
+        setInternalOrders([]);
+        return;
+      }
 
-    setIsLoadingOrders(true);
+      setIsLoadingOrders(true);
 
-    const result = await listInternalOrders({
-      internalSessionToken: session.internalSessionToken,
-      roleKey: session.roleKey,
-      scopeType: normalizeScopeType(session.scopeType),
-      scopeStoreId: session.scopeStoreId ?? null,
-      filters: buildInternalFilters({
-        orderType,
-        dateFilter,
-        customDate,
-        searchQuery,
-      }),
-    });
+      // Always send {} for filters, never undefined
+      const filters = buildInternalFilters({ orderType, dateFilter, customDate, searchQuery }) || {};
 
-    if (result.error || !result.data) {
-      setInternalOrders([]);
-      setFeedbackMessage({
-        tone: 'error',
-        text: result.error ?? 'Could not fetch internal orders.',
+      const result = await listInternalOrders({
+        internalSessionToken: session.internalSessionToken,
+        roleKey: session.roleKey,
+        scopeType: normalizeScopeType(session.scopeType),
+        scopeStoreId: session.scopeStoreId ?? null,
+        filters,
       });
-      setIsLoadingOrders(false);
-      return;
-    }
 
-    setInternalOrders(result.data.orders.map(mapInternalRowToBaseOrder));
-    setIsLoadingOrders(false);
+      if (result.error || !result.data) {
+        setInternalOrders([]);
+        setFeedbackMessage({
+          tone: 'error',
+          text: result.error ?? 'Could not fetch internal orders.',
+        });
+        setIsLoadingOrders(false);
+        return;
+      }
+
+      setInternalOrders(result.data.orders.map(mapInternalRowToBaseOrder));
+      setIsLoadingOrders(false);
+    } finally {
+      inFlightRef.current = false;
+    }
   }, [session, orderType, dateFilter, customDate, searchQuery]);
 
   useEffect(() => {
@@ -229,7 +237,15 @@ export function OrdersBoardScreen() {
   }, []);
 
   useEffect(() => {
-    void loadOrders();
+    let cancelled = false;
+    (async () => {
+      if (!cancelled) {
+        await loadOrders();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [loadOrders, refreshTick]);
 
   useEffect(() => {

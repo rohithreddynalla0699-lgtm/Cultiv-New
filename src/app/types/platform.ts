@@ -2,7 +2,7 @@
 
 export type OrderStatus = 'placed' | 'preparing' | 'ready_for_pickup' | 'completed' | 'cancelled';
 
-export type OrderType = 'pickup' | 'walk-in';
+export type OrderType = 'pickup' | 'walk_in';
 export type CounterPaymentMethod = 'cash' | 'card' | 'upi';
 export type CustomerCheckoutPaymentMethod = 'card' | 'upi';
 
@@ -97,7 +97,7 @@ export interface Order {
 	phone: string;
 	fullName: string;
 	email: string;
-	source: 'app' | 'walk-in' | 'phone';
+	source: 'app' | 'walk_in' | 'phone';
 	paymentMethod?: CounterPaymentMethod;
 	tipPercentage?: number;
 	tipAmount?: number;
@@ -178,7 +178,7 @@ export interface PlaceOrderInput {
 	fullName: string;
 	phone: string;
 	email: string;
-	source?: 'app' | 'walk-in' | 'phone';
+	source?: 'app' | 'walk_in' | 'phone';
 }
 
 export interface CounterOrderItemInput {
