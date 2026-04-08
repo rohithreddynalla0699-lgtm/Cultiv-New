@@ -133,13 +133,11 @@ export function OrderDetailScreen() {
                 </div>
               </div>
 
-              {isCancelled && (
-                <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-[13px] text-rose-700">
-                  {order.cancellation_reason ? (
-                    <span>Order cancelled: {order.cancellation_reason}</span>
-                  ) : (
-                    <span>This order was cancelled.</span>
-                  )}
+              {/* Show cancellation reason only if cancelled and reason is non-empty */}
+              {isCancelled && !!order.cancellation_reason && (
+                <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
+                  <div className="text-[12px] font-semibold uppercase tracking-[0.14em] text-rose-700 mb-1">Cancellation reason</div>
+                  <div className="text-[13px] text-rose-700">{order.cancellation_reason}</div>
                 </div>
               )}
             </div>

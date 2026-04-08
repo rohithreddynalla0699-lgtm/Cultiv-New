@@ -119,15 +119,16 @@ function mapInternalRowToBaseOrder(row: InternalOrdersListOrderRow): BaseOrder {
   const tipAmount = Number(row.tip_amount ?? 0);
   const total = Number(row.total_amount ?? 0);
 
+  // Map fields to match ordersService expectations
   return {
     id: row.order_id,
     orderNumber: row.order_id,
-    customerName: row.customer_name,
-    customerPhone: row.customer_phone,
-    customerEmail: row.customer_email ?? '',
+    fullName: row.customer_name,
+    phone: row.customer_phone,
+    email: row.customer_email ?? '',
     status: row.order_status,
-    type: row.order_type === 'walk_in' ? 'in_store' : row.order_type,
-    sourceChannel: row.source_channel,
+    orderType: row.order_type === 'walk_in' ? 'in_store' : row.order_type, // 'online' or 'in_store'
+    source: row.source_channel, // 'app', 'walk-in', 'phone'
     storeId: row.store_id,
     paymentMethod: row.payment_method ?? undefined,
     items,
