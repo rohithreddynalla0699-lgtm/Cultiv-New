@@ -438,6 +438,7 @@ interface PersistOrderResult {
   orderId: string;
   orderNumber?: string;
   orderStatus: OrderStatus;
+  customerId?: string | null;
 }
 
 const buildSupabaseOrderPayload = (order: Order) => {
@@ -594,6 +595,7 @@ const persistOrderToSupabase = async (order: Order): Promise<PersistOrderResult>
       orderId: data.orderId,
       orderNumber: data.orderNumber,
       orderStatus: (data.orderStatus ?? order.status) as OrderStatus,
+      customerId: data.customerId ?? data.customer_id ?? order.customerId ?? null,
     };
   } catch (error) {
     console.error('Supabase order persistence failed.');
@@ -1113,7 +1115,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           phone: row.customer_phone ?? '',
           fullName: row.customer_name || 'Walk-in Guest',
           email: row.customer_email ?? '',
-          source: row.source_channel,
+          source: row.source_channel === 'walk-in' ? 'walk_in' : row.source_channel,
           paymentMethod: row.payment_method ?? undefined,
           fulfillmentWindow: '20-30 min',
           statusTimeline: buildStatusTimeline(row.created_at),
@@ -1844,6 +1846,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const syncedOrder: Order = {
       ...newOrder,
       id: persisted.orderId,
+      customerId: persisted.customerId ?? newOrder.customerId,
       status: persisted.orderStatus,
       items: newOrder.items.map((item) => ({ ...item, orderId: persisted.orderId })),
     };

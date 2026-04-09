@@ -238,30 +238,41 @@ Deno.serve(async (req) => {
       const points = Math.floor(Number(completedOrder.total_amount) / 10);
 
       if (points > 0) {
-        const earnedAt = new Date();
-        const expiresAt = new Date(earnedAt.getTime() + 90 * 24 * 60 * 60 * 1000);
-
-        const { error: loyaltyInsertError } = await db
+        const { data: existingAwards, error: existingAwardsError } = await db
           .from('loyalty_points_ledger')
-          .insert({
-            user_id: completedOrder.customer_id,
-            order_id: completedOrder.order_id,
-            entry_type: 'earn',
-            points,
-            points_remaining: points,
-            earned_at: earnedAt.toISOString(),
-            expires_at: expiresAt.toISOString(),
-            metadata: {
-              source: 'order_completion',
-              total_amount: completedOrder.total_amount,
-            },
-          });
+          .select('order_id')
+          .eq('order_id', completedOrder.order_id)
+          .eq('entry_type', 'earn')
+          .limit(1);
 
-        if (loyaltyInsertError) {
-          if (loyaltyInsertError.code === '23505') {
-            console.info('Loyalty already awarded for order', completedOrder.order_id);
-          } else {
-            console.error('Failed to insert loyalty ledger row', loyaltyInsertError);
+        if (existingAwardsError) {
+          console.error('Failed to verify existing loyalty award', existingAwardsError);
+        } else if (!(Array.isArray(existingAwards) && existingAwards.length > 0)) {
+          const earnedAt = new Date();
+          const expiresAt = new Date(earnedAt.getTime() + 90 * 24 * 60 * 60 * 1000);
+
+          const { error: loyaltyInsertError } = await db
+            .from('loyalty_points_ledger')
+            .insert({
+              user_id: completedOrder.customer_id,
+              order_id: completedOrder.order_id,
+              entry_type: 'earn',
+              points,
+              points_remaining: points,
+              earned_at: earnedAt.toISOString(),
+              expires_at: expiresAt.toISOString(),
+              metadata: {
+                source: 'order_completion',
+                total_amount: completedOrder.total_amount,
+              },
+            });
+
+          if (loyaltyInsertError) {
+            if (loyaltyInsertError.code === '23505') {
+              console.info('Loyalty already awarded for order', completedOrder.order_id);
+            } else {
+              console.error('Failed to insert loyalty ledger row', loyaltyInsertError);
+            }
           }
         }
       }

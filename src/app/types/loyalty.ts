@@ -1,7 +1,7 @@
 import type { LoyaltyProfile } from './platform';
 
 export interface LoyaltyBatchSummary {
-  id: string;
+  id?: string;
   order_id: string | null;
   points: number;
   points_remaining: number;

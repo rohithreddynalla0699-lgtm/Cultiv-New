@@ -15,6 +15,9 @@ import { DEFAULT_FIRST_ORDER_CATEGORY_SLUG, PICKUP_ESTIMATE_WINDOW, POS_TAX_RATE
 
 type OrderFilter = 'all' | 'online' | 'instore';
 
+const isInStoreOrder = (order: Order) =>
+	order.orderType === 'walk_in' || order.source === 'walk_in' || order.source === 'walk-in';
+
 export function OrderHistoryScreen() {
 	const { user, orders, activeOrders } = useAuth();
 	const navigate = useNavigate();
@@ -29,7 +32,7 @@ export function OrderHistoryScreen() {
 
 	const sortedOrders = orders.slice().sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 	const onlineOrders = sortedOrders.filter((order) => order.source === 'app');
-	const inStoreOrders = sortedOrders.filter((order) => order.source === 'walk-in');
+	const inStoreOrders = sortedOrders.filter((order) => isInStoreOrder(order));
 
 	const filteredOrders = useMemo(() => {
 		switch (activeFilter) {
@@ -51,7 +54,7 @@ export function OrderHistoryScreen() {
 	];
 
 	const getPaymentLabel = (order: Order) => {
-		if (order.source === 'walk-in') {
+		if (isInStoreOrder(order)) {
 			return 'In-store counter';
 		}
 		if (user.paymentProfile.preferredMethod === 'card') {
@@ -208,15 +211,16 @@ export function OrderHistoryScreen() {
 											statusBadgeClass = 'bg-primary/8 text-primary border border-primary/20';
 											statusBadgeLabel = 'Completed';
 											break;
-										default:
-											statusBadgeClass = 'bg-background/75 text-foreground/72 border border-border';
-											statusBadgeLabel = statusLabel.charAt(0).toUpperCase() + statusLabel.slice(1).replace(/_/g, ' ');
-											break;
-									}
-									const orderDate = new Date(order.createdAt);
-									const modeLabel = order.source === 'walk-in' ? 'In-Store' : 'Online';
-										const fulfillmentLabel = order.source === 'walk-in' ? 'In-Store' : 'Pickup';
-									const itemTitles = order.items.map((item) => item.title);
+								default:
+									statusBadgeClass = 'bg-background/75 text-foreground/72 border border-border';
+									statusBadgeLabel = statusLabel.charAt(0).toUpperCase() + statusLabel.slice(1).replace(/_/g, ' ');
+									break;
+							}
+							const orderDate = new Date(order.createdAt);
+							const inStoreOrder = isInStoreOrder(order);
+							const modeLabel = inStoreOrder ? 'In-Store' : 'Online';
+							const fulfillmentLabel = inStoreOrder ? 'In-Store' : 'Pickup';
+							const itemTitles = order.items.map((item) => item.title);
 
 									return (
 										<motion.article
@@ -231,8 +235,8 @@ export function OrderHistoryScreen() {
 													<p className="text-sm text-foreground/62">{orderDate.toLocaleDateString()} • {orderDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
 												</div>
 												<div className="flex flex-wrap items-center gap-2">
-													<span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${order.source === 'walk-in' ? 'bg-[#EAF2E1] text-primary' : 'bg-primary/10 text-primary'}`}>
-														{order.source === 'walk-in' ? <Store className="h-3.5 w-3.5" /> : <Smartphone className="h-3.5 w-3.5" />}
+													<span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${inStoreOrder ? 'bg-[#EAF2E1] text-primary' : 'bg-primary/10 text-primary'}`}>
+														{inStoreOrder ? <Store className="h-3.5 w-3.5" /> : <Smartphone className="h-3.5 w-3.5" />}
 														{modeLabel}
 													</span>
 													<span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${statusBadgeClass}`}>{statusBadgeLabel}</span>

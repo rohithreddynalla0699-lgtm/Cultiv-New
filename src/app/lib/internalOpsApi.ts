@@ -63,7 +63,7 @@ export interface InternalOrdersListItemRow {
 export interface InternalOrdersListOrderRow {
   order_id: string;
   order_type: 'online' | 'walk_in' | 'phone';
-  source_channel: 'app' | 'walk-in' | 'phone';
+  source_channel: 'app' | 'walk_in' | 'walk-in' | 'phone';
   order_status: 'pending' | 'placed' | 'preparing' | 'ready_for_pickup' | 'completed' | 'cancelled';
   store_id: string;
   customer_name: string;

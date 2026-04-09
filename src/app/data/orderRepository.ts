@@ -60,7 +60,7 @@ export async function getOrderById(orderId: string, sessionPayload: InternalOrde
     phone: row.customer_phone ?? '',
     fullName: row.customer_name || 'Walk-in Guest',
     email: row.customer_email ?? '',
-    source: row.source_channel,
+    source: normalizeSourceChannel(row.source_channel),
     paymentMethod: row.payment_method ?? undefined,
     tipAmount: row.tip_amount,
     fulfillmentWindow: '20-30 min',
@@ -90,6 +90,10 @@ function toUiStatus(status: InternalOrdersListOrderRow['order_status']): OrderSt
   if (status === 'completed') return 'completed';
   if (status === 'cancelled') return 'cancelled';
   return 'placed';
+}
+
+function normalizeSourceChannel(sourceChannel: InternalOrdersListOrderRow['source_channel']): Order['source'] {
+  return sourceChannel === 'walk-in' ? 'walk_in' : sourceChannel;
 }
 
 function buildStatusTimeline(createdAt: string) {
@@ -122,8 +126,8 @@ function buildStatusTimeline(createdAt: string) {
   }));
 }
 
-function toUiOrderType(orderType: InternalOrdersListOrderRow['order_type']): 'pickup' | 'walk-in' {
-  return orderType === 'walk_in' ? 'walk-in' : 'pickup';
+function toUiOrderType(orderType: InternalOrdersListOrderRow['order_type']): Order['orderType'] {
+  return orderType === 'walk_in' ? 'walk_in' : 'pickup';
 }
 
 export async function fetchOperationalOrdersFromSupabase(
@@ -183,7 +187,7 @@ export async function fetchOperationalOrdersFromSupabase(
       phone: row.customer_phone ?? '',
       fullName: row.customer_name || 'Walk-in Guest',
       email: row.customer_email ?? '',
-      source: row.source_channel,
+      source: normalizeSourceChannel(row.source_channel),
       paymentMethod: row.payment_method ?? undefined,
       tipAmount: row.tip_amount,
       fulfillmentWindow: '20-30 min',

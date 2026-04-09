@@ -28,7 +28,7 @@ export function ReportsScreen() {
     const todayRevenue = todayOrders.reduce((sum, order) => sum + order.total, 0);
     const avgTicket = scopedOrders.length > 0 ? Math.round(totalRevenue / scopedOrders.length) : 0;
     const pickupCount = scopedOrders.filter((order) => order.orderType === 'pickup').length;
-    const walkInCount = scopedOrders.filter((order) => order.orderType === 'walk-in').length;
+    const walkInCount = scopedOrders.filter((order) => order.orderType === 'walk_in').length;
     return { totalRevenue, todayRevenue, avgTicket, pickupCount, walkInCount };
   }, [scopedOrders, todayOrders]);
 

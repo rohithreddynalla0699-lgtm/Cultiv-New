@@ -124,7 +124,7 @@ Deno.serve(async (req) => {
 
   const { data: batches, error } = await db
     .from('loyalty_points_ledger')
-    .select('id, order_id, points, points_remaining, earned_at, expires_at, created_at')
+    .select('order_id, points, points_remaining, earned_at, expires_at, created_at')
     .eq('user_id', verifiedSession.customer_id)
     .eq('entry_type', 'earn')
     .gt('points_remaining', 0)
@@ -148,7 +148,7 @@ Deno.serve(async (req) => {
 
   const { data: recentActivity, error: activityError } = await db
     .from('loyalty_points_ledger')
-    .select('id, order_id, entry_type, points, points_remaining, earned_at, expires_at, created_at, metadata')
+    .select('order_id, entry_type, points, points_remaining, earned_at, expires_at, created_at, metadata')
     .eq('user_id', verifiedSession.customer_id)
     .order('created_at', { ascending: false })
     .limit(20);

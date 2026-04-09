@@ -82,6 +82,12 @@ const getUtcDayRange = (date: Date) => {
   };
 };
 
+const normalizePhone = (value: string | null | undefined) =>
+  String(value ?? "").replace(/\D/g, "").slice(-10);
+
+const normalizeEmail = (value: string | null | undefined) =>
+  String(value ?? "").trim().toLowerCase();
+
 const generateOrderNumber = async (supabase: any): Promise<string> => {
   const now = new Date();
   const dateToken = formatOrderNumberDate(now);
@@ -100,6 +106,182 @@ const generateOrderNumber = async (supabase: any): Promise<string> => {
   const sequence = (count ?? 0) + 1;
   const paddedSequence = String(sequence).padStart(ORDER_NUMBER_SEQUENCE_LENGTH, "0");
   return `${ORDER_NUMBER_PREFIX}${dateToken}${paddedSequence}`;
+};
+
+const resolveCanonicalCustomerId = async (
+  supabase: any,
+  order: OrderInsertPayload,
+  isWalkInOrder: boolean,
+): Promise<string | null> => {
+  const providedCustomerId = typeof order.customer_id === "string" && order.customer_id.trim()
+    ? order.customer_id.trim()
+    : null;
+
+  if (providedCustomerId) {
+    return providedCustomerId;
+  }
+
+  const hasExplicitLinkedCustomerSignal = isWalkInOrder
+    && typeof order.user_id === "string"
+    && order.user_id.trim().length > 0;
+
+  if (!hasExplicitLinkedCustomerSignal) {
+    return null;
+  }
+
+  const normalizedPhone = normalizePhone(order.customer_phone);
+  if (normalizedPhone) {
+    const { data, error } = await supabase
+      .from("customers")
+      .select("id")
+      .eq("phone", normalizedPhone)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Could not verify linked customer by phone: ${error.message}`);
+    }
+
+    if (data?.id) {
+      return data.id as string;
+    }
+  }
+
+  const normalizedEmail = normalizeEmail(order.customer_email);
+  if (normalizedEmail) {
+    const { data, error } = await supabase
+      .from("customers")
+      .select("id")
+      .eq("email", normalizedEmail)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Could not verify linked customer by email: ${error.message}`);
+    }
+
+    if (data?.id) {
+      return data.id as string;
+    }
+  }
+
+  return null;
+};
+
+const awardCompletedOrderLoyalty = async (
+  supabase: any,
+  input: {
+    customerId: string | null;
+    orderId: string;
+    orderStatus: string;
+    totalAmount: number;
+  },
+) => {
+  const pointsToAward = Math.floor(Number(input.totalAmount) / 10);
+
+  console.info("[customer-create-order] loyalty award evaluation", {
+    orderId: input.orderId,
+    customerId: input.customerId,
+    orderStatus: input.orderStatus,
+    pointsToAward,
+  });
+
+  if (input.orderStatus !== "completed" || !input.customerId) {
+    console.info("[customer-create-order] loyalty award skipped", {
+      orderId: input.orderId,
+      customerId: input.customerId,
+      orderStatus: input.orderStatus,
+      reason: input.orderStatus !== "completed" ? "not_completed" : "missing_customer_id",
+    });
+    return;
+  }
+
+  if (pointsToAward <= 0) {
+    console.info("[customer-create-order] loyalty award skipped", {
+      orderId: input.orderId,
+      customerId: input.customerId,
+      orderStatus: input.orderStatus,
+      reason: "non_positive_points",
+      pointsToAward,
+    });
+    return;
+  }
+
+  const { data: existingAwards, error: existingAwardsError } = await supabase
+    .from("loyalty_points_ledger")
+    .select("order_id")
+    .eq("order_id", input.orderId)
+    .eq("entry_type", "earn")
+    .limit(1);
+
+  if (existingAwardsError) {
+    console.error("[customer-create-order] failed to verify existing loyalty award", {
+      orderId: input.orderId,
+      customerId: input.customerId,
+      orderStatus: input.orderStatus,
+      pointsToAward,
+      error: existingAwardsError,
+    });
+    return;
+  }
+
+  if (Array.isArray(existingAwards) && existingAwards.length > 0) {
+    console.info("[customer-create-order] loyalty award skipped", {
+      orderId: input.orderId,
+      customerId: input.customerId,
+      orderStatus: input.orderStatus,
+      reason: "already_awarded",
+      pointsToAward,
+    });
+    return;
+  }
+
+  const earnedAt = new Date();
+  const expiresAt = new Date(earnedAt.getTime() + 90 * 24 * 60 * 60 * 1000);
+
+  const { error } = await supabase
+    .from("loyalty_points_ledger")
+    .insert({
+      user_id: input.customerId,
+      order_id: input.orderId,
+      entry_type: "earn",
+      points: pointsToAward,
+      points_remaining: pointsToAward,
+      earned_at: earnedAt.toISOString(),
+      expires_at: expiresAt.toISOString(),
+      metadata: {
+        source: "order_completion",
+        total_amount: input.totalAmount,
+      },
+    });
+
+  if (!error) {
+    console.info("[customer-create-order] loyalty award inserted", {
+      orderId: input.orderId,
+      customerId: input.customerId,
+      orderStatus: input.orderStatus,
+      pointsToAward,
+    });
+    return;
+  }
+
+  if (error.code === "23505") {
+    console.info("[customer-create-order] loyalty award skipped", {
+      orderId: input.orderId,
+      customerId: input.customerId,
+      orderStatus: input.orderStatus,
+      reason: "duplicate_key",
+      pointsToAward,
+      error,
+    });
+    return;
+  }
+
+  console.error("[customer-create-order] failed to insert loyalty ledger row", {
+    orderId: input.orderId,
+    customerId: input.customerId,
+    orderStatus: input.orderStatus,
+    pointsToAward,
+    error,
+  });
 };
 
 
@@ -238,6 +420,17 @@ serve(async (req: any) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || ""
     );
 
+    const resolvedCustomerId = await resolveCanonicalCustomerId(supabase, order, isWalkInOrder);
+    console.info("[customer-create-order] resolved customer context", {
+      orderType: order.order_type,
+      sourceChannel: order.source_channel,
+      inputCustomerId: order.customer_id,
+      inputUserId: order.user_id ?? null,
+      resolvedCustomerId,
+      customerPhone: order.customer_phone,
+      customerEmail: order.customer_email,
+    });
+
     let orderInsert: { order_id: string; order_number: string | null; order_status: string } | null = null;
     let orderInsertError: { code?: string; message?: string } | null = null;
 
@@ -261,7 +454,7 @@ serve(async (req: any) => {
           tax_amount: order.tax_amount,
           tip_amount: order.tip_amount,
           total_amount: order.total_amount,
-          customer_id: order.customer_id,
+          customer_id: resolvedCustomerId,
           user_id: null,
           order_number: generatedOrderNumber,
         })
@@ -373,11 +566,19 @@ serve(async (req: any) => {
       }, 500);
     }
 
+    await awardCompletedOrderLoyalty(supabase, {
+      customerId: resolvedCustomerId,
+      orderId: orderInsert.order_id,
+      orderStatus: orderInsert.order_status,
+      totalAmount: order.total_amount,
+    });
+
     return jsonResponse({
       success: true,
       orderId: orderInsert.order_id,
       orderNumber: orderInsert.order_number,
       orderStatus: orderInsert.order_status,
+      customerId: resolvedCustomerId,
     }, 201);
   } catch (err) {
     console.error("[customer-create-order] unexpected error", err);
