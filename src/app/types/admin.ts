@@ -55,8 +55,10 @@ export type InventoryStatus = 'in_stock' | 'low_stock' | 'out_of_stock';
 
 export interface InventoryItem {
   id: string;
+  inventoryItemId: string;
   code: string;
   storeId: string;
+  storeUuid: string;
   name: string;
   category: string;
   quantity: number;
@@ -64,6 +66,26 @@ export interface InventoryItem {
   threshold: number;
   status: InventoryStatus;
   updatedAt: string;
+  sortOrder?: number;
+}
+
+export interface InventoryAdjustmentHistoryItem {
+  id: string;
+  storeId: string;
+  storeUuid: string;
+  storeName: string;
+  itemId: string;
+  itemCode: string;
+  itemName: string;
+  adjustmentType: 'set' | 'add' | 'reduce' | 'threshold_update' | 'receive' | 'manual_correction' | 'out_of_stock';
+  quantityDelta: number;
+  quantityBefore: number;
+  quantityAfter: number;
+  thresholdBefore: number | null;
+  thresholdAfter: number | null;
+  notes?: string | null;
+  actorName?: string | null;
+  createdAt: string;
 }
 
 export type AdminOrderBoardStatus = 'new' | 'preparing' | 'ready' | 'picked_up' | 'cancelled';

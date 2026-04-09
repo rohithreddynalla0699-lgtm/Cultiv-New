@@ -1,9 +1,10 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ADMIN_STORE_ACCESS_PIN_BY_ID, DEFAULT_ORDER_STORE_ID } from '../constants/admin';
 import { CUSTOMER_STORE_METADATA, loadStores, type StoreLocatorStore } from '../data/storeLocator';
-import { INVENTORY_MASTER_LIST } from '../constants/inventoryCatalog';
+import { inventoryService } from '../services/inventoryService';
 import { loginInternal } from '../lib/internalOpsApi';
 import type {
+  InventoryAdjustmentHistoryItem,
   AdminOrderNoteMap,
   AdminPermissions,
   EmployeeInput,
@@ -23,6 +24,9 @@ interface AdminDashboardContextType {
   stores: StoreRecord[];
   employees: EmployeeRecord[];
   inventory: InventoryItem[];
+  inventoryHistory: InventoryAdjustmentHistoryItem[];
+  inventoryLoading: boolean;
+  inventoryError: string | null;
   scopedEmployees: EmployeeRecord[];
   scopedInventory: InventoryItem[];
   orderNotes: AdminOrderNoteMap;
@@ -45,10 +49,12 @@ interface AdminDashboardContextType {
   updateEmployee: (employeeId: string, input: EmployeeInput) => { success: boolean; message: string };
   clockInEmployee: (employeeId: string) => void;
   clockOutEmployee: (employeeId: string) => void;
-  addInventoryStock: (itemId: string, amount: number) => void;
-  reduceInventoryStock: (itemId: string, amount: number) => void;
-  updateInventoryThreshold: (itemId: string, threshold: number) => void;
-  markInventoryOutOfStock: (itemId: string) => void;
+  refreshInventory: () => Promise<void>;
+  addInventoryStock: (itemId: string, amount: number) => Promise<{ success: boolean; message: string }>;
+  reduceInventoryStock: (itemId: string, amount: number) => Promise<{ success: boolean; message: string }>;
+  setInventoryQuantity: (itemId: string, quantity: number) => Promise<{ success: boolean; message: string }>;
+  updateInventoryThreshold: (itemId: string, threshold: number) => Promise<{ success: boolean; message: string }>;
+  markInventoryOutOfStock: (itemId: string) => Promise<{ success: boolean; message: string }>;
   saveOrderNote: (orderId: string, note: string) => void;
   getStoreName: (storeId: string) => string;
 }
@@ -57,11 +63,14 @@ const STORAGE_KEYS = {
   session: 'cultiv_admin_access_session_v1',
   stores: 'cultiv_admin_stores_v1',
   employees: 'cultiv_admin_employees_v2',
-  inventory: 'cultiv_admin_inventory_v4',
   orderNotes: 'cultiv_admin_order_notes_v1',
   activeStoreScope: 'cultiv_admin_active_store_scope_v1',
-  inventoryResetApplied: 'cultiv_admin_inventory_reset_applied_v1',
 } as const;
+
+const LEGACY_INVENTORY_STORAGE_KEYS = [
+  'cultiv_admin_inventory_v4',
+  'cultiv_admin_inventory_reset_applied_v1',
+] as const;
 
 const daysAgo = (days: number, hour = 9, minute = 0) => {
   const date = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
@@ -209,139 +218,6 @@ const toCategoryLabel = (category: string) => {
       return 'Packaging';
   }
 };
-
-const createInventorySeedForStore = (storeId: string, quantityOverrides: Record<string, number>): InventoryItem[] => (
-  INVENTORY_MASTER_LIST.map((entry) => {
-    const quantity = quantityOverrides[entry.id] ?? (entry.category === 'packaging' ? entry.threshold + 20 : entry.threshold + 3);
-    const status = getInventoryStatus(quantity, entry.threshold);
-    return {
-      id: `${storeId}__${entry.id}`,
-      code: entry.id,
-      storeId,
-      name: entry.displayName,
-      category: toCategoryLabel(entry.category),
-      quantity,
-      unit: entry.unit,
-      threshold: entry.threshold,
-      status,
-      updatedAt: nowIso(),
-    };
-  })
-);
-
-const seedInventory: InventoryItem[] = [
-  ...createInventorySeedForStore('store-siddipet', {
-    white_basmati_rice: 12,
-    brown_rice: 4,
-    classic_chicken: 2,
-    spicy_chicken: 5,
-    rajma: 3,
-    channa: 2,
-    eggs: 0,
-    cheese: 3,
-    onion: 4,
-    cucumber: 3,
-    lettuce: 3,
-    capsicum: 2,
-    green_cabbage: 2,
-    red_cabbage: 2,
-    carrots: 3,
-    tomato: 3,
-    lemon: 2,
-    sweet_corn: 4,
-    small_chilli: 1,
-    big_chilli: 2,
-    dried_red_chilli: 1,
-    avocado: 2,
-    ginger: 1,
-    yogurt: 4,
-    chia_seeds: 2,
-    banana: 2,
-    apple: 2,
-    mixed_berries: 1,
-    mango: 2,
-    granola: 2,
-    honey: 3,
-    watermelon: 2,
-    water_bottles: 3,
-    coke: 2,
-    regular_bowl: 120,
-    regular_bowl_lid: 118,
-    breakfast_bowl: 30,
-    breakfast_bowl_lid: 30,
-    paper_cup: 0,
-    paper_cup_lid: 46,
-    spoon: 140,
-    paper_bag: 60,
-    tissue_pack: 18,
-  }),
-  ...createInventorySeedForStore('store-hyderabad', {
-    white_basmati_rice: 10,
-    brown_rice: 2,
-    classic_chicken: 4,
-    spicy_chicken: 2,
-    rajma: 2,
-    channa: 1,
-    eggs: 2,
-    cheese: 1,
-    onion: 3,
-    cucumber: 3,
-    lettuce: 2,
-    capsicum: 2,
-    green_cabbage: 2,
-    red_cabbage: 1,
-    carrots: 2,
-    tomato: 3,
-    lemon: 2,
-    sweet_corn: 1,
-    small_chilli: 1,
-    big_chilli: 1,
-    dried_red_chilli: 1,
-    avocado: 2,
-    ginger: 1,
-    yogurt: 2,
-    chia_seeds: 1,
-    banana: 1,
-    apple: 1,
-    mixed_berries: 0,
-    mango: 1,
-    granola: 1,
-    honey: 1,
-    watermelon: 2,
-    water_bottles: 1,
-    coke: 4,
-    regular_bowl: 52,
-    regular_bowl_lid: 48,
-    breakfast_bowl: 42,
-    breakfast_bowl_lid: 30,
-    paper_cup: 65,
-    paper_cup_lid: 40,
-    spoon: 100,
-    paper_bag: 35,
-    tissue_pack: 25,
-  }),
-  ...createInventorySeedForStore('store-warangal', {
-    white_basmati_rice: 6,
-    brown_rice: 3,
-    classic_chicken: 3,
-    spicy_chicken: 3,
-    rajma: 2,
-    channa: 2,
-    eggs: 2,
-    cheese: 2,
-    water_bottles: 2,
-    coke: 2,
-    regular_bowl: 60,
-    regular_bowl_lid: 60,
-    breakfast_bowl: 40,
-    breakfast_bowl_lid: 40,
-    paper_cup: 50,
-    paper_cup_lid: 50,
-    spoon: 100,
-    paper_bag: 50,
-    tissue_pack: 20,
-  }),
-];
 
 const AdminDashboardContext = createContext<AdminDashboardContextType | undefined>(undefined);
 
@@ -563,16 +439,6 @@ const normalizeEmployees = (employees: EmployeeRecord[]) => employees.map((emplo
   };
 });
 
-const normalizeInventory = (items: InventoryItem[]) => items.map((item) => ({
-  ...item,
-  code: item.code ?? item.id.split('__').slice(-1)[0] ?? item.name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, ''),
-  storeId: item.storeId ?? DEFAULT_ORDER_STORE_ID,
-  threshold: Math.max(0, item.threshold),
-  quantity: Math.max(0, item.quantity),
-  status: getInventoryStatus(Math.max(0, item.quantity), Math.max(0, item.threshold)),
-  updatedAt: item.updatedAt ?? nowIso(),
-}));
-
 const finalizeEmployeeDeactivation = (employee: EmployeeRecord): EmployeeRecord => {
   if (employee.status === 'off_shift') {
     return { ...employee, isActive: false, status: 'off_shift' };
@@ -603,7 +469,10 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
   const [stores, setStores] = useState<StoreRecord[]>(() => normalizeStores(readStorage(STORAGE_KEYS.stores, seedStores)));
   const [canonicalStores, setCanonicalStores] = useState<StoreLocatorStore[]>([]);
   const [employees, setEmployees] = useState<EmployeeRecord[]>(() => normalizeEmployees(readStorage(STORAGE_KEYS.employees, seedEmployees)));
-  const [inventory, setInventory] = useState<InventoryItem[]>(() => normalizeInventory(readStorage(STORAGE_KEYS.inventory, seedInventory)));
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [inventoryHistory, setInventoryHistory] = useState<InventoryAdjustmentHistoryItem[]>([]);
+  const [inventoryLoading, setInventoryLoading] = useState(false);
+  const [inventoryError, setInventoryError] = useState<string | null>(null);
   const [orderNotes, setOrderNotes] = useState<AdminOrderNoteMap>(() => readStorage(STORAGE_KEYS.orderNotes, {}));
   const [storedScope, setStoredScope] = useState<StoreScope>(() => readStorage(STORAGE_KEYS.activeStoreScope, 'all'));
   const [session, setSession] = useState<InternalAccessSession | null>(() => normalizeSession(readStorage(STORAGE_KEYS.session, null), seedStores));
@@ -627,14 +496,13 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
   }, []);
 
   useEffect(() => {
-    const hasResetApplied = readStorage(STORAGE_KEYS.inventoryResetApplied, false);
-    if (hasResetApplied) {
+    if (typeof localStorage === 'undefined') {
       return;
     }
 
-    // One-time hard reset to ensure only the approved CULTIV master list remains.
-    setInventory(normalizeInventory(seedInventory));
-    writeStorage(STORAGE_KEYS.inventoryResetApplied, true);
+    LEGACY_INVENTORY_STORAGE_KEYS.forEach((key) => {
+      localStorage.removeItem(key);
+    });
   }, []);
 
   useEffect(() => {
@@ -644,10 +512,6 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
   useEffect(() => {
     writeStorage(STORAGE_KEYS.employees, employees);
   }, [employees]);
-
-  useEffect(() => {
-    writeStorage(STORAGE_KEYS.inventory, inventory);
-  }, [inventory]);
 
   useEffect(() => {
     writeStorage(STORAGE_KEYS.orderNotes, orderNotes);
@@ -808,6 +672,14 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     }, {});
   }, [canonicalStores, stores]);
 
+  const uuidToLocalStoreId = useMemo(
+    () => Object.entries(localStoreIdToUuid).reduce<Record<string, string>>((accumulator, [localStoreId, storeUuid]) => {
+      accumulator[storeUuid] = localStoreId;
+      return accumulator;
+    }, {}),
+    [localStoreIdToUuid],
+  );
+
   const activeStoreScope = storedScope;
   const activeStoreUuid = session?.scopeStoreId
     ?? (activeStoreScope === 'all' ? null : localStoreIdToUuid[activeStoreScope] ?? null);
@@ -816,9 +688,99 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
   const matchesScope = (storeId: string) => activeStoreScope === 'all' || storeId === activeStoreScope;
 
   const scopedEmployees = useMemo(() => employees.filter((employee) => matchesScope(employee.storeId)), [activeStoreScope, employees]);
-  const scopedInventory = useMemo(() => inventory.filter((item) => matchesScope(item.storeId)), [activeStoreScope, inventory]);
+  const scopedInventory = inventory;
 
-  const getStoreName = (storeId: string) => stores.find((store) => store.id === storeId)?.name ?? 'Unknown store';
+  const getStoreName = (storeId: string) => (
+    stores.find((store) => store.id === storeId)?.name
+    ?? canonicalStores.find((store) => store.id === storeId)?.name
+    ?? 'Unknown store'
+  );
+
+  const mapInventoryItem = useCallback((row: Awaited<ReturnType<typeof inventoryService.fetchInventoryDashboard>>['items'][number]): InventoryItem => {
+    const uiStoreId = uuidToLocalStoreId[row.storeId] ?? row.storeId;
+    const quantity = Math.max(0, Number(row.quantity ?? 0));
+    const threshold = Math.max(0, Number(row.threshold ?? 0));
+
+    return {
+      id: row.storeInventoryId,
+      inventoryItemId: row.inventoryItemId,
+      code: row.sku,
+      storeId: uiStoreId,
+      storeUuid: row.storeId,
+      name: row.name,
+      category: toCategoryLabel(row.category),
+      quantity,
+      unit: row.unit,
+      threshold,
+      status: getInventoryStatus(quantity, threshold),
+      updatedAt: row.updatedAt,
+      sortOrder: row.sortOrder,
+    };
+  }, [uuidToLocalStoreId]);
+
+  const mapInventoryHistoryItem = useCallback((row: Awaited<ReturnType<typeof inventoryService.fetchInventoryDashboard>>['adjustments'][number]): InventoryAdjustmentHistoryItem => ({
+    id: row.adjustmentId,
+    storeId: uuidToLocalStoreId[row.storeId] ?? row.storeId,
+    storeUuid: row.storeId,
+    storeName: row.storeName,
+    itemId: row.inventoryItemId,
+    itemCode: row.sku,
+    itemName: row.itemName,
+    adjustmentType: row.adjustmentType,
+    quantityDelta: Number(row.quantityDelta ?? 0),
+    quantityBefore: Number(row.quantityBefore ?? 0),
+    quantityAfter: Number(row.quantityAfter ?? 0),
+    thresholdBefore: row.thresholdBefore == null ? null : Number(row.thresholdBefore),
+    thresholdAfter: row.thresholdAfter == null ? null : Number(row.thresholdAfter),
+    notes: row.notes ?? null,
+    actorName: row.actorName ?? null,
+    createdAt: row.createdAt,
+  }), [uuidToLocalStoreId]);
+
+  const refreshInventory = useCallback(async () => {
+    if (!session || !permissions.canAccessInventory) {
+      setInventoryLoading(false);
+      setInventory([]);
+      setInventoryHistory([]);
+      setInventoryError(null);
+      return;
+    }
+
+    if (activeStoreScope !== 'all' && !activeStoreUuid) {
+      setInventoryLoading(false);
+      setInventory([]);
+      setInventoryHistory([]);
+      setInventoryError('The selected store is not mapped to a backend store yet.');
+      return;
+    }
+
+    setInventoryLoading(true);
+    setInventoryError(null);
+
+    try {
+      const dashboard = await inventoryService.fetchInventoryDashboard(session, activeStoreUuid, 20);
+      setInventory(dashboard.items.map(mapInventoryItem));
+      setInventoryHistory(dashboard.adjustments.map(mapInventoryHistoryItem));
+    } catch (error) {
+      console.error('Failed to load inventory dashboard.', error);
+      setInventory([]);
+      setInventoryHistory([]);
+      setInventoryError(error instanceof Error ? error.message : 'Could not load inventory.');
+    } finally {
+      setInventoryLoading(false);
+    }
+  }, [
+    activeStoreScope,
+    activeStoreUuid,
+    mapInventoryHistoryItem,
+    mapInventoryItem,
+    permissions.canAccessInventory,
+    session,
+  ]);
+
+  useEffect(() => {
+    void refreshInventory();
+  }, [refreshInventory]);
 
   const setActiveStoreScope = (scope: StoreScope) => {
     if (!permissions.canSwitchStores) return;
@@ -857,11 +819,6 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
       },
       ...previous,
     ]);
-
-    setInventory((previous) => ([
-      ...previous,
-      ...createInventorySeedForStore(storeId, {}),
-    ]));
 
     return { success: true, message: 'Store added.' };
   };
@@ -983,39 +940,86 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     }));
   };
 
-  const patchInventory = (itemId: string, updater: (item: InventoryItem) => InventoryItem) => {
-    setInventory((previous) => previous.map((item) => {
-      if (item.id !== itemId) return item;
-      const updated = updater(item);
-      const quantity = Math.max(0, updated.quantity);
-      const threshold = Math.max(0, updated.threshold);
-      return {
-        ...updated,
-        quantity,
-        threshold,
-        status: getInventoryStatus(quantity, threshold),
-        updatedAt: nowIso(),
-      };
-    }));
+  const applyInventoryMutation = useCallback(async (
+    itemId: string,
+    mutation: {
+      adjustmentType: 'set' | 'add' | 'reduce' | 'threshold_update' | 'out_of_stock';
+      amount?: number;
+      quantity?: number;
+      threshold?: number;
+      notes?: string;
+    },
+    successMessage: string,
+  ) => {
+    if (!session) {
+      return { success: false, message: 'You need an active internal session to update inventory.' };
+    }
+
+    const currentItem = inventory.find((item) => item.id === itemId);
+    if (!currentItem) {
+      return { success: false, message: 'Inventory item not found.' };
+    }
+
+    try {
+      const result = await inventoryService.mutateInventoryItem({
+        session,
+        storeId: currentItem.storeUuid || activeStoreUuid,
+        inventoryItemId: currentItem.inventoryItemId,
+        adjustmentType: mutation.adjustmentType,
+        amount: mutation.amount,
+        quantity: mutation.quantity,
+        threshold: mutation.threshold,
+        notes: mutation.notes,
+      });
+
+      const nextItem = mapInventoryItem(result.item);
+      const nextHistoryItem = mapInventoryHistoryItem(result.adjustment);
+
+      setInventory((previous) => previous.map((item) => (
+        item.id === itemId ? nextItem : item
+      )));
+      setInventoryHistory((previous) => [
+        nextHistoryItem,
+        ...previous.filter((item) => item.id !== nextHistoryItem.id),
+      ].slice(0, 20));
+      setInventoryError(null);
+
+      return { success: true, message: successMessage };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not update inventory.';
+      console.error('Failed to update inventory item.', error);
+      setInventoryError(message);
+      return { success: false, message };
+    }
+  }, [activeStoreUuid, inventory, mapInventoryHistoryItem, mapInventoryItem, session]);
+
+  const addInventoryStock = async (itemId: string, amount: number) => {
+    if (amount <= 0) return { success: false, message: 'Use a value greater than 0.' };
+    return applyInventoryMutation(itemId, { adjustmentType: 'add', amount }, 'Inventory updated.');
   };
 
-  const addInventoryStock = (itemId: string, amount: number) => {
-    if (amount <= 0) return;
-    patchInventory(itemId, (item) => ({ ...item, quantity: item.quantity + amount }));
+  const reduceInventoryStock = async (itemId: string, amount: number) => {
+    if (amount <= 0) return { success: false, message: 'Use a value greater than 0.' };
+    return applyInventoryMutation(itemId, { adjustmentType: 'reduce', amount }, 'Inventory updated.');
   };
 
-  const reduceInventoryStock = (itemId: string, amount: number) => {
-    if (amount <= 0) return;
-    patchInventory(itemId, (item) => ({ ...item, quantity: Math.max(0, item.quantity - amount) }));
+  const setInventoryQuantity = async (itemId: string, quantity: number) => {
+    if (!Number.isFinite(quantity) || quantity < 0) {
+      return { success: false, message: 'Quantity must be a non-negative number.' };
+    }
+    return applyInventoryMutation(itemId, { adjustmentType: 'set', quantity }, 'Inventory quantity saved.');
   };
 
-  const updateInventoryThreshold = (itemId: string, threshold: number) => {
-    patchInventory(itemId, (item) => ({ ...item, threshold: Math.max(0, threshold) }));
+  const updateInventoryThreshold = async (itemId: string, threshold: number) => {
+    if (!Number.isFinite(threshold) || threshold < 0) {
+      return { success: false, message: 'Threshold must be a non-negative number.' };
+    }
+    return applyInventoryMutation(itemId, { adjustmentType: 'threshold_update', threshold }, 'Threshold updated.');
   };
 
-  const markInventoryOutOfStock = (itemId: string) => {
-    patchInventory(itemId, (item) => ({ ...item, quantity: 0 }));
-  };
+  const markInventoryOutOfStock = async (itemId: string) => (
+    applyInventoryMutation(itemId, { adjustmentType: 'out_of_stock' }, 'Item marked out of stock.')
+  );
 
   const saveOrderNote = (orderId: string, note: string) => {
     setOrderNotes((previous) => ({
@@ -1029,6 +1033,9 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     stores,
     employees,
     inventory,
+    inventoryHistory,
+    inventoryLoading,
+    inventoryError,
     scopedEmployees,
     scopedInventory,
     orderNotes,
@@ -1051,8 +1058,10 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     updateEmployee,
     clockInEmployee,
     clockOutEmployee,
+    refreshInventory,
     addInventoryStock,
     reduceInventoryStock,
+    setInventoryQuantity,
     updateInventoryThreshold,
     markInventoryOutOfStock,
     saveOrderNote,

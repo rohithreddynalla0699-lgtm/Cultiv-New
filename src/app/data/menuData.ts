@@ -829,7 +829,9 @@ export async function hydrateMenuCatalogFromSupabase() {
 
   const subcategoryByItemId = Object.fromEntries(visibleMenuItems.map((item) => [item.menu_item_id, item.subcategory_slug]));
 
-  const nextCategories: MenuCategoryData[] = CATEGORY_ORDER
+
+  // Known categories in order
+  const knownCategories: MenuCategoryData[] = CATEGORY_ORDER
     .filter((slug) => groupedByCategory.has(slug))
     .map((slug) => {
       const categoryItems = (groupedByCategory.get(slug) ?? [])
@@ -839,7 +841,6 @@ export async function hydrateMenuCatalogFromSupabase() {
         description: 'Menu items',
         image: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=1080',
       };
-
       return {
         slug,
         name: meta.name,
@@ -855,16 +856,56 @@ export async function hydrateMenuCatalogFromSupabase() {
           return {
             id: row.menu_item_id,
             name: row.name,
-            description: fallback.description,
-            calories: fallback.calories,
-            protein: fallback.protein,
+            description: row.description ?? fallback.description,
+            calories: row.calories ?? fallback.calories,
+            protein: row.protein_grams ?? fallback.protein,
             price: row.base_price,
-            image: fallback.image,
-            badge: fallback.badge,
+            image: row.image_url ?? fallback.image,
+            badge: row.badge ?? fallback.badge,
           };
         }),
       };
     });
+
+  // Unknown categories (not in CATEGORY_ORDER)
+  const unknownCategorySlugs = Array.from(groupedByCategory.keys()).filter(
+    (slug) => !CATEGORY_ORDER.includes(slug as any)
+  );
+  const unknownCategories: MenuCategoryData[] = unknownCategorySlugs.map((slug) => {
+    const categoryItems = (groupedByCategory.get(slug) ?? [])
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.name.localeCompare(b.name));
+    const meta = CATEGORY_META_FALLBACK[slug] ?? {
+      name: slug,
+      description: 'Menu items',
+      image: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=1080',
+    };
+    return {
+      slug,
+      name: meta.name,
+      description: meta.description,
+      image: meta.image,
+      items: categoryItems.map((row) => {
+        const fallback = ITEM_META_FALLBACK[row.menu_item_id] ?? {
+          description: '',
+          calories: 0,
+          protein: 0,
+          image: meta.image,
+        };
+        return {
+          id: row.menu_item_id,
+          name: row.name,
+          description: row.description ?? fallback.description,
+          calories: row.calories ?? fallback.calories,
+          protein: row.protein_grams ?? fallback.protein,
+          price: row.base_price,
+          image: row.image_url ?? fallback.image,
+          badge: row.badge ?? fallback.badge,
+        };
+      }),
+    };
+  });
+
+  const nextCategories: MenuCategoryData[] = [...knownCategories, ...unknownCategories];
 
   replaceArray(MENU_CATEGORIES, nextCategories);
   replaceObject(CATEGORY_BY_SLUG, Object.fromEntries(nextCategories.map((category) => [category.slug, category])) as Record<string, MenuCategoryData>);
@@ -988,12 +1029,12 @@ export async function hydrateMenuCatalogFromSupabase() {
       return {
         id: row.menu_item_id,
         name: row.name,
-        description: fallback.description,
-        calories: fallback.calories,
-        protein: fallback.protein,
+        description: row.description ?? fallback.description,
+        calories: row.calories ?? fallback.calories,
+        protein: row.protein_grams ?? fallback.protein,
         price: row.base_price,
-        image: fallback.image,
-        badge: ITEM_META_FALLBACK[row.menu_item_id]?.badge,
+        image: row.image_url ?? fallback.image,
+        badge: row.badge ?? ITEM_META_FALLBACK[row.menu_item_id]?.badge,
         section,
         sectionChip: inferDrinkChip(section),
         isDispenser: section === 'dispenser',

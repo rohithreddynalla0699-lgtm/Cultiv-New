@@ -20,6 +20,8 @@ const INTERNAL_ORDERS_LIST_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions
 const INTERNAL_ORDER_STATUS_UPDATE_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-order-status-update`;
 const INTERNAL_SHIFT_CONTROL_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-shift-control`;
 const INTERNAL_EMPLOYEES_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-employees`;
+const INTERNAL_INVENTORY_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-inventory`;
+const INTERNAL_MENU_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-menu`;
 
 export interface InternalLoginResponse {
   userId: string;
@@ -146,6 +148,104 @@ export interface InternalEmployeeUpsertResponse {
 export interface InternalEmployeeDeleteResponse {
   success: boolean;
   message: string;
+}
+
+export type InternalInventoryAdjustmentType =
+  | 'set'
+  | 'add'
+  | 'reduce'
+  | 'threshold_update'
+  | 'receive'
+  | 'manual_correction'
+  | 'out_of_stock';
+
+export interface InternalInventoryDashboardItem {
+  storeInventoryId: string;
+  storeId: string;
+  storeName: string;
+  storeCode: string;
+  inventoryItemId: string;
+  sku: string;
+  name: string;
+  category: string;
+  unit: string;
+  quantity: number;
+  threshold: number;
+  sortOrder: number;
+  updatedAt: string;
+  updatedBy: string | null;
+}
+
+export interface InternalInventoryAdjustmentRow {
+  adjustmentId: string;
+  storeId: string;
+  storeName: string;
+  storeCode: string;
+  inventoryItemId: string;
+  sku: string;
+  itemName: string;
+  adjustmentType: InternalInventoryAdjustmentType;
+  quantityDelta: number;
+  quantityBefore: number;
+  quantityAfter: number;
+  thresholdBefore: number | null;
+  thresholdAfter: number | null;
+  notes: string | null;
+  actorInternalUserId: string | null;
+  actorName: string | null;
+  createdAt: string;
+}
+
+export interface InternalInventoryDashboardResponse {
+  items: InternalInventoryDashboardItem[];
+  adjustments: InternalInventoryAdjustmentRow[];
+}
+
+export interface InternalInventoryMutationResponse {
+  success: boolean;
+  item: InternalInventoryDashboardItem;
+  adjustment: InternalInventoryAdjustmentRow;
+}
+
+export interface InternalMenuOptionGroup {
+  id: string;
+  name: string;
+  selectionType: 'single' | 'multiple';
+  isRequired: boolean;
+  minSelect: number;
+  maxSelect: number | null;
+  sortOrder: number;
+}
+
+export interface InternalMenuDashboardItem {
+  menuItemId: string;
+  categorySlug: string;
+  subcategorySlug: string | null;
+  name: string;
+  description: string | null;
+  basePrice: number;
+  isAvailable: boolean;
+  sortOrder: number;
+  imageUrl: string | null;
+  calories: number | null;
+  proteinGrams: number | null;
+  badge: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  optionGroupIds: string[];
+  optionGroupCount: number;
+}
+
+export interface InternalMenuDashboardResponse {
+  items: InternalMenuDashboardItem[];
+  optionGroups: InternalMenuOptionGroup[];
+}
+
+export interface InternalMenuMutationResponse {
+  success: boolean;
+  mode: 'created' | 'updated' | 'deleted' | 'soft_disabled';
+  item?: InternalMenuDashboardItem;
+  menuItemId?: string;
 }
 
 const postInternal = async <TResponse>(
@@ -339,5 +439,108 @@ export async function deleteInternalEmployee(params: {
     INTERNAL_EMPLOYEES_URL,
     { ...params, action: 'delete_employee' },
     'Could not delete employee.'
+  );
+}
+
+export async function loadInternalInventoryDashboard(params: {
+  internalSessionToken: string;
+  roleKey: 'owner' | 'admin' | 'store';
+  scopeType: 'global' | 'store';
+  scopeStoreId: string | null;
+  storeId?: string | null;
+  historyLimit?: number;
+}): Promise<{ data: InternalInventoryDashboardResponse | null; error: string | null }> {
+  return postInternal<InternalInventoryDashboardResponse>(
+    INTERNAL_INVENTORY_URL,
+    { ...params, action: 'dashboard' },
+    'Could not load inventory dashboard.'
+  );
+}
+
+export async function updateInternalInventoryItem(params: {
+  internalSessionToken: string;
+  roleKey: 'owner' | 'admin' | 'store';
+  scopeType: 'global' | 'store';
+  scopeStoreId: string | null;
+  storeId?: string | null;
+  inventoryItemId: string;
+  adjustmentType: InternalInventoryAdjustmentType;
+  amount?: number;
+  quantity?: number;
+  threshold?: number;
+  notes?: string;
+}): Promise<{ data: InternalInventoryMutationResponse | null; error: string | null }> {
+  return postInternal<InternalInventoryMutationResponse>(
+    INTERNAL_INVENTORY_URL,
+    { ...params, action: 'adjust_item' },
+    'Could not update inventory.'
+  );
+}
+
+export async function loadInternalMenuDashboard(params: {
+  internalSessionToken: string;
+  roleKey: 'owner' | 'admin' | 'store';
+  scopeType: 'global' | 'store';
+  scopeStoreId: string | null;
+}): Promise<{ data: InternalMenuDashboardResponse | null; error: string | null }> {
+  return postInternal<InternalMenuDashboardResponse>(
+    INTERNAL_MENU_URL,
+    { ...params, action: 'dashboard' },
+    'Could not load menu dashboard.'
+  );
+}
+
+export async function upsertInternalMenuItem(params: {
+  internalSessionToken: string;
+  roleKey: 'owner' | 'admin' | 'store';
+  scopeType: 'global' | 'store';
+  scopeStoreId: string | null;
+  menuItemId?: string;
+  name: string;
+  description?: string | null;
+  categorySlug: string;
+  subcategorySlug?: string | null;
+  basePrice: number;
+  isAvailable?: boolean;
+  sortOrder?: number;
+  imageUrl?: string | null;
+  calories?: number | null;
+  proteinGrams?: number | null;
+  badge?: string | null;
+  optionGroupIds?: string[];
+}): Promise<{ data: InternalMenuMutationResponse | null; error: string | null }> {
+  return postInternal<InternalMenuMutationResponse>(
+    INTERNAL_MENU_URL,
+    { ...params, action: 'upsert_item' },
+    'Could not save menu item.'
+  );
+}
+
+export async function setInternalMenuItemAvailability(params: {
+  internalSessionToken: string;
+  roleKey: 'owner' | 'admin' | 'store';
+  scopeType: 'global' | 'store';
+  scopeStoreId: string | null;
+  menuItemId: string;
+  isAvailable: boolean;
+}): Promise<{ data: InternalMenuMutationResponse | null; error: string | null }> {
+  return postInternal<InternalMenuMutationResponse>(
+    INTERNAL_MENU_URL,
+    { ...params, action: 'set_availability' },
+    'Could not update menu item availability.'
+  );
+}
+
+export async function deleteInternalMenuItem(params: {
+  internalSessionToken: string;
+  roleKey: 'owner' | 'admin' | 'store';
+  scopeType: 'global' | 'store';
+  scopeStoreId: string | null;
+  menuItemId: string;
+}): Promise<{ data: InternalMenuMutationResponse | null; error: string | null }> {
+  return postInternal<InternalMenuMutationResponse>(
+    INTERNAL_MENU_URL,
+    { ...params, action: 'delete_item' },
+    'Could not delete menu item.'
   );
 }

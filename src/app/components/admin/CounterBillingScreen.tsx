@@ -479,6 +479,14 @@ export function CounterBillingScreen() {
           setActiveCategorySlug(firstSupported.slug as SupportedCategorySlug);
         }
       })
+      .catch((error) => {
+        console.error('Failed to load POS menu from backend.', error);
+        setMenuCatalog([]);
+        setMessage({
+          tone: 'error',
+          text: error instanceof Error ? error.message : 'Unable to load the live menu right now.',
+        });
+      })
       .finally(() => setMenuLoaded(true));
   }, [activeStoreScope]);
 

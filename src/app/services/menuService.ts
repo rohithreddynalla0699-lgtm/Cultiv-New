@@ -1,185 +1,239 @@
-import { MENU_CATEGORIES, type MenuCategoryData } from '../data/menuData';
+import { MENU_CATEGORIES, hydrateMenuCatalogFromSupabase, type MenuCategoryData } from '../data/menuData';
+import {
+  deleteInternalMenuItem,
+  loadInternalMenuDashboard,
+  setInternalMenuItemAvailability,
+  upsertInternalMenuItem,
+  type InternalMenuDashboardItem,
+  type InternalMenuOptionGroup,
+} from '../lib/internalOpsApi';
+import type { InternalAccessSession } from '../types/admin';
 
-const MENU_STORAGE_KEY = 'cultiv_operations_menu_v1';
+const LEGACY_MENU_STORAGE_KEY = 'cultiv_operations_menu_v1';
+export const MENU_UPDATED_EVENT = 'cultiv:menu-updated';
 
 export interface OperationsMenuItem {
   id: string;
   name: string;
   description: string;
   price: number;
-  calories: number;
-  protein: number;
+  calories: number | null;
+  protein: number | null;
   image: string;
-  badge?: string;
+  badge?: string | null;
   categorySlug: string;
+  subcategorySlug: string | null;
   categoryName: string;
   isActive: boolean;
-  hasAddons: boolean;
-  isCustom: boolean;
+  sortOrder: number;
+  optionGroupIds: string[];
+  optionGroupCount: number;
 }
 
-export interface CreateMenuItemInput {
+export interface OperationsOptionGroup {
+  id: string;
   name: string;
-  description: string;
-  price: number;
+  selectionType: 'single' | 'multiple';
+  isRequired: boolean;
+  minSelect: number;
+  maxSelect: number | null;
+  sortOrder: number;
+}
+
+export interface MenuManagementDashboard {
+  items: OperationsMenuItem[];
+  optionGroups: OperationsOptionGroup[];
+}
+
+export interface SaveMenuItemInput {
+  menuItemId?: string;
+  name: string;
+  description?: string | null;
   categorySlug: string;
-  image?: string;
-  calories?: number;
-  protein?: number;
-  hasAddons?: boolean;
-}
-
-export interface UpdateMenuItemInput {
-  name?: string;
-  description?: string;
-  price?: number;
-  categorySlug?: string;
+  subcategorySlug?: string | null;
+  price: number;
   isActive?: boolean;
-  hasAddons?: boolean;
+  sortOrder?: number | null;
+  imageUrl?: string | null;
+  calories?: number | null;
+  protein?: number | null;
+  badge?: string | null;
+  optionGroupIds?: string[];
 }
 
-const toOperationsSeed = (): OperationsMenuItem[] => (
-  MENU_CATEGORIES.flatMap((category) => category.items.map((item) => ({
-    id: item.id,
-    name: item.name,
-    description: item.description,
-    price: item.price,
-    calories: item.calories,
-    protein: item.protein,
-    image: item.image,
-    badge: item.badge,
-    categorySlug: category.slug,
-    categoryName: category.name,
-    isActive: true,
-    hasAddons: true,
-    isCustom: false,
-  })))
+const inBrowser = () => typeof window !== 'undefined' && typeof localStorage !== 'undefined';
+
+export const clearLegacyMenuCache = () => {
+  if (!inBrowser()) return;
+  localStorage.removeItem(LEGACY_MENU_STORAGE_KEY);
+};
+
+const notifyMenuUpdated = () => {
+  if (!inBrowser()) return;
+  window.dispatchEvent(new CustomEvent(MENU_UPDATED_EVENT));
+};
+
+const humanizeSlug = (value: string) => value
+  .replace(/[-_]+/g, ' ')
+  .replace(/\b\w/g, (letter) => letter.toUpperCase());
+
+const getFallbackCategoryName = (categorySlug: string) =>
+  MENU_CATEGORIES.find((category) => category.slug === categorySlug)?.name ?? humanizeSlug(categorySlug);
+
+const getFallbackItemMeta = (itemId: string) => (
+  MENU_CATEGORIES
+    .flatMap((category) => category.items)
+    .find((item) => item.id === itemId)
 );
 
-const readMenuState = (): OperationsMenuItem[] => {
-  try {
-    const raw = localStorage.getItem(MENU_STORAGE_KEY);
-    if (!raw) {
-      const seed = toOperationsSeed();
-      localStorage.setItem(MENU_STORAGE_KEY, JSON.stringify(seed));
-      return seed;
-    }
-    const parsed = JSON.parse(raw) as OperationsMenuItem[];
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      const seed = toOperationsSeed();
-      localStorage.setItem(MENU_STORAGE_KEY, JSON.stringify(seed));
-      return seed;
-    }
-    return parsed;
-  } catch {
-    const seed = toOperationsSeed();
-    localStorage.setItem(MENU_STORAGE_KEY, JSON.stringify(seed));
-    return seed;
+const mapOperationsMenuItem = (item: InternalMenuDashboardItem): OperationsMenuItem => {
+  const fallback = getFallbackItemMeta(item.menuItemId);
+
+  return {
+    id: item.menuItemId,
+    name: item.name,
+    description: item.description ?? fallback?.description ?? '',
+    price: item.basePrice,
+    calories: item.calories ?? fallback?.calories ?? null,
+    protein: item.proteinGrams ?? fallback?.protein ?? null,
+    image: item.imageUrl ?? fallback?.image ?? 'https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=1080',
+    badge: item.badge ?? fallback?.badge ?? null,
+    categorySlug: item.categorySlug,
+    subcategorySlug: item.subcategorySlug ?? null,
+    categoryName: getFallbackCategoryName(item.categorySlug),
+    isActive: item.isAvailable,
+    sortOrder: item.sortOrder,
+    optionGroupIds: [...item.optionGroupIds],
+    optionGroupCount: item.optionGroupCount,
+  };
+};
+
+const mapOptionGroup = (group: InternalMenuOptionGroup): OperationsOptionGroup => ({
+  id: group.id,
+  name: group.name,
+  selectionType: group.selectionType,
+  isRequired: group.isRequired,
+  minSelect: group.minSelect,
+  maxSelect: group.maxSelect,
+  sortOrder: group.sortOrder,
+});
+
+const sessionPayload = (session: InternalAccessSession) => ({
+  internalSessionToken: session.internalSessionToken,
+  roleKey: session.roleKey,
+  scopeType: session.scopeType === 'store' ? 'store' : 'global',
+  scopeStoreId: session.scopeStoreId,
+});
+
+const refreshSharedMenuCatalog = async (shouldNotify = false) => {
+  clearLegacyMenuCache();
+  await hydrateMenuCatalogFromSupabase();
+  if (shouldNotify) {
+    notifyMenuUpdated();
   }
 };
 
-const writeMenuState = (items: OperationsMenuItem[]) => {
-  localStorage.setItem(MENU_STORAGE_KEY, JSON.stringify(items));
-};
-
-const buildMenuCatalog = (items: OperationsMenuItem[]): MenuCategoryData[] => {
-  const categoryMeta = new Map(MENU_CATEGORIES.map((entry) => [entry.slug, entry]));
-
-  const grouped = items
-    .filter((item) => item.isActive)
-    .reduce<Record<string, OperationsMenuItem[]>>((acc, item) => {
-      acc[item.categorySlug] = acc[item.categorySlug] ?? [];
-      acc[item.categorySlug].push(item);
-      return acc;
-    }, {});
-
-  return Object.entries(grouped).map(([slug, categoryItems]) => {
-    const seedCategory = categoryMeta.get(slug);
-    return {
-      slug,
-      name: seedCategory?.name ?? categoryItems[0]?.categoryName ?? slug,
-      description: seedCategory?.description ?? 'Operations managed category',
-      image: seedCategory?.image ?? categoryItems[0]?.image ?? 'https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=1080',
-      items: categoryItems.map((item) => ({
-        id: item.id,
-        name: item.name,
-        description: item.description,
-        calories: item.calories,
-        protein: item.protein,
-        price: item.price,
-        image: item.image,
-        badge: item.badge,
-      })),
-    };
-  });
-};
-
 export const menuService = {
-  async getMenuByStore(_storeId: string) {
-    return buildMenuCatalog(readMenuState());
+  async getMenuByStore(_storeId: string): Promise<MenuCategoryData[]> {
+    await refreshSharedMenuCatalog(false);
+    return MENU_CATEGORIES;
   },
 
-  getAllMenuItemsForOperations() {
-    return readMenuState();
-  },
+  async getAllMenuItemsForOperations(session: InternalAccessSession): Promise<MenuManagementDashboard> {
+    clearLegacyMenuCache();
 
-  createMenuItem(input: CreateMenuItemInput) {
-    if (!input.name.trim()) return { success: false, message: 'Menu item name is required.' };
-    if (!input.categorySlug.trim()) return { success: false, message: 'Category is required.' };
-    if (!Number.isFinite(input.price) || input.price < 0) return { success: false, message: 'Price must be valid.' };
-
-    const items = readMenuState();
-    const next: OperationsMenuItem = {
-      id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      name: input.name.trim(),
-      description: input.description.trim(),
-      price: Number(input.price),
-      calories: Math.max(0, Number(input.calories ?? 0)),
-      protein: Math.max(0, Number(input.protein ?? 0)),
-      image: input.image?.trim() || 'https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=1080',
-      categorySlug: input.categorySlug,
-      categoryName: MENU_CATEGORIES.find((entry) => entry.slug === input.categorySlug)?.name ?? input.categorySlug,
-      isActive: true,
-      hasAddons: Boolean(input.hasAddons),
-      isCustom: true,
-    };
-
-    const updated = [next, ...items];
-    writeMenuState(updated);
-    return { success: true, message: 'Menu item created.' };
-  },
-
-  updateMenuItem(itemId: string, updates: UpdateMenuItemInput) {
-    const items = readMenuState();
-    const exists = items.some((item) => item.id === itemId);
-    if (!exists) return { success: false, message: 'Menu item not found.' };
-
-    const updated = items.map((item) => {
-      if (item.id !== itemId) return item;
-      const categorySlug = updates.categorySlug ?? item.categorySlug;
-      return {
-        ...item,
-        name: updates.name?.trim() ?? item.name,
-        description: updates.description?.trim() ?? item.description,
-        price: updates.price != null ? Math.max(0, Number(updates.price)) : item.price,
-        categorySlug,
-        categoryName: MENU_CATEGORIES.find((entry) => entry.slug === categorySlug)?.name ?? item.categoryName,
-        isActive: updates.isActive ?? item.isActive,
-        hasAddons: updates.hasAddons ?? item.hasAddons,
-      };
+    const { data, error } = await loadInternalMenuDashboard({
+      ...sessionPayload(session),
     });
 
-    writeMenuState(updated);
-    return { success: true, message: 'Menu item updated.' };
+    if (error || !data) {
+      throw new Error(error ?? 'Could not load menu dashboard.');
+    }
+
+    return {
+      items: data.items.map(mapOperationsMenuItem),
+      optionGroups: data.optionGroups.map(mapOptionGroup),
+    };
   },
 
-  deleteMenuItem(itemId: string) {
-    const items = readMenuState();
-    const updated = items.filter((item) => item.id !== itemId);
-    if (updated.length === items.length) {
-      return { success: false, message: 'Menu item not found.' };
+  async saveMenuItem(session: InternalAccessSession, input: SaveMenuItemInput) {
+    const { data, error } = await upsertInternalMenuItem({
+      ...sessionPayload(session),
+      menuItemId: input.menuItemId,
+      name: input.name,
+      description: input.description ?? null,
+      categorySlug: input.categorySlug,
+      subcategorySlug: input.subcategorySlug ?? null,
+      basePrice: Number(input.price),
+      isAvailable: input.isActive ?? true,
+      sortOrder: input.sortOrder ?? undefined,
+      imageUrl: input.imageUrl ?? null,
+      calories: input.calories ?? null,
+      proteinGrams: input.protein ?? null,
+      badge: input.badge ?? null,
+      optionGroupIds: input.optionGroupIds ?? [],
+    });
+
+    if (error || !data?.success) {
+      return { success: false, message: error ?? 'Could not save menu item.' };
     }
-    writeMenuState(updated);
-    return { success: true, message: 'Menu item deleted.' };
+
+    try {
+      await refreshSharedMenuCatalog(true);
+    } catch (refreshError) {
+      console.error('Menu save succeeded, but shared catalog refresh failed.', refreshError);
+    }
+
+    return {
+      success: true,
+      message: data.mode === 'created' ? 'Menu item created.' : 'Menu item updated.',
+    };
+  },
+
+  async setMenuItemAvailability(session: InternalAccessSession, menuItemId: string, isAvailable: boolean) {
+    const { data, error } = await setInternalMenuItemAvailability({
+      ...sessionPayload(session),
+      menuItemId,
+      isAvailable,
+    });
+
+    if (error || !data?.success) {
+      return { success: false, message: error ?? 'Could not update menu item availability.' };
+    }
+
+    try {
+      await refreshSharedMenuCatalog(true);
+    } catch (refreshError) {
+      console.error('Menu availability update succeeded, but shared catalog refresh failed.', refreshError);
+    }
+
+    return {
+      success: true,
+      message: isAvailable ? 'Menu item enabled.' : 'Menu item disabled.',
+    };
+  },
+
+  async deleteMenuItem(session: InternalAccessSession, menuItemId: string) {
+    const { data, error } = await deleteInternalMenuItem({
+      ...sessionPayload(session),
+      menuItemId,
+    });
+
+    if (error || !data?.success) {
+      return { success: false, message: error ?? 'Could not remove menu item.' };
+    }
+
+    try {
+      await refreshSharedMenuCatalog(true);
+    } catch (refreshError) {
+      console.error('Menu delete succeeded, but shared catalog refresh failed.', refreshError);
+    }
+
+    return {
+      success: true,
+      message: data.mode === 'soft_disabled'
+        ? 'Menu item has order history, so it was safely disabled instead of deleted.'
+        : 'Menu item deleted.',
+    };
   },
 };

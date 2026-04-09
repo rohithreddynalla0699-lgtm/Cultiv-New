@@ -24,6 +24,7 @@ import { syncPresetCatalogFromMenu } from './data/bowlConfigurations';
 import { resolveCategorySlugFromLabel } from './utils/categoryRouting';
 import { StoreRouteGuard } from './components/store/StoreRouteGuard';
 import { StoreShiftScreen } from './components/store/StoreShiftScreen';
+import { clearLegacyMenuCache, MENU_UPDATED_EVENT } from './services/menuService';
 import type { HomeOrderLaunchState, HomeScrollLocationState } from './types/navigation';
 
 const Menu = lazy(() => import('./components/Menu').then((module) => ({ default: module.Menu })));
@@ -377,7 +378,21 @@ export default function App() {
   const [isMenuLoading, setIsMenuLoading] = useState(true);
   const [menuLoadError, setMenuLoadError] = useState<string | null>(null);
   const [menuLoadAttempt, setMenuLoadAttempt] = useState(0);
-  const [continueWithFallback, setContinueWithFallback] = useState(false);
+
+  useEffect(() => {
+    clearLegacyMenuCache();
+  }, []);
+
+  useEffect(() => {
+    const handleMenuUpdated = () => {
+      setMenuLoadAttempt((value) => value + 1);
+    };
+
+    window.addEventListener(MENU_UPDATED_EVENT, handleMenuUpdated);
+    return () => {
+      window.removeEventListener(MENU_UPDATED_EVENT, handleMenuUpdated);
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -389,7 +404,7 @@ export default function App() {
         await hydrateMenuCatalogFromSupabase();
         syncPresetCatalogFromMenu(MENU_CATEGORIES, BREAKFAST_PRESET_META_BY_ID);
       } catch (error) {
-        console.error('Menu hydration failed, using local fallback catalog.');
+        console.error('Menu hydration failed.');
         if (active) {
           setMenuLoadError(error instanceof Error ? error.message : 'Unable to load menu from Supabase.');
         }
@@ -418,27 +433,20 @@ export default function App() {
     );
   }
 
-  if (menuLoadError && !continueWithFallback) {
+  if (menuLoadError) {
     return (
       <div className="min-h-screen grid place-items-center bg-[linear-gradient(160deg,#f8f7f2_0%,#f2f5ea_50%,#f8f7f2_100%)] px-6 text-center">
         <div className="w-full max-w-xl rounded-3xl border border-primary/15 bg-white/90 p-6 shadow-[0_20px_48px_rgba(20,35,10,0.16)]">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/65">Menu Sync Error</p>
           <h1 className="mt-3 text-2xl font-semibold tracking-tight text-foreground">Could not load Supabase menu</h1>
           <p className="mt-2 text-sm text-foreground/62">{menuLoadError}</p>
-          <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="mt-5">
             <button
               type="button"
               onClick={() => setMenuLoadAttempt((value) => value + 1)}
               className="rounded-full bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground"
             >
               Retry
-            </button>
-            <button
-              type="button"
-              onClick={() => setContinueWithFallback(true)}
-              className="rounded-full border border-primary/20 bg-white px-4 py-2.5 text-sm font-medium text-foreground/72"
-            >
-              Continue with local menu
             </button>
           </div>
         </div>

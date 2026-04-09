@@ -8,9 +8,15 @@ export interface MenuItemRow {
   category_slug: string;
   subcategory_slug: string | null;
   name: string;
+  description: string | null;
   base_price: number;
   is_available: boolean;
   sort_order: number;
+  image_url: string | null;
+  calories: number | null;
+  protein_grams: number | null;
+  badge: string | null;
+  updated_at: string | null;
 }
 
 export interface OptionGroupRow {
@@ -79,9 +85,15 @@ function normalizeMenuItemRow(row: RawRow): MenuItemRow | null {
     category_slug: asString(row.category_slug),
     subcategory_slug: asNullableString(row.subcategory_slug),
     name: asString(row.name),
+    description: asNullableString(row.description),
     base_price: asNumber(row.base_price),
     is_available: asBoolean(row.is_available, true),
     sort_order: asNumber(row.sort_order),
+    image_url: asNullableString(row.image_url),
+    calories: asNullableNumber(row.calories),
+    protein_grams: asNullableNumber(row.protein_grams),
+    badge: asNullableString(row.badge),
+    updated_at: asNullableString(row.updated_at),
   };
 }
 
