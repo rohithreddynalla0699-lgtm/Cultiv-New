@@ -10,7 +10,7 @@ interface ItemCardProps {
 
 export function ItemCard({ item, isUnavailable, hasCustomization, onAdd, onCustomize }: ItemCardProps) {
   return (
-    <article className={`rounded-[18px] border p-2.5 shadow-sm ${isUnavailable ? 'border-red-200 bg-red-50/40' : 'border-border bg-background'}`}>
+    <article className={`rounded-[18px] border p-2.5 shadow-sm transition-shadow duration-200 ${isUnavailable ? 'border-red-200 bg-red-50/40' : 'border-border bg-background hover:shadow-[0_12px_24px_rgba(28,45,14,0.08)]'}`}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h4 className="text-[13px] font-semibold leading-5 text-foreground">{item.name}</h4>
@@ -26,7 +26,7 @@ export function ItemCard({ item, isUnavailable, hasCustomization, onAdd, onCusto
           type="button"
           onClick={onAdd}
           disabled={isUnavailable}
-          className="min-h-[34px] rounded-[12px] bg-primary px-3 py-1 text-[11px] font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-45"
+          className="min-h-[34px] rounded-[12px] bg-primary px-3 py-1 text-[11px] font-semibold text-primary-foreground transition-all duration-200 hover:-translate-y-0.5 hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-45"
         >
           Add
         </button>
@@ -35,7 +35,7 @@ export function ItemCard({ item, isUnavailable, hasCustomization, onAdd, onCusto
             type="button"
             onClick={onCustomize}
             disabled={isUnavailable}
-            className="min-h-[34px] rounded-[12px] border border-border px-3 py-1 text-[11px] font-semibold text-foreground/75 disabled:cursor-not-allowed disabled:opacity-45"
+            className="min-h-[34px] rounded-[12px] border border-border px-3 py-1 text-[11px] font-semibold text-foreground/75 transition-all duration-200 hover:-translate-y-0.5 hover:bg-background/80 disabled:cursor-not-allowed disabled:opacity-45"
           >
             Customize
           </button>

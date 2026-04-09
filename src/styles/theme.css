@@ -179,6 +179,49 @@
     line-height: 1.5;
   }
 
+  :is(
+    a[href],
+    button:not(:disabled),
+    [role='button']:not([aria-disabled='true']),
+    summary,
+    select:not(:disabled),
+    input[type='checkbox']:not(:disabled),
+    input[type='radio']:not(:disabled)
+  ) {
+    cursor: pointer;
+  }
+
+  :is(
+    a[href],
+    button,
+    [role='button'],
+    summary,
+    select,
+    input[type='checkbox'],
+    input[type='radio']
+  ) {
+    transition:
+      color 0.16s ease,
+      background-color 0.16s ease,
+      border-color 0.16s ease,
+      box-shadow 0.18s ease,
+      transform 0.12s ease,
+      opacity 0.16s ease;
+  }
+
+  :is(button, [role='button']):not(:disabled):active {
+    transform: scale(0.985);
+  }
+
+  :is(
+    button:disabled,
+    select:disabled,
+    input[type='checkbox']:disabled,
+    input[type='radio']:disabled
+  ) {
+    cursor: not-allowed;
+  }
+
   /* Admin/store-ops interaction polish: clear click affordance and subtle press feedback. */
   .admin-ops-shell :is(button, [role='button'], a[href], select, summary) {
     cursor: pointer;
@@ -194,5 +237,21 @@
 
   .admin-ops-shell button:disabled {
     cursor: not-allowed;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  @layer base {
+    :is(
+      a[href],
+      button,
+      [role='button'],
+      summary,
+      select,
+      input[type='checkbox'],
+      input[type='radio']
+    ) {
+      transition-duration: 0.01ms;
+    }
   }
 }

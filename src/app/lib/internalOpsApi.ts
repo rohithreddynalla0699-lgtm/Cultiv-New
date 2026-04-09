@@ -157,7 +157,8 @@ export type InternalInventoryAdjustmentType =
   | 'threshold_update'
   | 'receive'
   | 'manual_correction'
-  | 'out_of_stock';
+  | 'out_of_stock'
+  | 'opening_balance';
 
 export interface InternalInventoryDashboardItem {
   storeInventoryId: string;
@@ -205,6 +206,19 @@ export interface InternalInventoryMutationResponse {
   success: boolean;
   item: InternalInventoryDashboardItem;
   adjustment: InternalInventoryAdjustmentRow;
+}
+
+export interface InternalInventoryCreateResponse {
+  success: boolean;
+  mode: 'created';
+  item: InternalInventoryDashboardItem;
+  adjustment: InternalInventoryAdjustmentRow | null;
+}
+
+export interface InternalInventoryArchiveResponse {
+  success: boolean;
+  mode: 'archived';
+  inventoryItemId: string;
 }
 
 export interface InternalMenuOptionGroup {
@@ -474,6 +488,39 @@ export async function updateInternalInventoryItem(params: {
     INTERNAL_INVENTORY_URL,
     { ...params, action: 'adjust_item' },
     'Could not update inventory.'
+  );
+}
+
+export async function createInternalInventoryItem(params: {
+  internalSessionToken: string;
+  roleKey: 'owner' | 'admin' | 'store';
+  scopeType: 'global' | 'store';
+  scopeStoreId: string | null;
+  storeId: string;
+  name: string;
+  category: string;
+  unit: string;
+  threshold: number;
+  initialQuantity?: number;
+}): Promise<{ data: InternalInventoryCreateResponse | null; error: string | null }> {
+  return postInternal<InternalInventoryCreateResponse>(
+    INTERNAL_INVENTORY_URL,
+    { ...params, action: 'create_item' },
+    'Could not create inventory item.'
+  );
+}
+
+export async function archiveInternalInventoryItem(params: {
+  internalSessionToken: string;
+  roleKey: 'owner' | 'admin' | 'store';
+  scopeType: 'global' | 'store';
+  scopeStoreId: string | null;
+  inventoryItemId: string;
+}): Promise<{ data: InternalInventoryArchiveResponse | null; error: string | null }> {
+  return postInternal<InternalInventoryArchiveResponse>(
+    INTERNAL_INVENTORY_URL,
+    { ...params, action: 'archive_item' },
+    'Could not archive inventory item.'
   );
 }
 

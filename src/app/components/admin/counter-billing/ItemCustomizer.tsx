@@ -29,13 +29,13 @@ export function ItemCustomizer({
   onAddToCart,
 }: ItemCustomizerProps) {
   return (
-    <section className="space-y-4 rounded-2xl border border-border bg-background p-4">
+    <section className="space-y-4 rounded-2xl border border-border bg-background p-4 shadow-[0_12px_28px_rgba(28,45,14,0.05)] transition-shadow duration-200">
       <div className="flex items-center justify-between gap-2">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.1em] text-foreground/55">Customize Item</p>
           <h3 className="text-base font-semibold text-foreground">{item.name}</h3>
         </div>
-        <button type="button" onClick={onBack} className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground/75">
+        <button type="button" onClick={onBack} className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground/75 transition-all duration-200 hover:-translate-y-0.5 hover:bg-background/70">
           Back to Items
         </button>
       </div>
@@ -54,7 +54,7 @@ export function ItemCustomizer({
                     key={ingredient.id}
                     type="button"
                     onClick={() => onToggleChoice(step, ingredient.id)}
-                    className={`rounded-lg border px-3 py-2 text-left text-xs font-medium ${selected ? 'border-primary bg-primary/10 text-foreground' : 'border-border text-foreground/75 hover:bg-muted'}`}
+                    className={`rounded-lg border px-3 py-2 text-left text-xs font-medium transition-all duration-200 ${selected ? 'border-primary bg-primary/10 text-foreground shadow-[0_8px_18px_rgba(45,80,22,0.08)]' : 'border-border text-foreground/75 hover:-translate-y-0.5 hover:bg-muted'}`}
                   >
                     <span className="block">{ingredient.name}</span>
                     <span className="mt-0.5 block text-[11px] text-foreground/55">
@@ -72,11 +72,11 @@ export function ItemCustomizer({
 
       <div className="flex items-center justify-between rounded-xl border border-border bg-muted/40 p-3">
         <div className="inline-flex items-center gap-2">
-          <button type="button" onClick={() => onQuantityChange(-1)} className="rounded-lg border border-border px-2.5 py-1 text-sm font-semibold">-</button>
+          <button type="button" onClick={() => onQuantityChange(-1)} className="rounded-lg border border-border px-2.5 py-1 text-sm font-semibold transition-all duration-200 hover:-translate-y-0.5 hover:bg-background/75">-</button>
           <span className="min-w-8 text-center text-sm font-semibold">{quantity}</span>
-          <button type="button" onClick={() => onQuantityChange(1)} className="rounded-lg border border-border px-2.5 py-1 text-sm font-semibold">+</button>
+          <button type="button" onClick={() => onQuantityChange(1)} className="rounded-lg border border-border px-2.5 py-1 text-sm font-semibold transition-all duration-200 hover:-translate-y-0.5 hover:bg-background/75">+</button>
         </div>
-        <button type="button" onClick={onAddToCart} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+        <button type="button" onClick={onAddToCart} className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition-all duration-200 hover:-translate-y-0.5 hover:brightness-105">
           {submitLabel} · Rs {totalPrice.toFixed(2)}
         </button>
       </div>

@@ -10,6 +10,7 @@ import { Footer } from './components/Footer';
 import { PrivacyPolicy } from './components/PrivacyPolicy';
 import { TermsOfUse } from './components/TermsOfUse';
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { ShoppingBag, ChevronUp, ChevronRight } from 'lucide-react';
 import { HomeQuickActions } from './components/HomeQuickActions';
 import { HomeTimeSuggestions } from './components/HomeTimeSuggestions';
@@ -250,8 +251,15 @@ function AppShell() {
       {!hideGlobalShell ? <Footer /> : null}
       {showFloatingCart ? (
         <>
+          <AnimatePresence>
           {isCartPanelOpen && draftCartLines.length > 0 ? (
-            <div className="fixed bottom-24 right-6 sm:bottom-28 sm:right-8 z-40 w-[min(92vw,360px)] rounded-[26px] border border-primary/18 bg-[linear-gradient(160deg,rgba(255,255,255,0.96),rgba(241,246,233,0.92))] p-4 shadow-[0_24px_58px_rgba(20,35,10,0.24)] backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, y: 10, scale: 0.985 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.992 }}
+              transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+              className="fixed bottom-24 right-6 z-40 w-[min(92vw,360px)] rounded-[26px] border border-primary/18 bg-[linear-gradient(160deg,rgba(255,255,255,0.96),rgba(241,246,233,0.92))] p-4 shadow-[0_24px_58px_rgba(20,35,10,0.24)] backdrop-blur-sm sm:bottom-28 sm:right-8"
+            >
               <div className="mb-3 flex items-start justify-between gap-3">
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-primary/65">Current bag</p>
@@ -260,7 +268,7 @@ function AppShell() {
                 <button
                   type="button"
                   onClick={() => setIsCartPanelOpen(false)}
-                  className="rounded-full border border-primary/16 bg-white px-2.5 py-1 text-xs font-medium text-foreground/70 hover:text-foreground"
+                  className="rounded-full border border-primary/16 bg-white px-2.5 py-1 text-xs font-medium text-foreground/70 transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#F7FAF3] hover:text-foreground"
                 >
                   Close
                 </button>
@@ -288,7 +296,7 @@ function AppShell() {
                     setIsCartPanelOpen(false);
                     navigate('/menu');
                   }}
-                  className="rounded-full border border-primary/18 bg-white py-2.5 text-sm font-medium text-foreground/75 hover:text-foreground"
+                  className="rounded-full border border-primary/18 bg-white py-2.5 text-sm font-medium text-foreground/75 transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#F7FAF3] hover:text-foreground"
                 >
                   Add More
                 </button>
@@ -298,14 +306,15 @@ function AppShell() {
                     setIsCartPanelOpen(false);
                     openBagDetails();
                   }}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-full bg-primary py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+                  className="inline-flex items-center justify-center gap-1.5 rounded-full bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary/90"
                 >
                   View Bag
                   <ChevronRight className="h-4 w-4" />
                 </button>
               </div>
-            </div>
+            </motion.div>
           ) : null}
+          </AnimatePresence>
 
           <button
             type="button"
@@ -329,10 +338,23 @@ function AppShell() {
         </>
       ) : null}
 
+      <AnimatePresence>
       {pendingGuestOrderClaims.length > 0 ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center">
-          <div className="absolute inset-0 bg-foreground/18 backdrop-blur-[2px]" aria-hidden="true" />
-          <div className="relative w-full max-w-md rounded-[28px] bg-[linear-gradient(160deg,rgba(255,255,255,0.98),rgba(241,246,236,0.96))] p-6 shadow-[0_24px_64px_rgba(20,35,10,0.18)]">
+        <motion.div
+          className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.18 }}
+        >
+          <motion.div className="absolute inset-0 bg-foreground/18 backdrop-blur-[2px]" aria-hidden="true" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} />
+          <motion.div
+            initial={{ opacity: 0, y: 12, scale: 0.985 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.992 }}
+            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+            className="relative w-full max-w-md rounded-[28px] bg-[linear-gradient(160deg,rgba(255,255,255,0.98),rgba(241,246,236,0.96))] p-6 shadow-[0_24px_64px_rgba(20,35,10,0.18)]"
+          >
             <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-primary/60">Previous Orders Found</p>
             <h2 className="mt-2 text-xl font-semibold tracking-tight">
               We found {pendingGuestOrderClaims.length} previous order{pendingGuestOrderClaims.length > 1 ? 's' : ''} placed with your details.
@@ -355,21 +377,22 @@ function AppShell() {
               <button
                 type="button"
                 onClick={claimPendingGuestOrders}
-                className="flex-1 rounded-full bg-primary py-3 text-sm font-semibold text-white transition-colors hover:bg-primary/90"
+                className="flex-1 rounded-full bg-primary py-3 text-sm font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary/90"
               >
                 Yes, link my orders
               </button>
               <button
                 type="button"
                 onClick={rejectPendingGuestOrderClaims}
-                className="flex-1 rounded-full border border-primary/16 py-3 text-sm font-medium text-foreground/70 transition-colors hover:text-foreground"
+                className="flex-1 rounded-full border border-primary/16 py-3 text-sm font-medium text-foreground/70 transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#F7FAF3] hover:text-foreground"
               >
                 No, this wasn't me
               </button>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       ) : null}
+      </AnimatePresence>
     </div>
   );
 }

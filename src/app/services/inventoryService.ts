@@ -1,7 +1,11 @@
 import {
+  archiveInternalInventoryItem,
+  createInternalInventoryItem,
   loadInternalInventoryDashboard,
   updateInternalInventoryItem,
   type InternalInventoryAdjustmentType,
+  type InternalInventoryArchiveResponse,
+  type InternalInventoryCreateResponse,
   type InternalInventoryDashboardResponse,
   type InternalInventoryMutationResponse,
 } from '../lib/internalOpsApi';
@@ -63,5 +67,47 @@ export const inventoryService = {
     }
 
     return data satisfies InternalInventoryMutationResponse;
+  },
+
+  async createInventoryItem(params: {
+    session: InternalAccessSession;
+    storeId: string;
+    name: string;
+    category: string;
+    unit: string;
+    threshold: number;
+    initialQuantity?: number;
+  }) {
+    const { data, error } = await createInternalInventoryItem({
+      ...sessionPayload(params.session),
+      storeId: params.storeId,
+      name: params.name,
+      category: params.category,
+      unit: params.unit,
+      threshold: params.threshold,
+      initialQuantity: params.initialQuantity,
+    });
+
+    if (error || !data?.success) {
+      throw new Error(error ?? 'Could not create inventory item.');
+    }
+
+    return data satisfies InternalInventoryCreateResponse;
+  },
+
+  async archiveInventoryItem(params: {
+    session: InternalAccessSession;
+    inventoryItemId: string;
+  }) {
+    const { data, error } = await archiveInternalInventoryItem({
+      ...sessionPayload(params.session),
+      inventoryItemId: params.inventoryItemId,
+    });
+
+    if (error || !data?.success) {
+      throw new Error(error ?? 'Could not archive inventory item.');
+    }
+
+    return data satisfies InternalInventoryArchiveResponse;
   },
 };

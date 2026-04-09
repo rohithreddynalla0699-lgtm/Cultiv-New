@@ -94,7 +94,7 @@ export function OrderCard({
           type="button"
           onClick={onOpenNotes}
           disabled={isMutating}
-          className="inline-flex items-center justify-center rounded-lg border border-border px-2.5 text-foreground/70 hover:bg-background/70 disabled:opacity-45"
+          className="inline-flex items-center justify-center rounded-lg border border-border px-2.5 text-foreground/70 transition-all duration-200 hover:-translate-y-0.5 hover:bg-background/70 hover:text-foreground disabled:opacity-45"
           aria-label="Open order notes"
         >
           <MessageSquareMore className="h-4 w-4" />

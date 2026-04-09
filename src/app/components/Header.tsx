@@ -118,7 +118,7 @@ export function Header() {
   }, [showUserMenu]);
 
   const navClassName = ({ isActive }: { isActive: boolean }) =>
-    `relative text-sm transition-colors ${isActive ? "text-foreground" : "text-foreground/70 hover:text-foreground"}`;
+    `relative text-sm transition-colors duration-200 ${isActive ? "text-foreground" : "text-foreground/70 hover:text-foreground"}`;
 
   const scrollToElementWithOffset = (element: HTMLElement, behavior: ScrollBehavior = 'smooth') => {
     const targetY = element.getBoundingClientRect().top + window.scrollY - HEADER_SCROLL_OFFSET;
@@ -162,7 +162,7 @@ export function Header() {
     setShowUserMenu(false);
   };
 
-  const rightUtilityClassName = "hidden xl:inline-flex w-[190px] items-center justify-between gap-2 rounded-2xl border border-primary/12 bg-white/88 px-3.5 py-2.5 text-sm font-medium text-foreground/72 transition-colors hover:border-primary/22 hover:text-foreground";
+  const rightUtilityClassName = "hidden xl:inline-flex w-[190px] items-center justify-between gap-2 rounded-2xl border border-primary/12 bg-white/88 px-3.5 py-2.5 text-sm font-medium text-foreground/72 shadow-[0_10px_24px_rgba(28,45,14,0.04)] transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/22 hover:bg-white hover:text-foreground hover:shadow-[0_14px_28px_rgba(28,45,14,0.08)]";
 
   const handleSelectStore = (storeId: string) => {
     if (setSelectedStoreId(storeId, stores)) {
@@ -221,7 +221,7 @@ export function Header() {
               </span>
             )}
           </NavLink>
-          <button type="button" onClick={() => jumpToHomeSection('journal')} className="text-sm text-foreground/72 transition-colors hover:text-foreground">
+          <button type="button" onClick={() => jumpToHomeSection('journal')} className="text-sm text-foreground/72 transition-colors duration-200 hover:text-foreground">
             <span className="relative inline-flex items-center gap-2 pb-1">
               Journal
               {location.pathname === '/' && activeHomeTab === 'journal' ? (
@@ -233,7 +233,7 @@ export function Header() {
               ) : null}
             </span>
           </button>
-          <button type="button" onClick={() => jumpToHomeSection('about')} className="text-sm text-foreground/72 transition-colors hover:text-foreground">
+          <button type="button" onClick={() => jumpToHomeSection('about')} className="text-sm text-foreground/72 transition-colors duration-200 hover:text-foreground">
             <span className="relative inline-flex items-center gap-2 pb-1">
               About
               {location.pathname === '/' && activeHomeTab === 'about' ? (

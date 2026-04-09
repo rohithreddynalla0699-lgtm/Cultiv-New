@@ -64,7 +64,7 @@ export function OrdersBoardHeader({
             value={activeStoreScope}
             onChange={(event) => onChangeStore(event.target.value)}
             disabled={!canSwitchStoreScope}
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-55"
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground transition-colors focus:border-primary/30 disabled:cursor-not-allowed disabled:opacity-55"
           >
             <option value="all">All Stores</option>
             {stores.filter((store) => store.isActive).map((store) => (
@@ -81,7 +81,7 @@ export function OrdersBoardHeader({
                 key={tab.value}
                 type="button"
                 onClick={() => onChangeOrderType(tab.value)}
-                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${orderType === tab.value ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground/70 hover:bg-muted/75'}`}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${orderType === tab.value ? 'bg-primary text-primary-foreground shadow-[0_10px_20px_rgba(45,80,22,0.14)]' : 'bg-muted text-foreground/70 hover:-translate-y-0.5 hover:bg-muted/75'}`}
               >
                 {tab.label}
               </button>
@@ -97,7 +97,7 @@ export function OrdersBoardHeader({
                 key={tab.value}
                 type="button"
                 onClick={() => onChangeDateFilter(tab.value)}
-                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${dateFilter === tab.value ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground/70 hover:bg-muted/75'}`}
+                className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-all duration-200 ${dateFilter === tab.value ? 'bg-primary text-primary-foreground shadow-[0_10px_20px_rgba(45,80,22,0.14)]' : 'bg-muted text-foreground/70 hover:-translate-y-0.5 hover:bg-muted/75'}`}
               >
                 {tab.label}
               </button>
@@ -108,7 +108,7 @@ export function OrdersBoardHeader({
               type="date"
               value={customDate}
               onChange={(event) => onChangeCustomDate(event.target.value)}
-              className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+              className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground transition-colors focus:border-primary/30"
             />
           ) : null}
         </div>
@@ -120,7 +120,7 @@ export function OrdersBoardHeader({
             value={searchQuery}
             onChange={(event) => onChangeSearchQuery(event.target.value)}
             placeholder="Order ID, customer, phone"
-            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+            className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground transition-colors focus:border-primary/30"
           />
         </div>
       </div>

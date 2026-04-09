@@ -50,6 +50,14 @@ interface AdminDashboardContextType {
   clockInEmployee: (employeeId: string) => void;
   clockOutEmployee: (employeeId: string) => void;
   refreshInventory: () => Promise<void>;
+  createInventoryItem: (input: {
+    name: string;
+    category: string;
+    unit: string;
+    threshold: number;
+    initialQuantity?: number;
+  }) => Promise<{ success: boolean; message: string }>;
+  archiveInventoryItem: (inventoryItemId: string) => Promise<{ success: boolean; message: string }>;
   addInventoryStock: (itemId: string, amount: number) => Promise<{ success: boolean; message: string }>;
   reduceInventoryStock: (itemId: string, amount: number) => Promise<{ success: boolean; message: string }>;
   setInventoryQuantity: (itemId: string, quantity: number) => Promise<{ success: boolean; message: string }>;
@@ -998,6 +1006,84 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     return applyInventoryMutation(itemId, { adjustmentType: 'add', amount }, 'Inventory updated.');
   };
 
+  const createInventoryItem = async (input: {
+    name: string;
+    category: string;
+    unit: string;
+    threshold: number;
+    initialQuantity?: number;
+  }) => {
+    if (!session) {
+      return { success: false, message: 'You need an active internal session to add inventory.' };
+    }
+
+    if (!activeStoreUuid) {
+      return { success: false, message: 'Select a specific store before adding an inventory item.' };
+    }
+
+    try {
+      const result = await inventoryService.createInventoryItem({
+        session,
+        storeId: activeStoreUuid,
+        name: input.name,
+        category: input.category,
+        unit: input.unit,
+        threshold: input.threshold,
+        initialQuantity: input.initialQuantity,
+      });
+
+      const nextItem = mapInventoryItem(result.item);
+      const nextHistoryItem = result.adjustment ? mapInventoryHistoryItem(result.adjustment) : null;
+
+      setInventory((previous) => {
+        const withoutDuplicate = previous.filter((item) => item.id !== nextItem.id);
+        return [...withoutDuplicate, nextItem].sort((left, right) => {
+          if (left.storeId !== right.storeId) {
+            return getStoreName(left.storeId).localeCompare(getStoreName(right.storeId));
+          }
+          if ((left.sortOrder ?? 0) !== (right.sortOrder ?? 0)) {
+            return (left.sortOrder ?? 0) - (right.sortOrder ?? 0);
+          }
+          return left.name.localeCompare(right.name);
+        });
+      });
+
+      if (nextHistoryItem) {
+        setInventoryHistory((previous) => [nextHistoryItem, ...previous.filter((item) => item.id !== nextHistoryItem.id)].slice(0, 20));
+      }
+
+      setInventoryError(null);
+      return { success: true, message: 'Inventory item created.' };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not create inventory item.';
+      console.error('Failed to create inventory item.', error);
+      setInventoryError(message);
+      return { success: false, message };
+    }
+  };
+
+  const archiveInventoryItem = async (inventoryItemId: string) => {
+    if (!session) {
+      return { success: false, message: 'You need an active internal session to archive inventory.' };
+    }
+
+    try {
+      await inventoryService.archiveInventoryItem({
+        session,
+        inventoryItemId,
+      });
+
+      setInventory((previous) => previous.filter((item) => item.inventoryItemId !== inventoryItemId));
+      setInventoryError(null);
+      return { success: true, message: 'Inventory item archived.' };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not archive inventory item.';
+      console.error('Failed to archive inventory item.', error);
+      setInventoryError(message);
+      return { success: false, message };
+    }
+  };
+
   const reduceInventoryStock = async (itemId: string, amount: number) => {
     if (amount <= 0) return { success: false, message: 'Use a value greater than 0.' };
     return applyInventoryMutation(itemId, { adjustmentType: 'reduce', amount }, 'Inventory updated.');
@@ -1059,6 +1145,8 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     clockInEmployee,
     clockOutEmployee,
     refreshInventory,
+    createInventoryItem,
+    archiveInventoryItem,
     addInventoryStock,
     reduceInventoryStock,
     setInventoryQuantity,

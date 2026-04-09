@@ -168,7 +168,7 @@ export function StoreShiftScreen() {
             <button
               type="button"
               onClick={() => void loadDashboard()}
-              className="mt-2 rounded-lg border border-[#8B2E2E]/25 bg-white/70 px-3 py-1.5 text-xs font-semibold text-[#8B2E2E]"
+              className="mt-2 rounded-lg border border-[#8B2E2E]/25 bg-white/70 px-3 py-1.5 text-xs font-semibold text-[#8B2E2E] transition-all duration-200 hover:-translate-y-0.5 hover:bg-white"
             >
               Retry
             </button>
@@ -202,7 +202,7 @@ export function StoreShiftScreen() {
                 data-testid={`store-shift-submit-${employee.employeeId}`}
                 onClick={() => void handleSubmit(employee)}
                 disabled={isSubmitting || isLoading}
-                  className={`mt-4 w-full rounded-2xl px-4 py-3 text-sm font-semibold text-white transition-all duration-150 hover:brightness-95 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 ${employee.status === 'on_shift' ? 'bg-[#B43A3A]' : 'bg-[#2D804B]'}`}
+                  className={`mt-4 w-full rounded-2xl px-4 py-3 text-sm font-semibold text-white transition-all duration-150 hover:-translate-y-0.5 hover:brightness-95 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 ${employee.status === 'on_shift' ? 'bg-[#B43A3A]' : 'bg-[#2D804B]'}`}
               >
                 {isSubmitting && activeSubmitEmployeeId === employee.employeeId
                   ? 'Submitting...'
@@ -246,7 +246,7 @@ export function StoreShiftScreen() {
                       ...previous,
                       [employee.employeeId]: !previous[employee.employeeId],
                     }))}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-foreground/55 transition-colors hover:text-foreground"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-foreground/55 transition-colors duration-200 hover:text-foreground"
                   >
                     {pinVisibility[employee.employeeId] ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>

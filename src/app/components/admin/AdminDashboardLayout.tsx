@@ -1,4 +1,5 @@
 import { BarChart3, ClipboardList, LayoutDashboard, LogOut, Package2, ReceiptIndianRupee, ScrollText, Store, Users } from 'lucide-react';
+import { motion } from 'framer-motion';
 import { NavLink, Navigate, Outlet } from 'react-router-dom';
 import { useLocation } from 'react-router-dom';
 import { useAdminDashboard } from '../../contexts/AdminDashboardContext';
@@ -48,7 +49,12 @@ export function AdminDashboardLayout() {
 
   return (
     <>
-      <div className="min-h-screen bg-[radial-gradient(circle_at_6%_10%,rgba(45,80,22,0.12),transparent_24%),radial-gradient(circle_at_94%_16%,rgba(126,153,108,0.16),transparent_28%),linear-gradient(160deg,#F1F4EC_0%,#F8F7F2_52%,#EEF3E8_100%)] p-4 md:p-5">
+      <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.28 }}
+      className="admin-ops-shell min-h-screen bg-[radial-gradient(circle_at_6%_10%,rgba(45,80,22,0.12),transparent_24%),radial-gradient(circle_at_94%_16%,rgba(126,153,108,0.16),transparent_28%),linear-gradient(160deg,#F1F4EC_0%,#F8F7F2_52%,#EEF3E8_100%)] p-4 md:p-5"
+      >
       <div className="grid min-h-[calc(100vh-2rem)] gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
         <aside className="rounded-[32px] border border-primary/12 bg-[linear-gradient(160deg,rgba(255,255,255,0.95),rgba(241,246,236,0.88))] p-4 shadow-[0_20px_58px_rgba(45,80,22,0.12)] lg:p-5">
           <div className="flex items-center gap-3 border-b border-primary/10 pb-4">
@@ -66,7 +72,7 @@ export function AdminDashboardLayout() {
                 <NavLink
                   key={item.to}
                   to={item.to}
-                  className={({ isActive }) => `flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all ${isActive ? 'bg-primary text-primary-foreground shadow-[0_12px_28px_rgba(45,80,22,0.22)]' : 'bg-white/80 text-foreground/72 hover:text-foreground hover:shadow-[0_8px_20px_rgba(45,80,22,0.08)]'}`}
+                  className={({ isActive }) => `flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all duration-200 ${isActive ? 'bg-primary text-primary-foreground shadow-[0_12px_28px_rgba(45,80,22,0.22)]' : 'bg-white/80 text-foreground/72 hover:-translate-y-0.5 hover:text-foreground hover:shadow-[0_8px_20px_rgba(45,80,22,0.08)]'}`}
                 >
                   <Icon className="h-4 w-4" />
                   {item.label}
@@ -100,7 +106,7 @@ export function AdminDashboardLayout() {
                   )}
                 </div>
 
-                <button data-testid="admin-signout" type="button" onClick={logoutInternalAccess} className="inline-flex h-[38px] items-center justify-center gap-2 rounded-xl border border-primary/14 bg-white/86 px-3.5 text-sm font-medium text-foreground/72">
+                <button data-testid="admin-signout" type="button" onClick={logoutInternalAccess} className="inline-flex h-[38px] items-center justify-center gap-2 rounded-xl border border-primary/14 bg-white/86 px-3.5 text-sm font-medium text-foreground/72 transition-all duration-200 hover:-translate-y-0.5 hover:bg-white hover:text-foreground hover:shadow-[0_10px_22px_rgba(45,80,22,0.08)]">
                   <LogOut className="h-4 w-4" />
                   Sign Out
                 </button>
@@ -111,7 +117,7 @@ export function AdminDashboardLayout() {
           <Outlet />
         </div>
       </div>
-    </div>
+    </motion.div>
     </>
   );
 }
