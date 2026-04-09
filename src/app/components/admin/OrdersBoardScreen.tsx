@@ -48,6 +48,10 @@ function normalizeScopeType(scopeType?: string): 'global' | 'store' {
   return scopeType === 'store' ? 'store' : 'global';
 }
 
+function isOrdersBoardRoute(pathname: string) {
+  return pathname.includes('/store/orders') || pathname.includes('/admin/orders');
+}
+
 function mapOrderTypeFilter(orderType: OrdersBoardOrderTypeFilter): InternalOrdersListFilters['orderType'] {
   if (orderType === 'all') return 'all';
   if (orderType === 'online') return 'online';
@@ -123,8 +127,8 @@ function mapInternalRowToBaseOrder(row: InternalOrdersListOrderRow): BaseOrder {
   return {
     id: row.order_id,
     orderNumber: row.order_id,
-    fullName: row.customer_name,
-    phone: row.customer_phone,
+    fullName: row.customer_name || 'Walk-in Guest',
+    phone: row.customer_phone ?? '',
     email: row.customer_email ?? '',
     status: row.order_status,
     orderType: row.order_type === 'walk_in' ? 'in_store' : row.order_type, // 'online' or 'in_store'
@@ -158,6 +162,7 @@ export function OrdersBoardScreen() {
     orderNotes,
     saveOrderNote,
     activeStoreScope,
+    activeStoreUuid,
     setActiveStoreScope,
     hasPermission,
     hasAnyPermission,
@@ -187,7 +192,7 @@ export function OrdersBoardScreen() {
 
   const inFlightRef = useRef(false);
   const loadOrders = useCallback(async () => {
-    if (!window.location.pathname.includes('/store/orders')) {
+    if (!isOrdersBoardRoute(window.location.pathname)) {
       return;
     }
     if (inFlightRef.current) return;
@@ -201,7 +206,7 @@ export function OrdersBoardScreen() {
       setIsLoadingOrders(true);
 
       // Always send {} for filters, never undefined
-      const filters = buildInternalFilters({ orderType, dateFilter, customDate, searchQuery }) || {};
+      const filters = buildInternalFilters({ orderType, dateFilter, customDate, searchQuery });
 
       const result = await listInternalOrders({
         internalSessionToken: session.internalSessionToken,
@@ -221,7 +226,9 @@ export function OrdersBoardScreen() {
         return;
       }
 
-      setInternalOrders(result.data.orders.map(mapInternalRowToBaseOrder));
+      const mappedOrders = result.data.orders.map(mapInternalRowToBaseOrder);
+
+      setInternalOrders(mappedOrders);
       setIsLoadingOrders(false);
     } finally {
       inFlightRef.current = false;
@@ -278,14 +285,14 @@ export function OrdersBoardScreen() {
         orders: mergedOrders,
         notesByOrderId: orderNotes,
         filters: {
-          storeId: session?.scopeStoreId ?? activeStoreScope,
+          storeId: activeStoreScope === 'all' ? 'all' : activeStoreUuid ?? 'all',
           orderType,
           dateFilter,
           customDate,
           searchQuery,
         },
       }),
-    [session?.scopeStoreId, activeStoreScope, customDate, dateFilter, mergedOrders, orderNotes, orderType, searchQuery],
+    [activeStoreScope, activeStoreUuid, customDate, dateFilter, mergedOrders, orderNotes, orderType, searchQuery],
   );
 
   const permissionsForBoard = useMemo(() => {

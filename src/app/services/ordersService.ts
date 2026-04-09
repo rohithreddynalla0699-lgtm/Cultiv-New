@@ -149,11 +149,17 @@ const groupByStatus = (orders: OrdersBoardOrder[]) => {
 };
 
 const applyFilters = (orders: OrdersBoardOrder[], filters: OrdersBoardFilters) => {
-  return orders
-    .filter((order) => filters.storeId === 'all' || order.storeId === filters.storeId)
-    .filter((order) => filters.orderType === 'all' || order.orderType === filters.orderType)
-    .filter((order) => isWithinSelectedDate(order.placedAt, filters.dateFilter, filters.customDate))
-    .filter((order) => matchesSearch(order, filters.searchQuery));
+  const afterStore = orders.filter((order) => filters.storeId === 'all' || order.storeId === filters.storeId);
+
+  const afterOrderType = afterStore.filter((order) => filters.orderType === 'all' || order.orderType === filters.orderType);
+
+  const afterDate = afterOrderType.filter((order) =>
+    isWithinSelectedDate(order.placedAt, filters.dateFilter, filters.customDate),
+  );
+
+  const afterSearch = afterDate.filter((order) => matchesSearch(order, filters.searchQuery));
+
+  return afterSearch;
 };
 
 export const ordersService = {
@@ -170,7 +176,7 @@ export const ordersService = {
         customerPhone: order.phone,
         itemsSummary: getOrderItemsSummary(order),
         totalAmount: order.total,
-        storeId: getOrderStoreId(order) || DEFAULT_ORDER_STORE_ID,
+        storeId: getOrderStoreId(order),
         sourceLabel: toSourceLabel(orderType),
         placedAt: order.createdAt,
         waitingMinutes: getWaitingMinutes(order.createdAt),

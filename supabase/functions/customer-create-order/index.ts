@@ -29,7 +29,7 @@ interface OrderInsertPayload {
   order_status: string;
   store_id: string;
   customer_name: string;
-  customer_phone: string;
+  customer_phone: string | null;
   customer_email: string | null;
   payment_method: string | null;
   notes: string | null;
@@ -102,6 +102,7 @@ const generateOrderNumber = async (supabase: any): Promise<string> => {
   return `${ORDER_NUMBER_PREFIX}${dateToken}${paddedSequence}`;
 };
 
+
 serve(async (req: any) => {
   try {
     if (req.method === "OPTIONS") {
@@ -116,19 +117,119 @@ serve(async (req: any) => {
     const order = body.order;
     const items = body.items ?? [];
 
+    // Log incoming payload shape (no secrets)
+    console.error('[customer-create-order] incoming payload', {
+      hasOrder: !!order,
+      hasItems: Array.isArray(items),
+      itemsCount: items.length,
+      orderKeys: order ? Object.keys(order) : null,
+    });
+
     if (!order) {
+      console.error('[customer-create-order] validation', {
+        branch: 'missing_order',
+        order_type: undefined,
+        source_channel: undefined,
+        order_status: undefined,
+        store_id: undefined,
+        customer_name: undefined,
+        customer_phone: undefined,
+        items_count: items.length,
+        order_payload: null,
+      });
       return jsonResponse({ success: false, message: "Could not place your order right now. Please try again." }, 400);
     }
 
     if (!order.order_type || !order.source_channel || !order.order_status || !order.store_id) {
+      console.error('[customer-create-order] validation', {
+        branch: 'missing_required_order_fields',
+        order_type: order.order_type,
+        source_channel: order.source_channel,
+        order_status: order.order_status,
+        store_id: order.store_id,
+        customer_name: order.customer_name,
+        customer_phone: order.customer_phone,
+        items_count: items.length,
+        order_payload: {
+          order_type: order.order_type,
+          source_channel: order.source_channel,
+          order_status: order.order_status,
+          store_id: order.store_id,
+          customer_name: order.customer_name,
+          customer_phone: order.customer_phone,
+        },
+      });
       return jsonResponse({ success: false, message: "Could not place your order right now. Please try again." }, 400);
     }
 
-    if (!order.customer_name || !order.customer_phone) {
+    const isWalkInOrder =
+      order.order_type === "walk_in"
+      || order.source_channel === "walk_in"
+      || order.source_channel === "walk-in";
+
+    if (!order.customer_name) {
+      console.error('[customer-create-order] validation', {
+        branch: 'missing_customer_name',
+        order_type: order.order_type,
+        source_channel: order.source_channel,
+        order_status: order.order_status,
+        store_id: order.store_id,
+        customer_name: order.customer_name,
+        customer_phone: order.customer_phone,
+        items_count: items.length,
+        order_payload: {
+          order_type: order.order_type,
+          source_channel: order.source_channel,
+          order_status: order.order_status,
+          store_id: order.store_id,
+          customer_name: order.customer_name,
+          customer_phone: order.customer_phone,
+        },
+      });
+      return jsonResponse({ success: false, message: "Could not place your order right now. Please try again." }, 400);
+    }
+
+    if (!isWalkInOrder && !order.customer_phone) {
+      console.error('[customer-create-order] validation', {
+        branch: 'missing_customer_phone_non_walkin',
+        order_type: order.order_type,
+        source_channel: order.source_channel,
+        order_status: order.order_status,
+        store_id: order.store_id,
+        customer_name: order.customer_name,
+        customer_phone: order.customer_phone,
+        items_count: items.length,
+        order_payload: {
+          order_type: order.order_type,
+          source_channel: order.source_channel,
+          order_status: order.order_status,
+          store_id: order.store_id,
+          customer_name: order.customer_name,
+          customer_phone: order.customer_phone,
+        },
+      });
       return jsonResponse({ success: false, message: "Could not place your order right now. Please try again." }, 400);
     }
 
     if (!items.length) {
+      console.error('[customer-create-order] validation', {
+        branch: 'missing_items',
+        order_type: order.order_type,
+        source_channel: order.source_channel,
+        order_status: order.order_status,
+        store_id: order.store_id,
+        customer_name: order.customer_name,
+        customer_phone: order.customer_phone,
+        items_count: items.length,
+        order_payload: {
+          order_type: order.order_type,
+          source_channel: order.source_channel,
+          order_status: order.order_status,
+          store_id: order.store_id,
+          customer_name: order.customer_name,
+          customer_phone: order.customer_phone,
+        },
+      });
       return jsonResponse({ success: false, message: "Could not place your order right now. Please try again." }, 400);
     }
 
@@ -184,7 +285,7 @@ serve(async (req: any) => {
       console.error("[customer-create-order] order insert failed", orderInsertError);
       return jsonResponse({
         success: false,
-        message: "Could not place your order right now. Please try again.",
+        message: orderInsertError?.message || "Could not place your order right now. Please try again.",
       }, 500);
     }
 
@@ -268,7 +369,7 @@ serve(async (req: any) => {
 
       return jsonResponse({
         success: false,
-        message: "Could not place your order right now. Please try again.",
+        message: err instanceof Error ? err.message : "Could not place your order right now. Please try again.",
       }, 500);
     }
 
@@ -282,7 +383,7 @@ serve(async (req: any) => {
     console.error("[customer-create-order] unexpected error", err);
     return jsonResponse({
       success: false,
-      message: "Could not place your order right now. Please try again.",
+      message: err instanceof Error ? err.message : "Could not place your order right now. Please try again.",
     }, 500);
   }
 });

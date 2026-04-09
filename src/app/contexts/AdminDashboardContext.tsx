@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { ADMIN_STORE_ACCESS_PIN_BY_ID, DEFAULT_ORDER_STORE_ID } from '../constants/admin';
-import { CUSTOMER_STORE_METADATA } from '../data/storeLocator';
+import { CUSTOMER_STORE_METADATA, loadStores, type StoreLocatorStore } from '../data/storeLocator';
 import { INVENTORY_MASTER_LIST } from '../constants/inventoryCatalog';
 import { loginInternal } from '../lib/internalOpsApi';
 import type {
@@ -32,6 +32,7 @@ interface AdminDashboardContextType {
   isStoreScoped: () => boolean;
   canAccessStore: (storeId: string) => boolean;
   activeStoreScope: StoreScope;
+  activeStoreUuid: string | null;
   activeStore: StoreRecord | null;
   setActiveStoreScope: (scope: StoreScope) => void;
   loginAsOwner: (pin: string) => Promise<{ success: boolean; message: string }>;
@@ -600,11 +601,30 @@ interface AdminDashboardProviderProps {
 
 export function AdminDashboardProvider({ children }: AdminDashboardProviderProps) {
   const [stores, setStores] = useState<StoreRecord[]>(() => normalizeStores(readStorage(STORAGE_KEYS.stores, seedStores)));
+  const [canonicalStores, setCanonicalStores] = useState<StoreLocatorStore[]>([]);
   const [employees, setEmployees] = useState<EmployeeRecord[]>(() => normalizeEmployees(readStorage(STORAGE_KEYS.employees, seedEmployees)));
   const [inventory, setInventory] = useState<InventoryItem[]>(() => normalizeInventory(readStorage(STORAGE_KEYS.inventory, seedInventory)));
   const [orderNotes, setOrderNotes] = useState<AdminOrderNoteMap>(() => readStorage(STORAGE_KEYS.orderNotes, {}));
   const [storedScope, setStoredScope] = useState<StoreScope>(() => readStorage(STORAGE_KEYS.activeStoreScope, 'all'));
   const [session, setSession] = useState<InternalAccessSession | null>(() => normalizeSession(readStorage(STORAGE_KEYS.session, null), seedStores));
+
+  useEffect(() => {
+    let isActive = true;
+
+    void loadStores()
+      .then((loadedStores) => {
+        if (!isActive) return;
+        setCanonicalStores(loadedStores);
+      })
+      .catch(() => {
+        if (!isActive) return;
+        setCanonicalStores([]);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   useEffect(() => {
     const hasResetApplied = readStorage(STORAGE_KEYS.inventoryResetApplied, false);
@@ -768,7 +788,29 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     return storedScope === storeId;
   };
 
+  const localStoreIdToUuid = useMemo(() => {
+    const localStoreIds = new Set(stores.map((store) => store.id));
+    const codeToUuid = canonicalStores.reduce<Record<string, string>>((accumulator, store) => {
+      const normalizedCode = normalizeStoreCode(store.code);
+      if (!normalizedCode || localStoreIds.has(store.id)) {
+        return accumulator;
+      }
+      accumulator[normalizedCode] = store.id;
+      return accumulator;
+    }, {});
+
+    return stores.reduce<Record<string, string>>((accumulator, store) => {
+      const canonicalStoreId = codeToUuid[normalizeStoreCode(store.code)];
+      if (canonicalStoreId) {
+        accumulator[store.id] = canonicalStoreId;
+      }
+      return accumulator;
+    }, {});
+  }, [canonicalStores, stores]);
+
   const activeStoreScope = storedScope;
+  const activeStoreUuid = session?.scopeStoreId
+    ?? (activeStoreScope === 'all' ? null : localStoreIdToUuid[activeStoreScope] ?? null);
   const activeStore = activeStoreScope === 'all' ? null : stores.find((store) => store.id === activeStoreScope) ?? null;
 
   const matchesScope = (storeId: string) => activeStoreScope === 'all' || storeId === activeStoreScope;
@@ -996,6 +1038,7 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     isStoreScoped,
     canAccessStore,
     activeStoreScope,
+    activeStoreUuid,
     activeStore,
     setActiveStoreScope,
     loginAsOwner,

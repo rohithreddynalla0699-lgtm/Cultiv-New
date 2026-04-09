@@ -1,13 +1,16 @@
 // Fetch a single order by orderId from Supabase/internal API
-import type { InternalOrdersSessionPayload } from './orderRepository';
 import { listInternalOrders } from '../lib/internalOpsApi';
+
+function isInternalOrdersRoute(pathname: string) {
+  return pathname.includes('/store/') || pathname.includes('/admin/');
+}
 
 /**
  * Fetch a single order by orderId from Supabase/internal API.
  * Returns the mapped Order or undefined if not found.
  */
 export async function getOrderById(orderId: string, sessionPayload: InternalOrdersSessionPayload): Promise<Order | undefined> {
-  if (!window.location.pathname.includes('/store/orders')) {
+  if (!isInternalOrdersRoute(window.location.pathname)) {
     return undefined;
   }
   const { data, error } = await listInternalOrders({
@@ -54,8 +57,8 @@ export async function getOrderById(orderId: string, sessionPayload: InternalOrde
     total: row.total_amount,
     status: toUiStatus(row.order_status),
     createdAt: row.created_at,
-    phone: row.customer_phone,
-    fullName: row.customer_name,
+    phone: row.customer_phone ?? '',
+    fullName: row.customer_name || 'Walk-in Guest',
     email: row.customer_email ?? '',
     source: row.source_channel,
     paymentMethod: row.payment_method ?? undefined,
@@ -126,7 +129,7 @@ function toUiOrderType(orderType: InternalOrdersListOrderRow['order_type']): 'pi
 export async function fetchOperationalOrdersFromSupabase(
   sessionPayload: InternalOrdersSessionPayload,
 ): Promise<Order[]> {
-  if (!window.location.pathname.includes('/store/orders')) {
+  if (!isInternalOrdersRoute(window.location.pathname)) {
     return [];
   }
   const { data, error } = await listInternalOrders(sessionPayload);
@@ -177,8 +180,8 @@ export async function fetchOperationalOrdersFromSupabase(
       total: row.total_amount,
       status: toUiStatus(row.order_status),
       createdAt: row.created_at,
-      phone: row.customer_phone,
-      fullName: row.customer_name,
+      phone: row.customer_phone ?? '',
+      fullName: row.customer_name || 'Walk-in Guest',
       email: row.customer_email ?? '',
       source: row.source_channel,
       paymentMethod: row.payment_method ?? undefined,

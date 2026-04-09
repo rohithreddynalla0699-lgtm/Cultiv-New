@@ -26,6 +26,7 @@ import type {
   WalkInLinkInput,
 } from '../types/platform';
 import { createEmptyLoyaltyProfile, type LoyaltyBatchSummary, type LoyaltySummary } from '../types/loyalty';
+import type { PosCustomerLookupResult } from '../types/pos';
 import { setDraftCartScope } from '../data/cartDraft';
 import { resetShoppingSessionStorage } from '../data/shoppingSession';
 import { BOWL_BUILDER_STEPS, BREAKFAST_CUSTOMIZE_STEPS } from '../data/menuData';
@@ -95,6 +96,7 @@ interface AuthContextType {
   createCheckoutPaymentIntent: (input: PlaceOrderInput) => Promise<CheckoutPaymentIntent>;
   confirmCheckoutPayment: (input: ConfirmCheckoutPaymentInput) => Promise<CheckoutPaymentResult>;
   createCounterWalkInOrder: (input: CreateCounterWalkInOrderInput) => Promise<Order>;
+  lookupPosCustomerByPhone: (phone: string) => Promise<PosCustomerLookupResult | null>;
   linkWalkInOrder: (input: WalkInLinkInput) => Promise<AuthActionResult>;
   redeemReward: (offerId: string) => Promise<AuthActionResult>;
   updateProfile: (updates: Partial<Pick<User, 'fullName'>> & { preferences?: Partial<UserPreferences> }) => Promise<AuthActionResult>;
@@ -439,18 +441,38 @@ interface PersistOrderResult {
 }
 
 const buildSupabaseOrderPayload = (order: Order) => {
-  const sourceChannel: SupabaseSourceChannel = order.source as SupabaseSourceChannel;
+  const normalizedSource = String(order.source ?? '').trim().toLowerCase();
+
+const sourceChannel: SupabaseSourceChannel =
+  normalizedSource === 'walk_in' || normalizedSource === 'walk-in'
+    ? 'walk_in'
+    : normalizedSource === 'phone'
+      ? 'phone'
+      : 'app';
+
+const isWalkInOrder = order.orderType === 'walk_in' || sourceChannel === 'walk_in';
+  const normalizedStoreId = order.storeId?.trim() || '';
+  if (!normalizedStoreId) {
+    throw new Error('Store is required before persisting an order.');
+  }
+  const normalizedCustomerName = order.fullName.trim() || 'Walk-in Guest';
+  const normalizedCustomerPhoneValue = order.phone.trim();
+  const normalizedCustomerPhone = isWalkInOrder
+    ? normalizedCustomerPhoneValue
+    : normalizedCustomerPhoneValue || null;
+  const normalizedCustomerEmail = order.email.trim() || null;
+
   return {
     order: {
       customer_id: order.customerId ?? null,
-      user_id: null,
+      user_id: order.userId ?? null,
       order_type: resolveSupabaseOrderType(order.orderType as 'pickup' | 'walk_in', sourceChannel),
       source_channel: sourceChannel,
       order_status: order.status,
-      store_id: order.storeId ?? DEFAULT_ORDER_STORE_ID,
-      customer_name: order.fullName,
-      customer_phone: order.phone,
-      customer_email: order.email,
+      store_id: normalizedStoreId,
+      customer_name: normalizedCustomerName,
+      customer_phone: normalizedCustomerPhone,
+      customer_email: normalizedCustomerEmail,
       payment_method: order.paymentMethod ?? null,
       notes: null,
       subtotal_amount: Number(order.subtotal.toFixed(2)),
@@ -546,7 +568,6 @@ const invokeConfirmCheckoutPayment = async (input: ConfirmCheckoutPaymentInput):
 const persistOrderToSupabase = async (order: Order): Promise<PersistOrderResult> => {
   try {
     const payload = buildSupabaseOrderPayload(order);
-
     const { data, error } = await supabase.functions.invoke('customer-create-order', {
       body: payload,
     });
@@ -1089,8 +1110,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           total: Number(row.total_amount),
           status: row.order_status as OrderStatus,
           createdAt: row.created_at,
-          phone: row.customer_phone,
-          fullName: row.customer_name,
+          phone: row.customer_phone ?? '',
+          fullName: row.customer_name || 'Walk-in Guest',
           email: row.customer_email ?? '',
           source: row.source_channel,
           paymentMethod: row.payment_method ?? undefined,
@@ -1109,7 +1130,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const refreshLoyalty = useCallback(async () => {
   if (!customerSessionToken) {
-    console.log('refreshLoyalty: no customerSessionToken');
     setLoyaltySummary(null);
     return;
   }
@@ -1121,8 +1141,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     customerSessionToken,
   },
 });
-
-    console.log('loyalty-summary result', { data, error });
 
     if (error || !data) {
       throw new Error(error?.message || 'Failed to fetch loyalty summary');
@@ -1746,6 +1764,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const createCounterWalkInOrder = async (input: CreateCounterWalkInOrderInput): Promise<Order> => {
   const normalizedStoreId = input.storeId.trim();
+  const linkedUserId = input.linkedUserId?.trim() || undefined;
+  const linkedCustomerId = input.linkedCustomerId?.trim() || null;
 
   if (!normalizedStoreId) {
     throw new Error('Store is required for walk-in billing.');
@@ -1763,15 +1783,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     throw new Error('Invalid item details in counter billing cart.');
   }
 
-  const normalizedPhoneValue = normalizePhone(input.phone);
-  if (normalizedPhoneValue.length !== 10) {
-    throw new Error('Enter a valid 10-digit phone number.');
+  const normalizedPhoneValue = normalizePhone(input.phone ?? '');
+  if (input.phone?.trim() && normalizedPhoneValue.length !== 10) {
+    throw new Error('Enter a valid 10-digit phone number or skip customer details.');
   }
   if (input.tipPercentage < 0 || input.tipAmount < 0) {
     throw new Error('Tip details are invalid.');
   }
 
-  const displayName = input.fullName?.trim() || 'Walk-in Customer';
+  const normalizedEmailValue = input.email?.trim() || '';
+  const displayName = input.fullName?.trim() || 'Walk-in Guest';
   const createdAt = new Date().toISOString();
   const orderId = createId('walkin');
 
@@ -1795,6 +1816,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const newOrder: Order = {
     id: orderId,
+    userId: linkedUserId,
+    customerId: linkedCustomerId,
     storeId: normalizedStoreId,
     category: items[0]?.category ?? 'Counter Billing',
     items,
@@ -1807,7 +1830,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     createdAt,
     phone: normalizedPhoneValue,
     fullName: displayName,
-    email: `walkin-${normalizedPhoneValue}@cultiv.local`,
+    email: normalizedEmailValue,
     source: 'walk_in',
     paymentMethod: input.paymentMethod,
     tipPercentage: input.tipPercentage,
@@ -1829,11 +1852,33 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setSupabaseReadDegraded(false);
     setSupabaseRefreshTick((value) => value + 1);
     return syncedOrder;
-  } catch {
+  } catch (error) {
     setSupabaseReadDegraded(true);
-    throw new Error('Could not create counter billing order right now. Please try again.');
+    throw error instanceof Error
+      ? error
+      : new Error('Could not create counter billing order right now. Please try again.');
   }
 };
+
+  const lookupPosCustomerByPhone = async (phone: string): Promise<PosCustomerLookupResult | null> => {
+    const normalizedPhoneValue = normalizePhone(phone);
+    if (normalizedPhoneValue.length !== 10) {
+      throw new Error('Enter a valid 10-digit phone number to search.');
+    }
+
+    const matchedUser = users.find((entry) => normalizePhone(entry.phone) === normalizedPhoneValue);
+    if (!matchedUser) {
+      return null;
+    }
+
+    return {
+      userId: matchedUser.id,
+      customerId: matchedUser.id === currentUserId ? (customerAccount?.id ?? null) : null,
+      fullName: matchedUser.fullName,
+      phone: normalizedPhoneValue,
+      email: normalizeEmail(matchedUser.email) || undefined,
+    };
+  };
 
   const linkWalkInOrder = async ({ phone, reference }: WalkInLinkInput): Promise<AuthActionResult> => {
     if (!userRecord) {
@@ -1863,6 +1908,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       };
     }
 
+    const internalSession = readStorage<InternalAccessSessionSnapshot | null>(ADMIN_ACCESS_SESSION_STORAGE_KEY, null);
+    const canonicalStoreId = internalSession?.scopeStoreId?.trim() || '';
+    if (!canonicalStoreId) {
+      return {
+        success: false,
+        message: 'Select a store before linking a walk-in order.',
+        userExists: true,
+      };
+    }
+
     const orderId = createId('walkin');
     const createdAt = new Date().toISOString();
     const subtotal = 189;
@@ -1873,7 +1928,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       id: orderId,
       userId: candidate.id,
       customerId: customerAccount?.id ?? null,
-      storeId: DEFAULT_ORDER_STORE_ID,
+      storeId: canonicalStoreId,
       category: 'Walk-In Bowl',
       items: [
         {
@@ -2325,6 +2380,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     createCheckoutPaymentIntent,
     confirmCheckoutPayment,
     createCounterWalkInOrder,
+    lookupPosCustomerByPhone,
     linkWalkInOrder,
     redeemReward,
     updateProfile,

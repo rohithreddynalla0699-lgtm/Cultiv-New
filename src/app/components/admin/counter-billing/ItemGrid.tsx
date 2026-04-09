@@ -12,14 +12,14 @@ interface ItemGridProps {
 export function ItemGrid({ items, unavailableItemIds, onAdd, onCustomize }: ItemGridProps) {
   if (items.length === 0) {
     return (
-      <div className="rounded-xl border border-dashed border-border bg-background p-6 text-center text-sm text-foreground/60">
+      <div className="rounded-[18px] border border-dashed border-border bg-background p-5 text-center text-sm text-foreground/60">
         No items found in this category.
       </div>
     );
   }
 
   return (
-    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+    <div className="grid gap-2.5 md:grid-cols-2 xl:grid-cols-3">
       {items.map((item) => (
         <ItemCard
           key={item.id}

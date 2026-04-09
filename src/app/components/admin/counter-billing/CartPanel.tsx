@@ -1,34 +1,26 @@
+import { ArrowRight, ShoppingBag } from 'lucide-react';
 import { CartItemRow } from './CartItemRow';
-import type { CounterPaymentMethod } from '../../../types/platform';
 import type { PosCartLine } from '../../../types/pos';
 
 type TipOption = 'none' | '5' | '10' | '15' | 'custom';
 
 interface CartPanelProps {
+  storeName: string;
   cartLines: PosCartLine[];
   subtotal: number;
+  discountAmount: number;
   taxAmount: number;
   tipAmount: number;
   total: number;
-  selectedPaymentMethod: CounterPaymentMethod | null;
-  customerPhone: string;
-  customerName: string;
-  phoneSkipped: boolean;
   selectedTipOption: TipOption;
   customTipInput: string;
-  isSubmitting: boolean;
-  canSubmit: boolean;
   onSelectTipOption: (nextTip: TipOption) => void;
   onSetCustomTipInput: (value: string) => void;
-  onPhoneChange: (nextValue: string) => void;
-  onNameChange: (nextValue: string) => void;
-  onToggleSkipPhone: () => void;
-  onSelectPaymentMethod: (method: CounterPaymentMethod) => void;
   onIncrementLine: (lineId: string) => void;
   onDecrementLine: (lineId: string) => void;
   onEditLine: (lineId: string) => void;
   onRemoveLine: (lineId: string) => void;
-  onCharge: () => void;
+  onContinue: () => void;
 }
 
 const TIP_OPTIONS: Array<{ value: TipOption; label: string }> = [
@@ -38,48 +30,50 @@ const TIP_OPTIONS: Array<{ value: TipOption; label: string }> = [
   { value: '15', label: '15%' },
   { value: 'custom', label: 'Custom' },
 ];
-const PAYMENT_OPTIONS: CounterPaymentMethod[] = ['cash', 'upi', 'card'];
 
 export function CartPanel({
+  storeName,
   cartLines,
   subtotal,
+  discountAmount,
   taxAmount,
   tipAmount,
   total,
-  selectedPaymentMethod,
-  customerPhone,
-  customerName,
-  phoneSkipped,
   selectedTipOption,
   customTipInput,
-  isSubmitting,
-  canSubmit,
   onSelectTipOption,
   onSetCustomTipInput,
-  onPhoneChange,
-  onNameChange,
-  onToggleSkipPhone,
-  onSelectPaymentMethod,
   onIncrementLine,
   onDecrementLine,
   onEditLine,
   onRemoveLine,
-  onCharge,
+  onContinue,
 }: CartPanelProps) {
+  const itemCount = cartLines.reduce((sum, line) => sum + line.quantity, 0);
+  const isEmpty = cartLines.length === 0;
+
   return (
-    <section className="flex h-full flex-col rounded-2xl border border-border bg-background">
-      <div className="border-b border-border px-4 py-3">
-        <h3 className="text-base font-semibold text-foreground">Cart & Payment</h3>
+    <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-[22px] border border-[#E5EBDD] bg-[linear-gradient(180deg,#FFFFFF_0%,#FBFCF8_100%)] shadow-[0_12px_28px_rgba(31,46,18,0.08)]">
+      <div className="border-b border-[#EEF2E8] px-3 py-1.5">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-primary/60">
+          Cart
+        </p>
+        <p className="mt-0.5 text-[11px] font-medium text-[#667085]">
+          {storeName} · {itemCount} item{itemCount === 1 ? '' : 's'}
+        </p>
       </div>
 
-      <div className="flex-1 space-y-3 overflow-y-auto p-4">
-        <div className="space-y-2">
-          {cartLines.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-border bg-muted/35 px-3 py-4 text-center text-sm text-foreground/55">
-              Cart is empty.
+      <div className="min-h-0 flex-1 overflow-y-auto px-3 py-1.5">
+        {isEmpty ? (
+          <div className="flex min-h-[220px] flex-col items-center justify-center rounded-[18px] border border-dashed border-[#D9E2CD] bg-[#F7F9F4] px-4 text-center">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/8">
+              <ShoppingBag className="h-4.5 w-4.5 text-primary" />
             </div>
-          ) : (
-            cartLines.map((line) => (
+            <h4 className="mt-2.5 text-[15px] font-semibold text-[#1F2719]">Cart is empty</h4>
+          </div>
+        ) : (
+          <div className="space-y-1">
+            {cartLines.map((line) => (
               <CartItemRow
                 key={line.id}
                 line={line}
@@ -88,107 +82,82 @@ export function CartPanel({
                 onDecrement={() => onDecrementLine(line.id)}
                 onRemove={() => onRemoveLine(line.id)}
               />
-            ))
-          )}
-        </div>
-
-        <div className="rounded-lg border border-border bg-muted/30 p-3">
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-foreground/70">Subtotal</span>
-            <span className="font-semibold text-foreground">Rs {subtotal.toFixed(2)}</span>
+            ))}
           </div>
+        )}
+      </div>
 
-          <div className="mt-2 flex items-center justify-between text-sm">
-            <span className="text-foreground/70">Tax</span>
-            <span className="font-semibold text-foreground">Rs {taxAmount.toFixed(2)}</span>
-          </div>
-
-          <div className="mt-2">
-            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-foreground/55">Tip</p>
-            <div className="mt-1 flex flex-wrap gap-2">
-              {TIP_OPTIONS.map((tip) => (
-                <button
-                  key={tip.value}
-                  type="button"
-                  onClick={() => onSelectTipOption(tip.value)}
-                  className={`rounded-full px-2.5 py-1 text-xs font-semibold ${selectedTipOption === tip.value ? 'bg-primary text-primary-foreground' : 'border border-border text-foreground/70'}`}
-                >
-                  {tip.label}
-                </button>
-              ))}
-            </div>
-            {selectedTipOption === 'custom' ? (
-              <input
-                type="number"
-                min="0"
-                step="0.01"
-                value={customTipInput}
-                onChange={(event) => onSetCustomTipInput(event.target.value)}
-                placeholder="Enter custom tip"
-                className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-              />
-            ) : null}
-          </div>
-
-          <div className="mt-2 flex items-center justify-between text-sm">
-            <span className="text-foreground/70">Tip amount</span>
-            <span className="font-semibold text-foreground">Rs {tipAmount.toFixed(2)}</span>
-          </div>
-
-          <div className="mt-2 flex items-center justify-between border-t border-border pt-2 text-base font-semibold text-foreground">
-            <span>Total</span>
-            <span>Rs {total.toFixed(2)}</span>
-          </div>
-        </div>
-
-        <div className="rounded-lg border border-border p-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-foreground/55">Customer</p>
-          <input
-            type="tel"
-            value={customerPhone}
-            onChange={(event) => onPhoneChange(event.target.value)}
-            placeholder="Customer phone"
-            className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-          />
-          <input
-            type="text"
-            value={customerName}
-            onChange={(event) => onNameChange(event.target.value)}
-            placeholder="Customer name (optional)"
-            className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-          />
-          <button type="button" onClick={onToggleSkipPhone} className="mt-2 text-xs font-semibold text-foreground/70 underline">
-            {phoneSkipped ? 'Use customer phone capture' : 'Guest / Skip'}
-          </button>
-        </div>
-
-        <div>
-          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-foreground/55">Payment</p>
-          <div className="grid grid-cols-3 gap-2">
-            {PAYMENT_OPTIONS.map((method) => (
+      <div className="border-t border-[#EEF2E8] bg-white/92 px-3 py-1.5 backdrop-blur">
+        <div className="mb-1.5 rounded-[16px] border border-[#E7EDE0] bg-[#F8FAF5] p-1.5">
+          <div className="mb-0.5 flex flex-wrap gap-1">
+            {TIP_OPTIONS.map((tip) => (
               <button
-                key={method}
+                key={tip.value}
                 type="button"
-                onClick={() => onSelectPaymentMethod(method)}
-                className={`rounded-lg px-3 py-3 text-sm font-semibold uppercase ${selectedPaymentMethod === method ? 'bg-primary text-primary-foreground' : 'border border-border text-foreground/75'}`}
+                onClick={() => onSelectTipOption(tip.value)}
+                className={[
+                  'min-h-[24px] rounded-full px-2 text-[9px] font-semibold transition-colors',
+                  selectedTipOption === tip.value
+                    ? 'bg-primary text-primary-foreground shadow-[0_8px_18px_rgba(45,80,22,0.18)]'
+                    : 'border border-[#D9E2CD] bg-white text-[#344054] hover:border-primary/30 hover:bg-primary/5',
+                ].join(' ')}
               >
-                {method}
+                {tip.label}
               </button>
             ))}
           </div>
-        </div>
-      </div>
 
-      <div className="border-t border-border p-4">
+          {selectedTipOption === 'custom' ? (
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={customTipInput}
+              onChange={(event) => onSetCustomTipInput(event.target.value)}
+              placeholder="Custom tip"
+              className="mb-1 min-h-[30px] w-full rounded-2xl border border-[#D9E2CD] bg-[#FCFDF9] px-3 text-[11px] text-[#1F2719] outline-none transition focus:border-primary/40"
+            />
+          ) : null}
+
+          <SummaryRow label="Subtotal" value={subtotal} />
+          <SummaryRow label="Discount" value={discountAmount} dim />
+          <SummaryRow label="GST" value={taxAmount} />
+          {tipAmount > 0 ? <SummaryRow label="Tip" value={tipAmount} /> : null}
+          <div className="mt-1 flex items-center justify-between border-t border-[#E1E7D9] pt-1">
+            <span className="text-[13px] font-semibold text-[#1F2719]">Total</span>
+            <span className="text-[17px] font-semibold tracking-[-0.03em] text-[#1F2719]">
+              Rs {total.toFixed(2)}
+            </span>
+          </div>
+        </div>
+
         <button
           type="button"
-          disabled={!canSubmit || isSubmitting}
-          onClick={onCharge}
-          className="w-full rounded-xl bg-primary px-4 py-3 text-base font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-45"
+          onClick={onContinue}
+          disabled={isEmpty}
+          className="flex min-h-[36px] w-full items-center justify-center gap-2 rounded-full bg-primary px-4 text-[12px] font-semibold text-primary-foreground shadow-[0_12px_24px_rgba(45,80,22,0.22)] transition hover:translate-y-[-1px] disabled:cursor-not-allowed disabled:opacity-45"
         >
-          {isSubmitting ? 'Processing...' : `Charge Rs ${total.toFixed(2)}`}
+          Continue to Payment
+          <ArrowRight className="h-4 w-4" />
         </button>
       </div>
     </section>
+  );
+}
+
+function SummaryRow({
+  label,
+  value,
+  dim = false,
+}: {
+  label: string;
+  value: number;
+  dim?: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between py-0.5 text-[10px]">
+      <span className="text-[#667085]">{label}</span>
+      <span className={`font-semibold ${dim ? 'text-[#667085]' : 'text-[#1F2719]'}`}>Rs {value.toFixed(2)}</span>
+    </div>
   );
 }

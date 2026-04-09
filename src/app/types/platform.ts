@@ -192,7 +192,10 @@ export interface CounterOrderItemInput {
 export interface CreateCounterWalkInOrderInput {
 	storeId: string;
 	fullName?: string;
-	phone: string;
+	phone?: string;
+	email?: string;
+	linkedUserId?: string;
+	linkedCustomerId?: string | null;
 	orderChannel?: 'in_store';
 	items: CounterOrderItemInput[];
 	paymentMethod: CounterPaymentMethod;

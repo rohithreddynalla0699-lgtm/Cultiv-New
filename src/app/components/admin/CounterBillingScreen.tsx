@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useReducer, useState } from 'react';
 import { motion } from 'framer-motion';
+import { Check, CreditCard, ReceiptText, ShoppingBag } from 'lucide-react';
 import { PRESETS_BY_ITEM_ID } from '../../data/bowlConfigurations';
 import {
   BOWL_BUILDER_STEPS,
@@ -21,11 +22,26 @@ import { ItemGrid } from './counter-billing/ItemGrid';
 import { ItemCustomizer } from './counter-billing/ItemCustomizer';
 import { CartPanel } from './counter-billing/CartPanel';
 import { PaymentPanel } from './counter-billing/PaymentPanel';
+import { ReceiptView } from './counter-billing/ReceiptView';
 import { useReceiptData } from '../../receipts/hooks/useReceiptData';
-import { Receipt } from '../../receipts/components/Receipt';
-import { getOrderById } from '../../data/orderRepository';
-import type { CounterPaymentMethod, OrderItemSelection } from '../../types/platform';
-import type { PosCartLine, PosReceipt } from '../../types/pos';
+import { printReceiptElement } from '../../receipts/utils/printReceiptElement';
+import { createDraftLineKey } from '../../data/cartDraft';
+import type { CounterPaymentMethod, Order, OrderItemSelection } from '../../types/platform';
+import type {
+  PosCartLine,
+  PosCheckoutState,
+  PosCustomerLookupResult,
+  PosCreatedOrder,
+  PosReceiptDeliveryOption,
+  PosStep,
+} from '../../types/pos';
+import {
+  calculateChangeDue,
+  getPaymentValidationMessage,
+  getReceiptContactErrors,
+  isValidEmail,
+  normalizePosPhone,
+} from './counter-billing/posCheckout';
 
 type SupportedCategorySlug =
   | 'signature-bowls'
@@ -43,6 +59,36 @@ interface CustomizerState {
   quantity: number;
   categoryName: string;
 }
+
+type CheckoutUiState = PosCheckoutState & {
+  receiptDeliveryOption: PosReceiptDeliveryOption;
+  receiptSuccessMessage: string | null;
+};
+
+type CheckoutAction =
+  | { type: 'go_to_step'; step: PosStep }
+  | { type: 'set_customer_phone'; value: string }
+  | { type: 'set_customer_email'; value: string }
+  | { type: 'skip_customer' }
+  | { type: 'start_customer_lookup' }
+  | { type: 'customer_lookup_found'; customer: PosCustomerLookupResult }
+  | { type: 'customer_lookup_not_found' }
+  | { type: 'customer_lookup_failed'; message: string }
+  | { type: 'link_customer' }
+  | { type: 'unlink_customer' }
+  | { type: 'set_payment_method'; method: CounterPaymentMethod }
+  | { type: 'set_cash_received'; value: string; total: number }
+  | { type: 'set_exact_cash'; total: number }
+  | { type: 'set_reference'; value: string }
+  | { type: 'start_payment_submit' }
+  | { type: 'payment_failed'; message: string }
+  | { type: 'payment_succeeded'; createdOrder: PosCreatedOrder }
+  | { type: 'clear_payment_error' }
+  | { type: 'select_receipt_option'; option: PosReceiptDeliveryOption }
+  | { type: 'start_receipt_send' }
+  | { type: 'receipt_failed'; message: string }
+  | { type: 'receipt_succeeded'; message: string }
+  | { type: 'reset_checkout' };
 
 const CATEGORY_ICON: Record<SupportedCategorySlug, string> = {
   'signature-bowls': 'B',
@@ -62,9 +108,247 @@ const SUPPORTED_CATEGORY_SLUGS: SupportedCategorySlug[] = [
   'drinks-juices',
 ];
 
+const initialCheckoutState: CheckoutUiState = {
+  step: 'cart',
+  customer: {
+    phone: '',
+    email: '',
+    skipped: false,
+  },
+  customerLookup: {
+    status: 'idle',
+    result: null,
+    linkedCustomer: null,
+    error: null,
+  },
+  payment: {
+    method: null,
+    cashReceived: '',
+    changeDue: 0,
+    reference: '',
+  },
+  createdOrder: null,
+  isSubmittingPayment: false,
+  isSendingReceipt: false,
+  paymentError: null,
+  receiptError: null,
+  receiptDeliveryOption: 'print',
+  receiptSuccessMessage: null,
+};
+
 const createId = (prefix: string) => `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
 
-const normalizePhoneInput = (value: string) => value.replace(/\D/g, '').slice(0, 10);
+function checkoutReducer(state: CheckoutUiState, action: CheckoutAction): CheckoutUiState {
+  switch (action.type) {
+    case 'go_to_step':
+      return {
+        ...state,
+        step: action.step,
+        paymentError: action.step === 'payment' ? state.paymentError : null,
+      };
+    case 'set_customer_phone':
+      return {
+        ...state,
+        customer: {
+          ...state.customer,
+          phone: normalizePosPhone(action.value),
+          skipped: false,
+        },
+        customerLookup: {
+          status: 'idle',
+          result: null,
+          linkedCustomer: null,
+          error: null,
+        },
+        paymentError: null,
+        receiptError: null,
+      };
+    case 'set_customer_email':
+      return {
+        ...state,
+        customer: {
+          ...state.customer,
+          email: action.value,
+        },
+        receiptError: null,
+      };
+    case 'skip_customer':
+      return {
+        ...state,
+        customer: {
+          ...state.customer,
+          phone: '',
+          skipped: true,
+        },
+        customerLookup: {
+          status: 'idle',
+          result: null,
+          linkedCustomer: null,
+          error: null,
+        },
+        paymentError: null,
+      };
+    case 'start_customer_lookup':
+      return {
+        ...state,
+        customerLookup: {
+          ...state.customerLookup,
+          status: 'loading',
+          result: null,
+          linkedCustomer: null,
+          error: null,
+        },
+      };
+    case 'customer_lookup_found':
+      return {
+        ...state,
+        customerLookup: {
+          status: 'found',
+          result: action.customer,
+          linkedCustomer: null,
+          error: null,
+        },
+      };
+    case 'customer_lookup_not_found':
+      return {
+        ...state,
+        customerLookup: {
+          status: 'not_found',
+          result: null,
+          linkedCustomer: null,
+          error: null,
+        },
+      };
+    case 'customer_lookup_failed':
+      return {
+        ...state,
+        customerLookup: {
+          status: 'idle',
+          result: null,
+          linkedCustomer: null,
+          error: action.message,
+        },
+      };
+    case 'link_customer':
+      return state.customerLookup.result
+        ? {
+            ...state,
+            customerLookup: {
+              status: 'linked',
+              result: state.customerLookup.result,
+              linkedCustomer: state.customerLookup.result,
+              error: null,
+            },
+          }
+        : state;
+    case 'unlink_customer':
+      return {
+        ...state,
+        customerLookup: {
+          status: state.customerLookup.result ? 'found' : 'idle',
+          result: state.customerLookup.result,
+          linkedCustomer: null,
+          error: null,
+        },
+      };
+    case 'set_payment_method':
+      return {
+        ...state,
+        payment: {
+          ...state.payment,
+          method: action.method,
+        },
+        paymentError: null,
+      };
+    case 'set_cash_received':
+      return {
+        ...state,
+        payment: {
+          ...state.payment,
+          cashReceived: action.value,
+          changeDue: calculateChangeDue(action.total, action.value),
+        },
+        paymentError: null,
+      };
+    case 'set_exact_cash':
+      return {
+        ...state,
+        payment: {
+          ...state.payment,
+          cashReceived: action.total.toFixed(2),
+          changeDue: 0,
+        },
+        paymentError: null,
+      };
+    case 'set_reference':
+      return {
+        ...state,
+        payment: {
+          ...state.payment,
+          reference: action.value,
+        },
+      };
+    case 'start_payment_submit':
+      return {
+        ...state,
+        isSubmittingPayment: true,
+        paymentError: null,
+      };
+    case 'payment_failed':
+      return {
+        ...state,
+        isSubmittingPayment: false,
+        paymentError: action.message,
+      };
+    case 'payment_succeeded':
+      return {
+        ...state,
+        step: 'receipt',
+        createdOrder: action.createdOrder,
+        isSubmittingPayment: false,
+        paymentError: null,
+        receiptError: null,
+        receiptSuccessMessage: null,
+        receiptDeliveryOption: 'print',
+      };
+    case 'clear_payment_error':
+      return {
+        ...state,
+        paymentError: null,
+      };
+    case 'select_receipt_option':
+      return {
+        ...state,
+        receiptDeliveryOption: action.option,
+        receiptError: null,
+        receiptSuccessMessage: null,
+      };
+    case 'start_receipt_send':
+      return {
+        ...state,
+        isSendingReceipt: true,
+        receiptError: null,
+        receiptSuccessMessage: null,
+      };
+    case 'receipt_failed':
+      return {
+        ...state,
+        isSendingReceipt: false,
+        receiptError: action.message,
+      };
+    case 'receipt_succeeded':
+      return {
+        ...state,
+        isSendingReceipt: false,
+        receiptError: null,
+        receiptSuccessMessage: action.message,
+      };
+    case 'reset_checkout':
+      return initialCheckoutState;
+    default:
+      return state;
+  }
+}
 
 function mapSelectionsToLabels(
   selections: Record<string, string[]>,
@@ -133,24 +417,26 @@ function calculateUnitPrice(item: FoodItem, selections: Record<string, string[]>
   return basePrice + extrasPrice;
 }
 
-function ReceiptPreview({ order }: { order: any }) {
-  const data = useReceiptData(order) as any;
+function buildPosLineKey(itemId: string, selections: OrderItemSelection[] = []) {
+  return createDraftLineKey(itemId, selections);
+}
 
-  if (!data) return null;
+function addOrMergePosLine(previous: PosCartLine[], nextLine: PosCartLine) {
+  const existing = previous.find((line) => line.key === nextLine.key);
+  if (!existing) {
+    return [nextLine, ...previous];
+  }
 
-  return (
-    <Receipt
-      data={data}
-      variant="screen"
-      showActions={true}
-      onPrint={() => window.print()}
-    />
+  return previous.map((line) =>
+    line.key === nextLine.key
+      ? { ...line, quantity: Math.min(30, line.quantity + nextLine.quantity) }
+      : line,
   );
 }
 
 export function CounterBillingScreen() {
-  const { createCounterWalkInOrder } = useAuth();
-  const { activeStoreScope, permissions, session } = useAdminDashboard();
+  const { createCounterWalkInOrder, lookupPosCustomerByPhone } = useAuth();
+  const { activeStoreScope, activeStoreUuid, activeStore, permissions } = useAdminDashboard();
   const { touchActivity } = useStoreSession();
 
   const [activeCategorySlug, setActiveCategorySlug] =
@@ -158,18 +444,12 @@ export function CounterBillingScreen() {
   const [menuLoaded, setMenuLoaded] = useState(false);
   const [menuCatalog, setMenuCatalog] = useState<MenuCategoryData[]>([]);
   const [cartLines, setCartLines] = useState<PosCartLine[]>([]);
-  const [customerPhone, setCustomerPhone] = useState('');
-  const [customerName, setCustomerName] = useState('');
-  const [phoneSkipped, setPhoneSkipped] = useState(false);
   const [selectedTipOption, setSelectedTipOption] = useState<TipOption>('none');
   const [customTipInput, setCustomTipInput] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<CounterPaymentMethod | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [customizer, setCustomizer] = useState<CustomizerState | null>(null);
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [customizerError, setCustomizerError] = useState('');
-  const [receipt, setReceipt] = useState<PosReceipt | null>(null);
-  const [orderForReceipt, setOrderForReceipt] = useState<any | null>(null);
+  const [createdOrderRecord, setCreatedOrderRecord] = useState<Order | null>(null);
   const [message, setMessage] = useState<{
     tone: 'info' | 'success' | 'warning' | 'error';
     text: string;
@@ -177,6 +457,7 @@ export function CounterBillingScreen() {
     tone: 'info',
     text: '',
   });
+  const [checkoutState, dispatch] = useReducer(checkoutReducer, initialCheckoutState);
 
   useEffect(() => {
     if (!activeStoreScope || activeStoreScope === 'all') {
@@ -264,30 +545,49 @@ export function CounterBillingScreen() {
   );
 
   const total = taxableSubtotal + taxAmount + tipAmount;
-
-  const canCharge = Boolean(
-    activeStoreScope !== 'all' &&
-      cartLines.length > 0 &&
-      paymentMethod &&
-      (phoneSkipped || normalizePhoneInput(customerPhone).length === 10) &&
-      !isSubmitting,
-  );
+  const itemCount = cartLines.reduce((sum, line) => sum + line.quantity, 0);
+  const storeName = activeStore?.name ?? 'CULTIV';
+  const paymentValidationMessage = getPaymentValidationMessage({
+    cartCount: cartLines.length,
+    total,
+    payment: checkoutState.payment,
+  });
+  const receiptData = useReceiptData(createdOrderRecord ?? undefined);
 
   const addItemToCart = (item: FoodItem) => {
     void touchActivity();
 
-    setCartLines((previous) => [
-      ...previous,
-      {
+    const preset = PRESETS_BY_ITEM_ID[item.id];
+
+    if (preset) {
+      const selections = mapSelectionsToLabels(preset.defaultSelections, getCustomizeSteps(item.id));
+      const nextLine: PosCartLine = {
         id: createId('line'),
+        key: buildPosLineKey(item.id, selections),
         itemId: item.id,
-        title: item.name,
-        category: activeCategory?.name ?? 'POS',
+        title: preset.title,
+        category: preset.categoryName,
         quantity: 1,
-        unitPrice: item.price,
-        selections: [],
-      },
-    ]);
+        unitPrice: preset.basePrice,
+        selections,
+      };
+
+      setCartLines((previous) => addOrMergePosLine(previous, nextLine));
+      return;
+    }
+
+    const nextLine: PosCartLine = {
+      id: createId('line'),
+      key: buildPosLineKey(item.id),
+      itemId: item.id,
+      title: item.name,
+      category: activeCategory?.name ?? 'POS',
+      quantity: 1,
+      unitPrice: item.price,
+      selections: [],
+    };
+
+    setCartLines((previous) => addOrMergePosLine(previous, nextLine));
   };
 
   const openCustomizer = (item: FoodItem) => {
@@ -391,11 +691,20 @@ export function CounterBillingScreen() {
     }
 
     const unitPrice = calculateUnitPrice(customizer.item, customizer.selections);
-    const selections = mapSelectionsToLabels(customizer.selections, steps);
+    const selections = steps
+      .map((step) => ({
+        section: step.title,
+        choices: [...(customizer.selections[step.id] ?? [])]
+          .sort((left, right) => left.localeCompare(right))
+          .map((id) => step.ingredients.find((ingredient) => ingredient.id === id)?.name ?? id)
+          .filter(Boolean),
+      }))
+      .filter((entry) => entry.choices.length > 0);
 
     setCartLines((previous) => {
       const nextLine: PosCartLine = {
-        id: editingLineId ?? createId('line'),
+        id: createId('line'),
+        key: buildPosLineKey(customizer.item.id, selections),
         itemId: customizer.item.id,
         title: customizer.item.name,
         category: customizer.categoryName,
@@ -404,11 +713,14 @@ export function CounterBillingScreen() {
         selections,
       };
 
-      if (!editingLineId) {
-        return [...previous, nextLine];
+      if (editingLineId) {
+        return addOrMergePosLine(
+          previous.filter((line) => line.id !== editingLineId),
+          nextLine,
+        );
       }
 
-      return previous.map((line) => (line.id === editingLineId ? nextLine : line));
+      return addOrMergePosLine(previous, nextLine);
     });
 
     setCustomizer(null);
@@ -434,11 +746,9 @@ export function CounterBillingScreen() {
   const decrementLine = (lineId: string) => {
     void touchActivity();
     setCartLines((previous) =>
-      previous
-        .map((line) =>
-          line.id === lineId ? { ...line, quantity: Math.max(1, line.quantity - 1) } : line,
-        )
-        .filter((line) => line.quantity > 0),
+      previous.map((line) =>
+        line.id === lineId ? { ...line, quantity: Math.max(1, line.quantity - 1) } : line,
+      ),
     );
   };
 
@@ -447,103 +757,167 @@ export function CounterBillingScreen() {
     setCartLines((previous) => previous.filter((line) => line.id !== lineId));
   };
 
-  const toggleSkipPhone = () => {
-    setPhoneSkipped((previous) => !previous);
-    setCustomerPhone('');
+  const continueToPayment = () => {
+    if (cartLines.length === 0) return;
+    dispatch({ type: 'go_to_step', step: 'payment' });
   };
 
-  const handleCharge = async () => {
+  const handleCompletePayment = async () => {
     void touchActivity();
 
-    if (!canCharge || !paymentMethod || activeStoreScope === 'all') {
+    if (checkoutState.isSubmittingPayment) return;
+    if (activeStoreScope === 'all' || !checkoutState.payment.method) return;
+
+    if (paymentValidationMessage) {
+      dispatch({ type: 'payment_failed', message: paymentValidationMessage });
+      return;
+    }
+
+    dispatch({ type: 'start_payment_submit' });
+
+    try {
+      const createResult = await posService.createOrder(
+        {
+          storeId: activeStoreUuid || activeStore?.id || '',
+          orderChannel: 'in_store',
+          customerPhone: checkoutState.customer.phone || undefined,
+          customerEmail: isValidEmail(checkoutState.customer.email)
+            ? checkoutState.customer.email.trim()
+            : undefined,
+          linkedUserId: checkoutState.customerLookup.linkedCustomer?.userId,
+          linkedCustomerId: checkoutState.customerLookup.linkedCustomer?.customerId,
+          paymentMethod: checkoutState.payment.method,
+          tipPercentage,
+          tipAmount,
+          placedBy: permissions.canManageEmployees ? 'manager-session' : 'staff-session',
+          items: cartLines.map((line) => ({
+            itemId: line.itemId,
+            title: line.title,
+            category: line.category,
+            quantity: line.quantity,
+            price: line.unitPrice,
+            selections: line.selections,
+          })),
+        },
+        {
+          createCounterWalkInOrder,
+        },
+      );
+
+      await posService.recordPayment({
+        orderId: createResult.receipt.orderId,
+        paymentMethod: checkoutState.payment.method,
+        amount: createResult.receipt.total,
+        recordedBy: permissions.canManageEmployees ? 'manager-session' : 'staff-session',
+      });
+
+      const createdOrder = posService.mapCreatedOrder(createResult);
+      dispatch({ type: 'payment_succeeded', createdOrder });
+      setCreatedOrderRecord(createResult.order);
+      setCartLines([]);
+      setSelectedTipOption('none');
+      setCustomTipInput('');
       setMessage({
-        tone: 'error',
-        text: 'Complete cart, phone, and payment details before charging.',
+        tone: 'success',
+        text: `Payment captured for order #${createdOrder.orderNumber}.`,
+      });
+    } catch (error) {
+      dispatch({
+        type: 'payment_failed',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Payment could not be completed. Please retry.',
+      });
+    }
+  };
+
+  const handleFindCustomer = async () => {
+    void touchActivity();
+
+    if (checkoutState.customerLookup.status === 'loading') return;
+
+    dispatch({ type: 'start_customer_lookup' });
+
+    try {
+      const result = await lookupPosCustomerByPhone(checkoutState.customer.phone);
+      if (result) {
+        dispatch({ type: 'customer_lookup_found', customer: result });
+        return;
+      }
+
+      dispatch({ type: 'customer_lookup_not_found' });
+    } catch (error) {
+      dispatch({
+        type: 'customer_lookup_failed',
+        message: error instanceof Error ? error.message : 'Customer lookup failed. Please try again.',
+      });
+    }
+  };
+
+  const handleSendReceipt = async () => {
+    void touchActivity();
+
+    if (!checkoutState.createdOrder || checkoutState.isSendingReceipt) return;
+
+    const contactErrors = getReceiptContactErrors(
+      checkoutState.receiptDeliveryOption,
+      checkoutState.customer,
+    );
+
+    if (contactErrors.phone || contactErrors.email) {
+      dispatch({
+        type: 'receipt_failed',
+        message: contactErrors.phone || contactErrors.email || 'Receipt details are incomplete.',
       });
       return;
     }
 
-    setIsSubmitting(true);
-    setMessage({ tone: 'info', text: 'Creating order and recording payment...' });
+    dispatch({ type: 'start_receipt_send' });
 
     try {
-      const resolvedStoreId = session?.scopeStoreId?.trim();
-
-if (!resolvedStoreId) {
-  throw new Error('Active store session is missing. Please sign in again.');
-}
-
-const receiptResult = await posService.createOrder(
-  {
-    storeId: resolvedStoreId,
-    orderChannel: 'in_store',
-    customerName: customerName.trim() || undefined,
-    customerPhone: normalizePhoneInput(customerPhone),
-    paymentMethod,
-    tipPercentage,
-    tipAmount,
-    placedBy: permissions.canManageEmployees ? 'manager-session' : 'staff-session',
-    items: cartLines.map((line) => ({
-      itemId: line.itemId,
-      title: line.title,
-      category: line.category,
-      quantity: line.quantity,
-      price: line.unitPrice,
-      selections: line.selections,
-    })),
-  },
-  {
-    createCounterWalkInOrder,
-  },
-);
-
-      await posService.recordPayment({
-        orderId: receiptResult.orderId,
-        paymentMethod,
-        amount: receiptResult.total,
-        recordedBy: permissions.canManageEmployees ? 'manager-session' : 'staff-session',
-      });
-
-      setReceipt(receiptResult);
-
-      if (session) {
-        const order = await getOrderById(receiptResult.orderId, {
-          internalSessionToken: session.internalSessionToken,
-          roleKey: session.roleKey,
-          scopeType: session.scopeType,
-          scopeStoreId: session.scopeStoreId,
-        });
-
-        setOrderForReceipt(order);
-      } else {
-        setOrderForReceipt(null);
+      if (
+        checkoutState.receiptDeliveryOption === 'print' ||
+        checkoutState.receiptDeliveryOption === 'all'
+      ) {
+        printReceiptElement();
       }
 
-      setCartLines([]);
-      setSelectedTipOption('none');
-      setCustomTipInput('');
-      setPaymentMethod(null);
-      setMessage({
-        tone: 'success',
-        text: `Order ${receiptResult.orderId} placed successfully.`,
+      if (
+        checkoutState.receiptDeliveryOption === 'email' ||
+        checkoutState.receiptDeliveryOption === 'text' ||
+        checkoutState.receiptDeliveryOption === 'all'
+      ) {
+        await posService.sendReceipt({
+          orderId: checkoutState.createdOrder.orderId,
+          option: checkoutState.receiptDeliveryOption,
+          phone: checkoutState.customer.phone || undefined,
+          email: checkoutState.customer.email.trim() || undefined,
+        });
+      }
+
+      dispatch({
+        type: 'receipt_succeeded',
+        message: getReceiptSuccessMessage(checkoutState.receiptDeliveryOption),
       });
     } catch (error) {
-      setMessage({
-        tone: 'error',
-        text: error instanceof Error ? error.message : 'Network error while charging. Please retry.',
+      dispatch({
+        type: 'receipt_failed',
+        message:
+          error instanceof Error
+            ? error.message
+            : 'Receipt could not be sent. Payment is safe. Try again.',
       });
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
   const resetForNewOrder = () => {
-    setReceipt(null);
-    setOrderForReceipt(null);
-    setCustomerName('');
-    setCustomerPhone('');
-    setPhoneSkipped(false);
-    setMessage({ tone: 'info', text: 'Ready for next order.' });
+    setCartLines([]);
+    setSelectedTipOption('none');
+    setCustomTipInput('');
+    setCreatedOrderRecord(null);
+    setMessage({ tone: 'info', text: 'Ready for the next customer.' });
+    dispatch({ type: 'reset_checkout' });
   };
 
   if (activeStoreScope === 'all') {
@@ -564,21 +938,53 @@ const receiptResult = await posService.createOrder(
 
   return (
     <motion.div
-      className="space-y-4"
+      className="space-y-3 pb-4"
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.18, ease: 'easeOut' }}
     >
-      <div className="grid min-h-[calc(100vh-180px)] gap-4 xl:grid-cols-[220px_minmax(0,1fr)_380px]">
+      <div className="rounded-[20px] border border-[#E5EBDD] bg-[radial-gradient(circle_at_top_left,rgba(105,137,81,0.08),transparent_28%),linear-gradient(180deg,#FFFFFF_0%,#FAFBF7_100%)] px-3.5 py-3 shadow-[0_12px_28px_rgba(31,46,18,0.06)]">
+        <div className="flex flex-col gap-2.5 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-primary/60">
+              In-store POS
+            </p>
+            <p className="mt-1 text-[13px] font-medium text-[#667085]">{storeName}</p>
+          </div>
+
+          <div className="grid gap-1.5 sm:grid-cols-3">
+            <StepPill
+              icon={ShoppingBag}
+              label="Cart"
+              active={checkoutState.step === 'cart'}
+              complete={checkoutState.step !== 'cart'}
+            />
+            <StepPill
+              icon={CreditCard}
+              label="Payment"
+              active={checkoutState.step === 'payment'}
+              complete={checkoutState.step === 'receipt'}
+            />
+            <StepPill
+              icon={ReceiptText}
+              label="Receipt"
+              active={checkoutState.step === 'receipt'}
+              complete={false}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="grid min-h-[calc(100dvh-246px)] gap-2.5 xl:grid-cols-[178px_minmax(0,1fr)_390px]">
         <CategoryRail
           categories={categoryList}
           activeCategorySlug={activeCategorySlug}
           onSelect={(slug) => setActiveCategorySlug(slug as SupportedCategorySlug)}
         />
 
-        <section className="rounded-2xl border border-border bg-background p-4">
+        <section className="rounded-[20px] border border-border bg-background p-3.5">
           {!menuLoaded ? (
-            <div className="rounded-lg border border-dashed border-border bg-muted/40 px-4 py-6 text-center text-sm text-foreground/60">
+            <div className="rounded-lg border border-dashed border-border bg-muted/40 px-4 py-5 text-center text-sm text-foreground/60">
               Loading menu...
             </div>
           ) : customizer ? (
@@ -603,11 +1009,8 @@ const receiptResult = await posService.createOrder(
             />
           ) : (
             <>
-              <div className="mb-4">
-                <h2 className="text-lg font-semibold text-foreground">{activeCategory?.name}</h2>
-                <p className="text-sm text-foreground/60">
-                  Tap Add for quick billing or Customize for configurable bowls.
-                </p>
+              <div className="mb-3">
+                <h2 className="text-[17px] font-semibold text-foreground">{activeCategory?.name}</h2>
               </div>
 
               <ItemGrid items={activeItems} onAdd={addItemToCart} onCustomize={openCustomizer} />
@@ -615,41 +1018,148 @@ const receiptResult = await posService.createOrder(
           )}
         </section>
 
-        <div className="space-y-3">
-          {orderForReceipt ? <ReceiptPreview order={orderForReceipt} /> : null}
+        <div className="flex h-[calc(100dvh-246px)] min-h-0 flex-col gap-2">
+          {message.text.trim() && !(checkoutState.step === 'receipt' && message.tone === 'success') ? (
+            <NoticeBanner tone={message.tone} text={message.text} />
+          ) : null}
 
-          <CartPanel
-            cartLines={cartLines}
-            subtotal={subtotal}
-            taxAmount={taxAmount}
-            tipAmount={tipAmount}
-            total={total}
-            selectedPaymentMethod={paymentMethod}
-            customerPhone={customerPhone}
-            customerName={customerName}
-            phoneSkipped={phoneSkipped}
-            selectedTipOption={selectedTipOption}
-            customTipInput={customTipInput}
-            isSubmitting={isSubmitting}
-            canSubmit={canCharge}
-            onSelectTipOption={setSelectedTipOption}
-            onSetCustomTipInput={setCustomTipInput}
-            onPhoneChange={(value) => setCustomerPhone(normalizePhoneInput(value))}
-            onNameChange={setCustomerName}
-            onToggleSkipPhone={toggleSkipPhone}
-            onSelectPaymentMethod={setPaymentMethod}
-            onIncrementLine={incrementLine}
-            onDecrementLine={decrementLine}
-            onEditLine={editCartLine}
-            onRemoveLine={removeLine}
-            onCharge={() => {
-              void handleCharge();
-            }}
-          />
+          <div className="min-h-0 flex-1">
+            {checkoutState.step === 'cart' ? (
+              <CartPanel
+                storeName={storeName}
+                cartLines={cartLines}
+                subtotal={subtotal}
+                discountAmount={discountAmount}
+                taxAmount={taxAmount}
+                tipAmount={tipAmount}
+                total={total}
+                selectedTipOption={selectedTipOption}
+                customTipInput={customTipInput}
+                onSelectTipOption={setSelectedTipOption}
+                onSetCustomTipInput={setCustomTipInput}
+                onIncrementLine={incrementLine}
+                onDecrementLine={decrementLine}
+                onEditLine={editCartLine}
+                onRemoveLine={removeLine}
+                onContinue={continueToPayment}
+              />
+            ) : null}
 
-          {message.text.trim() ? <PaymentPanel message={message.text} tone={message.tone} /> : null}
+            {checkoutState.step === 'payment' ? (
+              <PaymentPanel
+                storeName={storeName}
+                itemCount={itemCount}
+                customer={checkoutState.customer}
+                customerLookup={checkoutState.customerLookup}
+                payment={checkoutState.payment}
+                subtotal={subtotal}
+                taxAmount={taxAmount}
+                tipAmount={tipAmount}
+                total={total}
+                isSubmitting={checkoutState.isSubmittingPayment}
+                paymentError={checkoutState.paymentError}
+                onCustomerPhoneChange={(value) => dispatch({ type: 'set_customer_phone', value })}
+                onFindCustomer={() => {
+                  void handleFindCustomer();
+                }}
+                onLinkCustomer={() => dispatch({ type: 'link_customer' })}
+                onRemoveLinkedCustomer={() => dispatch({ type: 'unlink_customer' })}
+                onSkipCustomer={() => dispatch({ type: 'skip_customer' })}
+                onSelectPaymentMethod={(method) => dispatch({ type: 'set_payment_method', method })}
+                onCashReceivedChange={(value) =>
+                  dispatch({ type: 'set_cash_received', value, total })
+                }
+                onReferenceChange={(value) => dispatch({ type: 'set_reference', value })}
+                onExactCash={() => dispatch({ type: 'set_exact_cash', total })}
+                onBack={() => dispatch({ type: 'go_to_step', step: 'cart' })}
+                onSubmit={() => {
+                  void handleCompletePayment();
+                }}
+              />
+            ) : null}
+
+            {checkoutState.step === 'receipt' && checkoutState.createdOrder ? (
+              <ReceiptView
+                createdOrder={checkoutState.createdOrder}
+                customer={checkoutState.customer}
+                receiptData={receiptData}
+                selectedDeliveryOption={checkoutState.receiptDeliveryOption}
+                isSendingReceipt={checkoutState.isSendingReceipt}
+                receiptError={checkoutState.receiptError}
+                receiptSuccessMessage={checkoutState.receiptSuccessMessage}
+                onSelectDeliveryOption={(option) =>
+                  dispatch({ type: 'select_receipt_option', option })
+                }
+                onCustomerPhoneChange={(value) => dispatch({ type: 'set_customer_phone', value })}
+                onCustomerEmailChange={(value) => dispatch({ type: 'set_customer_email', value })}
+                onSendReceipt={() => {
+                  void handleSendReceipt();
+                }}
+                onNewOrder={resetForNewOrder}
+              />
+            ) : null}
+          </div>
         </div>
       </div>
     </motion.div>
   );
+}
+
+function StepPill({
+  icon: Icon,
+  label,
+  active,
+  complete,
+}: {
+  icon: typeof ShoppingBag;
+  label: string;
+  active: boolean;
+  complete: boolean;
+}) {
+  return (
+    <div
+      className={[
+        'flex min-w-[98px] items-center gap-2 rounded-[14px] border px-2.5 py-2',
+        active
+          ? 'border-primary bg-primary text-primary-foreground shadow-[0_12px_24px_rgba(45,80,22,0.18)]'
+          : 'border-[#E5EBDD] bg-white text-[#1F2719]',
+      ].join(' ')}
+    >
+      <div
+        className={[
+          'flex h-7 w-7 items-center justify-center rounded-[10px]',
+          active ? 'bg-white/15' : 'bg-primary/8 text-primary',
+        ].join(' ')}
+      >
+        {complete && !active ? <Check className="h-3.5 w-3.5" /> : <Icon className="h-3.5 w-3.5" />}
+      </div>
+      <div className="text-[12px] font-semibold">{label}</div>
+    </div>
+  );
+}
+
+function NoticeBanner({
+  tone,
+  text,
+}: {
+  tone: 'info' | 'success' | 'warning' | 'error';
+  text: string;
+}) {
+  const className =
+    tone === 'success'
+      ? 'border-[#D0E9D7] bg-[#ECFDF3] text-[#027A48]'
+      : tone === 'warning'
+        ? 'border-[#F7D79D] bg-[#FFFAEB] text-[#B54708]'
+        : tone === 'error'
+          ? 'border-[#F2D6D6] bg-[#FEF3F2] text-[#B42318]'
+          : 'border-[#D7E2F6] bg-[#EFF4FF] text-[#175CD3]';
+
+  return <div className={`rounded-2xl border px-3.5 py-2.5 text-[13px] font-medium ${className}`}>{text}</div>;
+}
+
+function getReceiptSuccessMessage(option: PosReceiptDeliveryOption) {
+  if (option === 'all') return 'Receipt printed, emailed, and sent by text.';
+  if (option === 'email') return 'Receipt email queued successfully.';
+  if (option === 'text') return 'Receipt text queued successfully.';
+  return 'Print dialog opened. You can print again if needed.';
 }

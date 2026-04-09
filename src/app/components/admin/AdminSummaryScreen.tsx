@@ -9,7 +9,7 @@ import { getAdminOrderBoardStatus, getOrderStoreId, isOrderActive, isOrderToday 
 
 export function AdminSummaryScreen() {
   const { sharedOrders } = useAuth();
-  const { scopedInventory, scopedEmployees, activeStoreScope, activeStore, getStoreName } = useAdminDashboard();
+  const { scopedInventory, scopedEmployees, activeStoreScope, activeStoreUuid, activeStore, getStoreName } = useAdminDashboard();
 
   const formatCurrency = (value: number) =>
     `₹${value.toLocaleString('en-IN', {
@@ -18,8 +18,12 @@ export function AdminSummaryScreen() {
     })}`;
 
   const scopedOrders = useMemo(
-    () => sharedOrders.filter((order) => activeStoreScope === 'all' || getOrderStoreId(order) === activeStoreScope),
-    [activeStoreScope, sharedOrders],
+    () => sharedOrders.filter((order) => {
+      if (activeStoreScope === 'all') return true;
+      if (activeStoreUuid) return getOrderStoreId(order) === activeStoreUuid;
+      return getOrderStoreId(order) === activeStoreScope;
+    }),
+    [activeStoreScope, activeStoreUuid, sharedOrders],
   );
 
   const todayOrders = useMemo(() => scopedOrders.filter(isOrderToday), [scopedOrders]);

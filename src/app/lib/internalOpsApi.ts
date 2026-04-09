@@ -67,7 +67,7 @@ export interface InternalOrdersListOrderRow {
   order_status: 'pending' | 'placed' | 'preparing' | 'ready_for_pickup' | 'completed' | 'cancelled';
   store_id: string;
   customer_name: string;
-  customer_phone: string;
+  customer_phone: string | null;
   customer_email: string | null;
   payment_method: 'cash' | 'upi' | 'card' | null;
   subtotal_amount: number;
@@ -215,11 +215,6 @@ export async function listInternalOrders(params: {
   const cleanedFilters = cleanFilters(params.filters ?? {});
   const sessionToken = params.internalSessionToken;
 
-  console.log('[internal-orders-list] POST', {
-    sessionToken,
-    filters: cleanedFilters,
-  });
-
   try {
     const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
@@ -238,17 +233,14 @@ export async function listInternalOrders(params: {
 
     const rawText = await response.text();
 
-    console.log('[internal-orders-list] response', {
-      status: response.status,
-      rawText,
-    });
-
     if (!response.ok) {
       throw new Error(`Failed to fetch internal orders list: ${response.status} ${rawText}`);
     }
 
+    const parsed = JSON.parse(rawText) as InternalOrdersListResponse;
+
     return {
-      data: JSON.parse(rawText) as InternalOrdersListResponse,
+      data: parsed,
       error: null,
     };
   } catch (err: unknown) {

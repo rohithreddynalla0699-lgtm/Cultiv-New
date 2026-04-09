@@ -7,15 +7,19 @@ import { getOrderStoreId, isOrderToday } from '../../utils/adminOrders';
 
 export function ReportsScreen() {
   const { sharedOrders } = useAuth();
-  const { permissions, activeStoreScope, stores, activeStore } = useAdminDashboard();
+  const { permissions, activeStoreScope, activeStoreUuid, stores, activeStore } = useAdminDashboard();
 
   if (!permissions.canViewReports) {
     return <Navigate to="/admin/summary" replace />;
   }
 
   const scopedOrders = useMemo(() => (
-    sharedOrders.filter((order) => activeStoreScope === 'all' || getOrderStoreId(order) === activeStoreScope)
-  ), [activeStoreScope, sharedOrders]);
+    sharedOrders.filter((order) => {
+      if (activeStoreScope === 'all') return true;
+      if (activeStoreUuid) return getOrderStoreId(order) === activeStoreUuid;
+      return getOrderStoreId(order) === activeStoreScope;
+    })
+  ), [activeStoreScope, activeStoreUuid, sharedOrders]);
 
   const todayOrders = useMemo(() => scopedOrders.filter(isOrderToday), [scopedOrders]);
 
@@ -29,9 +33,13 @@ export function ReportsScreen() {
   }, [scopedOrders, todayOrders]);
 
   const revenueByStore = useMemo(() => (
-    stores
+    (activeStoreUuid && activeStore ? [activeStore] : stores)
       .map((store) => {
-        const storeOrders = sharedOrders.filter((order) => getOrderStoreId(order) === store.id);
+        const canonicalStoreId =
+          activeStoreUuid && activeStore && store.id === activeStore.id
+            ? activeStoreUuid
+            : store.id;
+        const storeOrders = sharedOrders.filter((order) => getOrderStoreId(order) === canonicalStoreId);
         return {
           id: store.id,
           name: store.name,
@@ -40,7 +48,7 @@ export function ReportsScreen() {
         };
       })
       .sort((a, b) => b.revenue - a.revenue)
-  ), [sharedOrders, stores]);
+  ), [activeStore, activeStoreUuid, sharedOrders, stores]);
 
   return (
     <div className="space-y-6">
