@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { useAdminDashboard } from '../../contexts/AdminDashboardContext';
 import type { Order } from '../../types/platform';
 import type { ReceiptData } from '../types/receipt';
 import { mapOrderToReceiptData } from '../mappers/mapOrderToReceiptData';
@@ -12,9 +11,15 @@ interface ReceiptState {
   error: string | null;
 }
 
-export function useReceiptData(order: Order | undefined): ReceiptState {
+type ReceiptAuthMode = 'customer' | 'internal';
+
+interface UseReceiptDataOptions {
+  authMode?: ReceiptAuthMode;
+}
+
+export function useReceiptData(order: Order | undefined, options?: UseReceiptDataOptions): ReceiptState {
   const { customerAccount } = useAuth();
-  const { session } = useAdminDashboard();
+  const authMode = options?.authMode ?? 'customer';
   const [state, setState] = useState<ReceiptState>({
     data: order ? mapOrderToReceiptData(order) : null,
     isLoading: false,
@@ -29,6 +34,18 @@ export function useReceiptData(order: Order | undefined): ReceiptState {
       return null;
     }
   }, [customerAccount?.id]);
+
+  const internalSessionToken = useMemo(() => {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+      const raw = localStorage.getItem('cultiv_admin_access_session_v1');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { internalSessionToken?: string | null } | null;
+      return parsed?.internalSessionToken?.trim() || null;
+    } catch {
+      return null;
+    }
+  }, []);
 
   useEffect(() => {
     if (!order?.id) {
@@ -45,8 +62,8 @@ export function useReceiptData(order: Order | undefined): ReceiptState {
 
     void fetchOrderReceipt({
       orderId: order.id,
-      customerSessionToken,
-      internalSessionToken: session?.internalSessionToken ?? null,
+      customerSessionToken: authMode === 'customer' ? customerSessionToken : null,
+      internalSessionToken: authMode === 'internal' ? internalSessionToken : null,
     })
       .then((receipt) => {
         if (!active) return;
@@ -68,7 +85,7 @@ export function useReceiptData(order: Order | undefined): ReceiptState {
     return () => {
       active = false;
     };
-  }, [customerSessionToken, order, session?.internalSessionToken]);
+  }, [authMode, customerSessionToken, internalSessionToken, order]);
 
   return state;
 }

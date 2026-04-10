@@ -52,7 +52,9 @@ export function OrderDetailScreen() {
   const rawOrder = orderId ? getOrderById(orderId) : undefined;
   const order = (rawOrder ?? null) as OrderLike | null;
 
-  const { data: receiptData, isLoading: receiptLoading, error: receiptError } = useReceiptData(order as never);
+  const { data: receiptData, isLoading: receiptLoading, error: receiptError } = useReceiptData(order as never, {
+    authMode: 'customer',
+  });
 
   const getStoreName = (storeId?: string) => {
     if (!storeId) return 'CULTIV Store';

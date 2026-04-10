@@ -562,7 +562,9 @@ export function CounterBillingScreen() {
     total,
     payment: checkoutState.payment,
   });
-  const { data: receiptData } = useReceiptData(createdOrderRecord ?? undefined);
+  const { data: receiptData } = useReceiptData(createdOrderRecord ?? undefined, {
+    authMode: 'internal',
+  });
 
   const addItemToCart = (item: FoodItem) => {
     void touchActivity();

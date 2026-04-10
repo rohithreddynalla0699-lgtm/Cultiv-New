@@ -267,6 +267,11 @@ serve(async (req: any) => {
 
     const order = paymentRow.order_payload as StoredOrderPayload;
     const items = (paymentRow.items_payload as StoredItemPayload[]) ?? [];
+    const canonicalCustomerId = (
+      typeof paymentRow.customer_id === "string" && paymentRow.customer_id.trim()
+        ? paymentRow.customer_id.trim()
+        : (typeof order?.customer_id === "string" && order.customer_id.trim() ? order.customer_id.trim() : null)
+    );
 
     if (!order || !order.store_id || !items.length) {
       await supabase
@@ -308,7 +313,7 @@ serve(async (req: any) => {
           tax_amount: order.tax_amount,
           tip_amount: order.tip_amount,
           total_amount: order.total_amount,
-          customer_id: order.customer_id,
+          customer_id: canonicalCustomerId,
           user_id: null,
           order_number: generatedOrderNumber,
         })
@@ -430,7 +435,7 @@ serve(async (req: any) => {
       .upsert({
         order_id: orderId,
         store_id: order.store_id,
-        customer_id: order.customer_id ?? null,
+        customer_id: canonicalCustomerId,
         recorded_by_internal_user_id: null,
         payment_method: paymentRow.payment_method,
         payment_source: "customer_checkout",

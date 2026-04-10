@@ -46,7 +46,12 @@ interface CustomerSessionPayload {
   iss: string;
 }
 
+const DEBUG_LOGS = Deno.env.get("CHECKOUT_DEBUG_LOGS") === "true";
+
 const logStage = (stage: string, details?: Record<string, unknown>) => {
+  if (!DEBUG_LOGS) {
+    return;
+  }
   if (details) {
     console.log(`[customer-create-payment-intent] ${stage}`, details);
     return;
@@ -519,6 +524,13 @@ serve(async (req: any) => {
       });
     }
 
+    const canonicalOrderPayload = {
+      ...order,
+      customer_id: customerId,
+      user_id: null,
+      store_id: resolvedStoreId,
+    };
+
     const receipt = createSafeReceipt(idempotencyKey);
     let gatewayOrder: { orderId: string; currency: string; amountPaise: number };
 
@@ -554,7 +566,7 @@ serve(async (req: any) => {
         gateway: checkoutGateway,
         gateway_order_id: gatewayOrder.orderId,
         status: "initiated",
-        order_payload: order,
+        order_payload: canonicalOrderPayload,
         items_payload: items,
         metadata: {
           provider: checkoutGateway,
