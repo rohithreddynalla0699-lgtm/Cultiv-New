@@ -24,6 +24,8 @@ const INTERNAL_MENU_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/int
 const INTERNAL_CUSTOMERS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-customers`;
 const INTERNAL_PAYMENTS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-payments`;
 const INTERNAL_REPORTS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-reports`;
+const INTERNAL_UPDATE_CREDENTIALS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-update-credentials`;
+const INTERNAL_MANAGE_OPERATIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-manage-operations`;
 
 export interface InternalLoginResponse {
   userId: string;
@@ -321,6 +323,76 @@ export interface InternalReportsResponse {
   summary: InternalReportsSummary;
 }
 
+export interface InternalStoreCredentialTarget {
+  internalUserId: string;
+  fullName: string;
+  isActive: boolean;
+  roleKey?: 'admin' | 'store';
+  storeId: string | null;
+  storeName: string | null;
+  storeCode: string | null;
+  storeCity: string | null;
+  storeIsActive: boolean | null;
+}
+
+export interface InternalStoreCredentialTargetsResponse {
+  success: boolean;
+  targets: InternalStoreCredentialTarget[];
+}
+
+export interface InternalCredentialUpdateResponse {
+  success: boolean;
+  targetType: 'employee' | 'internal_user';
+  targetId: string;
+  message: string;
+  revokedSessions: boolean;
+}
+
+export interface ManagedInternalUserRecord {
+  internalUserId: string;
+  fullName: string;
+  roleKey: 'admin' | 'store';
+  roleName: string;
+  scopeType: 'global' | 'store';
+  isActive: boolean;
+  storeId: string | null;
+  storeName: string | null;
+  storeCode: string | null;
+  storeCity: string | null;
+  storeIsActive: boolean | null;
+  createdAt: string;
+}
+
+export interface InternalUserListResponse {
+  success: boolean;
+  users: ManagedInternalUserRecord[];
+}
+
+export interface ManagedStoreRecord {
+  id: string;
+  name: string;
+  city: string;
+  code: string;
+  addressLine1?: string;
+  state?: string;
+  postalCode?: string;
+  phone?: string;
+  isActive: boolean;
+}
+
+export interface InternalManageMutationResponse {
+  success: boolean;
+  mode?: 'created' | 'updated';
+  message: string;
+  store?: ManagedStoreRecord;
+  storeLoginUser?: {
+    internalUserId: string;
+    fullName: string;
+    isActive: boolean;
+  };
+  internalUserId?: string;
+}
+
 const postInternal = async <TResponse>(
   url: string,
   params: Record<string, unknown>,
@@ -515,6 +587,20 @@ export async function deleteInternalEmployee(params: {
   );
 }
 
+export async function deactivateInternalEmployee(params: {
+  internalSessionToken: string;
+  roleKey: 'owner' | 'admin' | 'store';
+  scopeType: 'global' | 'store';
+  scopeStoreId: string | null;
+  employeeId: string;
+}): Promise<{ data: InternalEmployeeDeleteResponse | null; error: string | null }> {
+  return postInternal<InternalEmployeeDeleteResponse>(
+    INTERNAL_EMPLOYEES_URL,
+    { ...params, action: 'deactivate_employee' },
+    'Could not deactivate employee.'
+  );
+}
+
 export async function loadInternalInventoryDashboard(params: {
   internalSessionToken: string;
   roleKey: 'owner' | 'admin' | 'store';
@@ -673,6 +759,125 @@ export async function recordInternalPosPayment(params: {
     INTERNAL_PAYMENTS_URL,
     { ...params, action: 'record_pos_payment' },
     'Could not record POS payment.'
+  );
+}
+
+export async function listInternalStoreCredentialTargets(params: {
+  internalSessionToken: string;
+  roleFilter?: 'admin' | 'store';
+}): Promise<{ data: InternalStoreCredentialTargetsResponse | null; error: string | null }> {
+  return postInternal<InternalStoreCredentialTargetsResponse>(
+    INTERNAL_UPDATE_CREDENTIALS_URL,
+    { ...params, action: 'list_store_targets' },
+    'Could not load internal login targets.'
+  );
+}
+
+export async function updateInternalCredential(params: {
+  internalSessionToken: string;
+  targetType: 'employee' | 'internal_user';
+  targetId: string;
+  newPin: string;
+  revokeExistingSessions?: boolean;
+}): Promise<{ data: InternalCredentialUpdateResponse | null; error: string | null }> {
+  return postInternal<InternalCredentialUpdateResponse>(
+    INTERNAL_UPDATE_CREDENTIALS_URL,
+    { ...params, action: 'update_credential' },
+    'Could not update credentials.'
+  );
+}
+
+export async function listManagedInternalUsers(params: {
+  internalSessionToken: string;
+  roleFilter: 'admin' | 'store';
+}): Promise<{ data: InternalUserListResponse | null; error: string | null }> {
+  return postInternal<InternalUserListResponse>(
+    INTERNAL_MANAGE_OPERATIONS_URL,
+    { ...params, action: 'list_internal_users' },
+    'Could not load internal users.'
+  );
+}
+
+export async function upsertManagedStore(params: {
+  internalSessionToken: string;
+  targetStoreId?: string;
+  name: string;
+  city: string;
+  code: string;
+  addressLine1: string;
+  state: string;
+  postalCode: string;
+  phone?: string;
+  isActive: boolean;
+  storeLoginFullName?: string;
+  storeLoginPin?: string;
+  storeLoginIsActive?: boolean;
+  storeLoginInternalUserId?: string;
+}): Promise<{ data: InternalManageMutationResponse | null; error: string | null }> {
+  return postInternal<InternalManageMutationResponse>(
+    INTERNAL_MANAGE_OPERATIONS_URL,
+    { ...params, action: 'upsert_store' },
+    'Could not save store.'
+  );
+}
+
+export async function deleteManagedStore(params: {
+  internalSessionToken: string;
+  targetStoreId: string;
+}): Promise<{ data: InternalManageMutationResponse | null; error: string | null }> {
+  return postInternal<InternalManageMutationResponse>(
+    INTERNAL_MANAGE_OPERATIONS_URL,
+    { ...params, action: 'delete_store' },
+    'Could not delete store.'
+  );
+}
+
+export async function deactivateManagedStore(params: {
+  internalSessionToken: string;
+  targetStoreId: string;
+}): Promise<{ data: InternalManageMutationResponse | null; error: string | null }> {
+  return postInternal<InternalManageMutationResponse>(
+    INTERNAL_MANAGE_OPERATIONS_URL,
+    { ...params, action: 'deactivate_store' },
+    'Could not deactivate store.'
+  );
+}
+
+export async function upsertManagedInternalUser(params: {
+  internalSessionToken: string;
+  internalUserId?: string;
+  roleKey: 'admin' | 'store';
+  fullName: string;
+  storeId?: string;
+  pin?: string;
+  isActive: boolean;
+}): Promise<{ data: InternalManageMutationResponse | null; error: string | null }> {
+  return postInternal<InternalManageMutationResponse>(
+    INTERNAL_MANAGE_OPERATIONS_URL,
+    { ...params, action: 'upsert_internal_user' },
+    'Could not save internal user.'
+  );
+}
+
+export async function deleteManagedInternalUser(params: {
+  internalSessionToken: string;
+  internalUserId: string;
+}): Promise<{ data: InternalManageMutationResponse | null; error: string | null }> {
+  return postInternal<InternalManageMutationResponse>(
+    INTERNAL_MANAGE_OPERATIONS_URL,
+    { ...params, action: 'delete_internal_user' },
+    'Could not delete internal user.'
+  );
+}
+
+export async function deactivateManagedInternalUser(params: {
+  internalSessionToken: string;
+  internalUserId: string;
+}): Promise<{ data: InternalManageMutationResponse | null; error: string | null }> {
+  return postInternal<InternalManageMutationResponse>(
+    INTERNAL_MANAGE_OPERATIONS_URL,
+    { ...params, action: 'deactivate_internal_user' },
+    'Could not deactivate internal user.'
   );
 }
 

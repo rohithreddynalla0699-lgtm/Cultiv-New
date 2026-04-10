@@ -73,6 +73,7 @@ export function Receipt({
             ) : null}
             {storeAddressLine ? <p>{storeAddressLine}</p> : null}
             {localityLine ? <p>{localityLine}</p> : null}
+            {business.phone ? <p>Phone: {business.phone}</p> : null}
             {business.gstin ? (
               <p>
                 <span className="font-medium text-[#344054]">GSTIN:</span>{' '}

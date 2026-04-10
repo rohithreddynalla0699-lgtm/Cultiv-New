@@ -242,7 +242,6 @@ Deno.serve(async (req) => {
     .select(
       'id, role_id, full_name, pin_hash, store_id, is_active, roles!inner(role_key, role_name, scope_type, role_permissions(is_allowed, permissions(permission_key)))'
     )
-    .eq('is_active', true)
     .eq('roles.role_key', mode)
     .limit(20);
 
@@ -251,8 +250,7 @@ Deno.serve(async (req) => {
       .select(
         'id, role_id, full_name, pin_hash, store_id, is_active, roles!inner(role_key, role_name, scope_type, role_permissions(is_allowed, permissions(permission_key))), stores!inner(id, code, is_active)'
       )
-      .eq('stores.code', storeCode)
-      .eq('stores.is_active', true);
+      .eq('stores.code', storeCode);
   }
 
   const { data, error } = await query;
@@ -264,7 +262,7 @@ Deno.serve(async (req) => {
   const users = (data ?? []) as InternalUserAccessRow[];
   if (users.length === 0) {
     await registerFailedAttempt(db, attemptKey);
-    return json(401, { error: 'Invalid internal credentials.' });
+    return json(401, { error: 'Invalid PIN.' });
   }
 
   let user: InternalUserAccessRow | null = null;
@@ -278,7 +276,11 @@ Deno.serve(async (req) => {
 
   if (!user) {
     await registerFailedAttempt(db, attemptKey);
-    return json(401, { error: 'Invalid internal credentials.' });
+    return json(401, { error: 'Invalid PIN.' });
+  }
+
+  if (!user.is_active || (mode === 'store' && user.stores && user.stores.is_active === false)) {
+    return json(403, { error: 'This login is inactive. Contact the owner.' });
   }
 
   await clearFailedAttempts(db, attemptKey);
@@ -286,15 +288,15 @@ Deno.serve(async (req) => {
   // Extra scope guards for defense in depth.
   if (mode === 'store') {
     if (user.roles.scope_type !== 'store') {
-      return json(403, { error: 'Role scope mismatch for store mode.' });
+      return json(403, { error: 'Permission denied for this access mode.' });
     }
     if (!user.store_id) {
-      return json(403, { error: 'Store user is missing store scope.' });
+      return json(403, { error: 'Permission denied for this access mode.' });
     }
   } else {
     const allowedGlobalScopes = new Set(['global', 'owner', 'admin']);
     if (!allowedGlobalScopes.has(user.roles.scope_type)) {
-      return json(403, { error: 'Role scope mismatch for non-store mode.' });
+      return json(403, { error: 'Permission denied for this access mode.' });
     }
   }
 

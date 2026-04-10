@@ -6,7 +6,7 @@ type RoleKey = 'owner' | 'admin' | 'store';
 type ScopeType = 'global' | 'store' | 'owner' | 'admin';
 type EmployeeRole = 'manager' | 'kitchen' | 'counter';
 type ShiftStatus = 'on_shift' | 'off_shift';
-type EmployeesAction = 'dashboard' | 'upsert_employee' | 'delete_employee';
+type EmployeesAction = 'dashboard' | 'upsert_employee' | 'deactivate_employee' | 'delete_employee';
 type DashboardPeriod = 'this_week' | 'last_week' | 'this_month' | 'last_month';
 
 interface InternalEmployeesRequest {
@@ -97,8 +97,8 @@ const json = (status: number, payload: Record<string, unknown>) =>
 const roundHours = (hours: number) => Number(Math.max(0, hours).toFixed(2));
 
 const normalizeAction = (body: InternalEmployeesRequest): { value?: EmployeesAction; error?: string } => {
-  if (body.action !== 'dashboard' && body.action !== 'upsert_employee' && body.action !== 'delete_employee') {
-    return { error: 'action must be one of dashboard, upsert_employee, or delete_employee.' };
+  if (body.action !== 'dashboard' && body.action !== 'upsert_employee' && body.action !== 'deactivate_employee' && body.action !== 'delete_employee') {
+    return { error: 'action must be one of dashboard, upsert_employee, deactivate_employee, or delete_employee.' };
   }
   return { value: body.action };
 };
@@ -337,6 +337,87 @@ const ROLE_SET = new Set<EmployeeRole>(['manager', 'kitchen', 'counter']);
 
 const generateEmployeeCode = () => `EMP-${crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()}`;
 
+const deactivateEmployee = async (db: ReturnType<typeof createClient>, session: InternalAccessSessionRow, employeeId: string) => {
+  if (!employeeId || typeof employeeId !== 'string') {
+    return { status: 400, payload: { error: 'employeeId is required.' } };
+  }
+
+  const { data: existingEmployee, error: existingError } = await db
+    .from('employees')
+    .select('id, full_name, store_id, is_active')
+    .eq('id', employeeId)
+    .single();
+
+  if (existingError || !existingEmployee) {
+    return { status: 404, payload: { error: 'Employee not found.' } };
+  }
+
+  if (session.scope_type === 'store' && existingEmployee.store_id !== session.scope_store_id) {
+    return { status: 403, payload: { error: 'Employee is out of this store scope.' } };
+  }
+
+  if (!existingEmployee.is_active) {
+    return {
+      status: 200,
+      payload: {
+        success: true,
+        message: `${existingEmployee.full_name} is already inactive.`,
+      },
+    };
+  }
+
+  const nowIso = new Date().toISOString();
+  const { data: openShiftRows, error: openShiftError } = await db
+    .from('employee_shifts')
+    .select('shift_id, clock_in_at')
+    .eq('employee_id', employeeId)
+    .is('clock_out_at', null)
+    .order('clock_in_at', { ascending: false })
+    .limit(1);
+
+  if (openShiftError) {
+    return { status: 500, payload: { error: 'Could not close the active shift before deactivation.' } };
+  }
+
+  const openShift = (openShiftRows ?? [])[0] ?? null;
+  if (openShift) {
+    const totalHours = roundHours((Date.parse(nowIso) - Date.parse(openShift.clock_in_at)) / HOURS_MS);
+    const { error: closeShiftError } = await db
+      .from('employee_shifts')
+      .update({
+        clock_out_at: nowIso,
+        total_hours: totalHours,
+        updated_at: nowIso,
+      })
+      .eq('shift_id', openShift.shift_id);
+
+    if (closeShiftError) {
+      return { status: 500, payload: { error: 'Could not close the active shift before deactivation.' } };
+    }
+  }
+
+  const { error: deactivateError } = await db
+    .from('employees')
+    .update({
+      is_active: false,
+      shift_status: 'off_shift',
+      updated_at: nowIso,
+    })
+    .eq('id', employeeId);
+
+  if (deactivateError) {
+    return { status: 500, payload: { error: 'Could not deactivate employee.' } };
+  }
+
+  return {
+    status: 200,
+    payload: {
+      success: true,
+      message: `${existingEmployee.full_name} was deactivated.`,
+    },
+  };
+};
+
 const deleteEmployee = async (db: ReturnType<typeof createClient>, session: InternalAccessSessionRow, employeeId: string) => {
   if (!employeeId || typeof employeeId !== 'string') {
     return { status: 400, payload: { error: 'employeeId is required.' } };
@@ -344,7 +425,7 @@ const deleteEmployee = async (db: ReturnType<typeof createClient>, session: Inte
 
   const { data: existingEmployee, error: existingError } = await db
     .from('employees')
-    .select('id, store_id')
+    .select('id, full_name, store_id')
     .eq('id', employeeId)
     .single();
 
@@ -368,38 +449,21 @@ const deleteEmployee = async (db: ReturnType<typeof createClient>, session: Inte
 
   const hasShifts = (shifts ?? []).length > 0;
 
-  if (!hasShifts) {
-    const { error: deleteError } = await db
-      .from('employees')
-      .delete()
-      .eq('id', employeeId);
-
-    if (deleteError) {
-      return { status: 500, payload: { error: 'Could not delete employee.' } };
-    }
-
+  if (hasShifts) {
     return {
-      status: 200,
+      status: 409,
       payload: {
-        success: true,
-        message: 'Employee permanently deleted.',
+        error: 'This employee has shift/history records, so they cannot be permanently deleted. Please deactivate instead.',
       },
     };
   }
 
-  const nowIso = new Date().toISOString();
-  const { error: softDeleteError } = await db
+  const { error: deleteError } = await db
     .from('employees')
-    .update({
-      is_deleted: true,
-      is_active: false,
-      deleted_at: nowIso,
-      shift_status: 'off_shift',
-      updated_at: nowIso,
-    })
+    .delete()
     .eq('id', employeeId);
 
-  if (softDeleteError) {
+  if (deleteError) {
     return { status: 500, payload: { error: 'Could not delete employee.' } };
   }
 
@@ -407,7 +471,7 @@ const deleteEmployee = async (db: ReturnType<typeof createClient>, session: Inte
     status: 200,
     payload: {
       success: true,
-      message: 'Employee deleted (shift history preserved).',
+      message: `${existingEmployee.full_name} was permanently deleted.`,
     },
   };
 };
@@ -664,6 +728,11 @@ Deno.serve(async (req) => {
   if (action.value === 'delete_employee') {
     const deleteResult = await deleteEmployee(db, session, body.employeeId ?? '');
     return json(deleteResult.status, deleteResult.payload as Record<string, unknown>);
+  }
+
+  if (action.value === 'deactivate_employee') {
+    const deactivateResult = await deactivateEmployee(db, session, body.employeeId ?? '');
+    return json(deactivateResult.status, deactivateResult.payload as Record<string, unknown>);
   }
 
   const saveResult = await saveEmployee(db, session, body);

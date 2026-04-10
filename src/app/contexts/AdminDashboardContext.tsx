@@ -49,6 +49,7 @@ interface AdminDashboardContextType {
   updateEmployee: (employeeId: string, input: EmployeeInput) => { success: boolean; message: string };
   clockInEmployee: (employeeId: string) => void;
   clockOutEmployee: (employeeId: string) => void;
+  refreshStores: () => Promise<void>;
   refreshInventory: () => Promise<void>;
   createInventoryItem: (input: {
     name: string;
@@ -338,6 +339,29 @@ const normalizeRole = (role: string): EmployeeRole => {
   return 'kitchen';
 };
 
+const formatInternalLoginError = (message: string | null | undefined) => {
+  const normalized = String(message ?? '').trim();
+  if (!normalized) {
+    return 'Internal login is temporarily unavailable. Please try again.';
+  }
+  if (normalized === 'Invalid PIN.') {
+    return 'Invalid PIN.';
+  }
+  if (normalized === 'This login is inactive. Contact the owner.') {
+    return 'This login is inactive. Contact the owner.';
+  }
+  if (normalized === 'Permission denied for this access mode.') {
+    return 'Permission denied for this access mode.';
+  }
+  if (normalized.includes('Network error')) {
+    return 'Internal login is temporarily unavailable. Please try again.';
+  }
+  if (normalized.includes('Too many failed login attempts')) {
+    return 'Too many failed attempts. Please wait and try again.';
+  }
+  return 'Internal login is temporarily unavailable. Please try again.';
+};
+
 const sameStringArray = (left: string[], right: string[]) => (
   left.length === right.length && left.every((value, index) => value === right[index])
 );
@@ -485,22 +509,30 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
   const [storedScope, setStoredScope] = useState<StoreScope>(() => readStorage(STORAGE_KEYS.activeStoreScope, 'all'));
   const [session, setSession] = useState<InternalAccessSession | null>(() => normalizeSession(readStorage(STORAGE_KEYS.session, null), []));
 
+  const refreshStores = useCallback(async () => {
+    const loadedStores = await loadStores(false);
+    setCanonicalStores(loadedStores);
+    setStores(loadedStores.map((store) => ({
+      id: store.id,
+      name: store.name,
+      city: store.city,
+      code: normalizeStoreCode(store.code),
+      addressLine1: store.addressLine1,
+      state: store.state,
+      postalCode: store.zipCode,
+      phone: store.phone,
+      pin: '',
+      isActive: store.isActive,
+      createdAt: nowIso(),
+    })));
+  }, []);
+
   useEffect(() => {
     let isActive = true;
 
-    void loadStores(false)
-      .then((loadedStores) => {
+    void refreshStores()
+      .then(() => {
         if (!isActive) return;
-        setCanonicalStores(loadedStores);
-        setStores(loadedStores.map((store) => ({
-          id: store.id,
-          name: store.name,
-          city: store.city,
-          code: normalizeStoreCode(store.code),
-          pin: '',
-          isActive: store.isActive,
-          createdAt: nowIso(),
-        })));
       })
       .catch(() => {
         if (!isActive) return;
@@ -511,7 +543,7 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     return () => {
       isActive = false;
     };
-  }, []);
+  }, [refreshStores]);
 
   useEffect(() => {
     if (typeof localStorage === 'undefined') {
@@ -547,9 +579,12 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
   }, [session, stores]);
 
   const loginAsOwner = async (pin: string) => {
+    if (!isSixDigitPin(pin)) {
+      return { success: false, message: 'Enter a valid 6-digit PIN.' };
+    }
     const { data, error } = await loginInternal({ mode: 'owner', pin });
     if (error || !data) {
-      return { success: false, message: error ?? 'Owner login failed.' };
+      return { success: false, message: formatInternalLoginError(error) };
     }
     const nextSession = createAccessSession({
       userId: data.userId,
@@ -569,9 +604,12 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
   };
 
   const loginAsAdmin = async (pin: string) => {
+    if (!isSixDigitPin(pin)) {
+      return { success: false, message: 'Enter a valid 6-digit PIN.' };
+    }
     const { data, error } = await loginInternal({ mode: 'admin', pin });
     if (error || !data) {
-      return { success: false, message: error ?? 'Admin login failed.' };
+      return { success: false, message: formatInternalLoginError(error) };
     }
     const nextSession = createAccessSession({
       userId: data.userId,
@@ -596,10 +634,13 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     if (!store || !store.isActive) {
       return { success: false, message: 'Select an active store.' };
     }
+    if (!isSixDigitPin(pin)) {
+      return { success: false, message: 'Enter a valid 6-digit PIN.' };
+    }
 
     const { data, error } = await loginInternal({ mode: 'store', pin, storeCode: normalizedStoreCode });
     if (error || !data) {
-      return { success: false, message: error ?? 'Store login failed.' };
+      return { success: false, message: formatInternalLoginError(error) };
     }
 
     const nextSession = createAccessSession({
@@ -1115,6 +1156,7 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     updateEmployee,
     clockInEmployee,
     clockOutEmployee,
+    refreshStores,
     refreshInventory,
     createInventoryItem,
     archiveInventoryItem,

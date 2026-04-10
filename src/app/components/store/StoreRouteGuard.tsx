@@ -26,11 +26,11 @@ export function StoreRouteGuard({ children }: StoreRouteGuardProps) {
   const hasShiftSession = Boolean(isSessionActive && session);
 
   if (internalSession && internalSession.scopeType === 'global') {
-    return <Navigate to="/admin/summary" replace />;
+    return <Navigate to="/operations/summary" replace />;
   }
 
   if (!hasStoreLogin && !hasShiftSession) {
-    return <Navigate to="/operations" replace />;
+    return <Navigate to="/operations/access" replace />;
   }
 
   if (activeStoreScope !== 'all' && session && activeStoreScope !== session.store_id) {

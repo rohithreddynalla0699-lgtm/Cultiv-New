@@ -15,7 +15,7 @@ interface InternalOrdersSessionPayload {
 }
 
 function isInternalOrdersRoute(pathname: string) {
-  return pathname.includes('/store/') || pathname.includes('/admin/');
+  return pathname.includes('/store/') || pathname.includes('/operations/');
 }
 
 function toUiStatus(status: InternalOrdersListOrderRow['order_status']): OrderStatus {

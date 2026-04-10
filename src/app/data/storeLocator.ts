@@ -7,7 +7,10 @@ export interface StoreLocatorStore {
   name: string;
   city: string;
   code: string;
+  addressLine1?: string;
+  state?: string;
   zipCode: string;
+  phone?: string;
   isActive: boolean;
 }
 
@@ -21,7 +24,10 @@ export const CUSTOMER_STORE_METADATA: StoreLocatorStore[] = [
     name: 'CULTIV Siddipet',
     city: 'Siddipet',
     code: 'SID-CEN',
+    addressLine1: '',
+    state: '',
     zipCode: '',
+    phone: '',
     isActive: true,
   },
 ];
@@ -33,7 +39,7 @@ function isBrowser() {
 export async function loadStores(allowFallback = true): Promise<StoreLocatorStore[]> {
   const { data, error } = await supabase
     .from('stores')
-    .select('id, name, city, code, postal_code, is_active')
+    .select('id, name, city, code, address_line_1, state, postal_code, phone, is_active')
     .order('name', { ascending: true });
 
   if (error || !data) {
@@ -46,7 +52,10 @@ export async function loadStores(allowFallback = true): Promise<StoreLocatorStor
     name: store.name,
     city: store.city,
     code: store.code,
+    addressLine1: store.address_line_1 ?? '',
+    state: store.state ?? '',
     zipCode: store.postal_code ?? '',
+    phone: store.phone ?? '',
     isActive: store.is_active,
   }));
 }

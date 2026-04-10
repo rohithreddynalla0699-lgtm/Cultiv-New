@@ -2,6 +2,7 @@ import {
   loadInternalEmployeesDashboard,
   type InternalEmployeeDashboardPeriod,
   upsertInternalEmployee,
+  deactivateInternalEmployee,
   deleteInternalEmployee,
   type InternalEmployeeDashboardRow,
   type InternalEmployeesDashboardResponse,
@@ -75,6 +76,22 @@ export const employeeAdminService = {
 
     if (error || !data) {
       throw new Error(error ?? 'Could not delete employee.');
+    }
+
+    return data;
+  },
+
+  async deactivateEmployee(session: InternalAccessSession, employeeId: string): Promise<EmployeeDeleteResult> {
+    const { data, error } = await deactivateInternalEmployee({
+      internalSessionToken: session.internalSessionToken,
+      roleKey: session.roleKey,
+      scopeType: toScopeType(session.scopeType),
+      scopeStoreId: session.scopeStoreId,
+      employeeId,
+    });
+
+    if (error || !data) {
+      throw new Error(error ?? 'Could not deactivate employee.');
     }
 
     return data;

@@ -61,6 +61,14 @@ function MenuCategoryRedirect() {
   return <Navigate to="/order" replace state={nextState} />;
 }
 
+function LegacyAdminRedirect() {
+  const location = useLocation();
+  const nextPath = location.pathname === '/admin'
+    ? '/operations/summary'
+    : location.pathname.replace(/^\/admin/, '/operations').replace('/operations/dashboard', '/operations/summary');
+  return <Navigate to={nextPath} replace />;
+}
+
 function CustomerProtectedRoute() {
   const { user } = useAuth();
 
@@ -222,7 +230,7 @@ function AppShell() {
               <Route path="/rewards" element={<RewardsScreen />} />
             </Route>
             <Route path="/careers" element={<CareersScreen />} />
-            <Route path="/operations" element={<AdminDashboardProvider><AdminAccessScreen adminSuccessPath="/admin/summary" storeSuccessPath="/store/orders" /></AdminDashboardProvider>} />
+            <Route path="/operations/access" element={<AdminDashboardProvider><AdminAccessScreen adminSuccessPath="/operations/summary" storeSuccessPath="/store/orders" /></AdminDashboardProvider>} />
             <Route path="/shift" element={<Navigate to="/store/shift" replace />} />
             <Route
               path="/store"
@@ -240,9 +248,9 @@ function AppShell() {
               <Route path="inventory" element={<InventoryScreen />} />
               <Route path="shift" element={<StoreShiftScreen />} />
             </Route>
-            <Route path="/admin" element={<AdminDashboardProvider><AdminDashboardLayout /></AdminDashboardProvider>}>
+            <Route path="/operations" element={<AdminDashboardProvider><AdminDashboardLayout /></AdminDashboardProvider>}>
               <Route index element={<Navigate to="summary" replace />} />
-              <Route path="dashboard" element={<Navigate to="/admin/summary" replace />} />
+              <Route path="dashboard" element={<Navigate to="/operations/summary" replace />} />
               <Route path="summary" element={<AdminSummaryScreen />} />
               <Route path="orders" element={<OrdersBoardScreen />} />
               <Route path="counter-billing" element={<CounterBillingScreen />} />
@@ -252,6 +260,7 @@ function AppShell() {
               <Route path="reports" element={<ReportsScreen />} />
               <Route path="stores" element={<StoresScreen />} />
             </Route>
+            <Route path="/admin/*" element={<LegacyAdminRedirect />} />
           </Routes>
         </Suspense>
       </main>

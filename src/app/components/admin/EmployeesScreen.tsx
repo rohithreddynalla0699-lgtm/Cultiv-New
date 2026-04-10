@@ -5,6 +5,7 @@ import { EmployeeShiftCard } from './EmployeeShiftCard';
 import { useAdminDashboard } from '../../contexts/AdminDashboardContext';
 import type { EmployeeInput, EmployeeRole, EmployeeRecord, EmployeeShift } from '../../types/admin';
 import { employeeAdminService, type EmployeeDashboardRow } from '../../services/employeeAdminService';
+import { credentialsAdminService } from '../../services/credentialsAdminService';
 import type { InternalEmployeeDashboardPeriod } from '../../lib/internalOpsApi';
 
 const formatShiftTime = (value: string) => new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -29,7 +30,16 @@ interface DeleteConfirmationState {
   show: boolean;
   employeeId: string | null;
   employeeName: string;
+  action: 'delete' | 'deactivate';
   isDeleting: boolean;
+}
+
+interface ResetPinState {
+  show: boolean;
+  employeeId: string | null;
+  employeeName: string;
+  newPin: string;
+  isSubmitting: boolean;
 }
 
 const createEmptyEmployeeForm = (storeId: string): EmployeeInput => ({
@@ -64,7 +74,15 @@ export function EmployeesScreen() {
     show: false,
     employeeId: null,
     employeeName: '',
+    action: 'delete',
     isDeleting: false,
+  });
+  const [resetPinState, setResetPinState] = useState<ResetPinState>({
+    show: false,
+    employeeId: null,
+    employeeName: '',
+    newPin: '',
+    isSubmitting: false,
   });
   const latestDashboardRequestIdRef = useRef(0);
   const editorRef = useRef<HTMLDivElement>(null);
@@ -203,12 +221,32 @@ export function EmployeesScreen() {
     setForm(createEmptyEmployeeForm(defaultStoreId));
   };
 
-  const openDeleteConfirmation = (employeeId: string, employeeName: string) => {
-    setDeleteConfirmation({ show: true, employeeId, employeeName, isDeleting: false });
+  const openDeleteConfirmation = (employeeId: string, employeeName: string, action: 'delete' | 'deactivate') => {
+    setDeleteConfirmation({ show: true, employeeId, employeeName, action, isDeleting: false });
   };
 
   const closeDeleteConfirmation = () => {
-    setDeleteConfirmation({ show: false, employeeId: null, employeeName: '', isDeleting: false });
+    setDeleteConfirmation({ show: false, employeeId: null, employeeName: '', action: 'delete', isDeleting: false });
+  };
+
+  const openResetPin = (employeeId: string, employeeName: string) => {
+    setResetPinState({
+      show: true,
+      employeeId,
+      employeeName,
+      newPin: '',
+      isSubmitting: false,
+    });
+  };
+
+  const closeResetPin = () => {
+    setResetPinState({
+      show: false,
+      employeeId: null,
+      employeeName: '',
+      newPin: '',
+      isSubmitting: false,
+    });
   };
 
   const confirmDelete = async () => {
@@ -221,15 +259,47 @@ export function EmployeesScreen() {
     setDeleteConfirmation((prev) => ({ ...prev, isDeleting: true }));
 
     try {
-      await employeeAdminService.deleteEmployee(session, deleteConfirmation.employeeId);
-      setMessage(`${deleteConfirmation.employeeName} has been deleted.`);
+      const result = deleteConfirmation.action === 'delete'
+        ? await employeeAdminService.deleteEmployee(session, deleteConfirmation.employeeId)
+        : await employeeAdminService.deactivateEmployee(session, deleteConfirmation.employeeId);
+      setMessage(result.message);
       closeEditor();
       closeDeleteConfirmation();
       await loadEmployees();
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Could not delete employee.';
+      const errorMessage = error instanceof Error
+        ? error.message
+        : deleteConfirmation.action === 'delete'
+          ? 'Could not delete employee.'
+          : 'Could not deactivate employee.';
       setMessage(errorMessage);
       setDeleteConfirmation((prev) => ({ ...prev, isDeleting: false }));
+    }
+  };
+
+  const confirmResetPin = async () => {
+    if (!session || !resetPinState.employeeId) {
+      setMessage('Internal session expired. Please sign in again.');
+      closeResetPin();
+      return;
+    }
+
+    if (!/^\d{6}$/.test(resetPinState.newPin)) {
+      setMessage('Use a valid 6-digit shift PIN.');
+      return;
+    }
+
+    setResetPinState((previous) => ({ ...previous, isSubmitting: true }));
+
+    try {
+      const result = await credentialsAdminService.updateEmployeePin(session, resetPinState.employeeId, resetPinState.newPin);
+      setMessage(result.message);
+      closeResetPin();
+      await loadEmployees({ silent: true });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Could not update employee shift PIN.';
+      setMessage(errorMessage);
+      setResetPinState((previous) => ({ ...previous, isSubmitting: false }));
     }
   };
 
@@ -307,7 +377,13 @@ export function EmployeesScreen() {
               </label>
               <label className="block text-sm text-foreground/68">
                 <span className="mb-2 block font-medium">Shift PIN</span>
-                <input data-testid="employee-form-pin" value={form.pin} onChange={(event) => setForm((current) => ({ ...current, pin: event.target.value.replace(/\D/g, '').slice(0, 6) }))} placeholder="6-digit PIN" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                <input
+                  data-testid="employee-form-pin"
+                  value={form.pin}
+                  onChange={(event) => setForm((current) => ({ ...current, pin: event.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                  placeholder={editingEmployeeId ? 'Leave blank to keep current PIN' : '6-digit PIN'}
+                  className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary"
+                />
               </label>
               <label className="block text-sm text-foreground/68">
                 <span className="mb-2 block font-medium">Phone</span>
@@ -317,13 +393,32 @@ export function EmployeesScreen() {
                 <span className="font-medium">Employee active</span>
                 <input type="checkbox" checked={form.isActive} onChange={(event) => setForm((current) => ({ ...current, isActive: event.target.checked }))} className="h-4 w-4 accent-primary" />
               </label>
-              <div className={`grid gap-2 ${editingEmployeeId ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} xl:col-span-3`}>
+              <div className={`grid gap-2 ${editingEmployeeId ? 'sm:grid-cols-5' : 'sm:grid-cols-2'} xl:col-span-3`}>
                 <button data-testid="employee-form-submit" type="button" onClick={handleSubmit} className="rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground">{editingEmployeeId ? 'Save changes' : 'Create employee'}</button>
                 <button type="button" onClick={closeEditor} className="rounded-2xl border border-primary/16 bg-white px-4 py-3 text-sm font-medium text-foreground/72">Cancel</button>
                 {editingEmployeeId ? (
                   <button
                     type="button"
-                    onClick={() => openDeleteConfirmation(editingEmployeeId, form.name)}
+                    onClick={() => openResetPin(editingEmployeeId, form.name)}
+                    className="rounded-2xl border border-primary/16 bg-white px-4 py-3 text-sm font-medium text-foreground/72"
+                  >
+                    Reset Shift PIN
+                  </button>
+                ) : null}
+                {editingEmployeeId ? (
+                  <button
+                    type="button"
+                    onClick={() => openDeleteConfirmation(editingEmployeeId, form.name, 'deactivate')}
+                    disabled={!form.isActive}
+                    className="rounded-2xl border border-amber-300/50 bg-amber-50/60 px-4 py-3 text-sm font-medium text-amber-800 disabled:opacity-50"
+                  >
+                    Deactivate
+                  </button>
+                ) : null}
+                {editingEmployeeId ? (
+                  <button
+                    type="button"
+                    onClick={() => openDeleteConfirmation(editingEmployeeId, form.name, 'delete')}
                     className="rounded-2xl border border-red-300/50 bg-red-50/60 px-4 py-3 text-sm font-medium text-red-700 hover:bg-red-50"
                   >
                     Delete
@@ -436,7 +531,11 @@ export function EmployeesScreen() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-4">
           <div className="max-w-sm rounded-[28px] border border-primary/12 bg-white p-6 shadow-lg">
             <p className="text-sm font-semibold text-foreground">Delete this employee?</p>
-            <p className="mt-2 text-sm text-foreground/72">Delete {deleteConfirmation.employeeName}. This cannot be undone.</p>
+            <p className="mt-2 text-sm text-foreground/72">
+              {deleteConfirmation.action === 'delete'
+                ? `Delete ${deleteConfirmation.employeeName}. This is permanent and will be rejected if shift history exists.`
+                : `Deactivate ${deleteConfirmation.employeeName}. This keeps history but removes active access.`}
+            </p>
             <div className="mt-6 flex gap-3">
               <button
                 type="button"
@@ -450,9 +549,51 @@ export function EmployeesScreen() {
                 type="button"
                 onClick={confirmDelete}
                 disabled={deleteConfirmation.isDeleting}
-                className="flex-1 rounded-2xl border border-red-300/50 bg-red-50/60 px-4 py-2 text-sm font-medium text-red-700 disabled:opacity-50"
+                className={`flex-1 rounded-2xl px-4 py-2 text-sm font-medium disabled:opacity-50 ${
+                  deleteConfirmation.action === 'delete'
+                    ? 'border border-red-300/50 bg-red-50/60 text-red-700'
+                    : 'border border-amber-300/50 bg-amber-50/60 text-amber-800'
+                }`}
               >
-                {deleteConfirmation.isDeleting ? 'Deleting...' : 'Delete'}
+                {deleteConfirmation.isDeleting
+                  ? deleteConfirmation.action === 'delete' ? 'Deleting...' : 'Deactivating...'
+                  : deleteConfirmation.action === 'delete' ? 'Delete' : 'Deactivate'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {resetPinState.show ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 p-4">
+          <div className="max-w-sm rounded-[28px] border border-primary/12 bg-white p-6 shadow-lg">
+            <p className="text-sm font-semibold text-foreground">Reset shift PIN</p>
+            <p className="mt-2 text-sm text-foreground/72">Set a new 6-digit shift PIN for {resetPinState.employeeName}.</p>
+            <label className="mt-4 block text-sm text-foreground/68">
+              <span className="mb-2 block font-medium">New shift PIN</span>
+              <input
+                value={resetPinState.newPin}
+                onChange={(event) => setResetPinState((previous) => ({ ...previous, newPin: event.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                placeholder="6-digit PIN"
+                className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary"
+              />
+            </label>
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={closeResetPin}
+                disabled={resetPinState.isSubmitting}
+                className="flex-1 rounded-2xl border border-primary/16 bg-white px-4 py-2 text-sm font-medium text-foreground/72 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void confirmResetPin()}
+                disabled={resetPinState.isSubmitting}
+                className="flex-1 rounded-2xl bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+              >
+                {resetPinState.isSubmitting ? 'Updating…' : 'Update PIN'}
               </button>
             </div>
           </div>

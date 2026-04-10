@@ -49,7 +49,7 @@ function normalizeScopeType(scopeType?: string): 'global' | 'store' {
 }
 
 function isOrdersBoardRoute(pathname: string) {
-  return pathname.includes('/store/orders') || pathname.includes('/admin/orders');
+  return pathname.includes('/store/orders') || pathname.includes('/operations/orders');
 }
 
 function mapOrderTypeFilter(orderType: OrdersBoardOrderTypeFilter): InternalOrdersListFilters['orderType'] {

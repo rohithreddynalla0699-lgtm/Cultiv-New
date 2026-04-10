@@ -102,7 +102,7 @@ export function MenuManagementScreen() {
   );
 
   if (!permissions.canManageMenu) {
-    return <Navigate to="/admin/summary" replace />;
+    return <Navigate to="/operations/summary" replace />;
   }
 
   const resetForm = () => {

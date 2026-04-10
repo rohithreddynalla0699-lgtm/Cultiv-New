@@ -75,7 +75,7 @@ export function ReportsScreen() {
   }, [summary]);
 
   if (!permissions.canViewReports) {
-    return <Navigate to="/admin/summary" replace />;
+    return <Navigate to="/operations/summary" replace />;
   }
 
   return (

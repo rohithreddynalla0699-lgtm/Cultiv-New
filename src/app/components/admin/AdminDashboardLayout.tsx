@@ -18,7 +18,7 @@ export function AdminDashboardLayout() {
   const location = useLocation();
 
   if (!session) {
-    return <Navigate to="/operations" replace />;
+    return <Navigate to="/operations/access" replace />;
   }
 
   const isStoreWorkspace = session.scopeType === 'store' || location.pathname.startsWith('/store');
@@ -30,14 +30,14 @@ export function AdminDashboardLayout() {
         { to: '/store/shift', label: 'Shift Control', icon: Users },
       ]
     : [
-        { to: '/admin/summary', label: 'Summary', icon: LayoutDashboard },
-        ...(hasPermission('can_access_orders') ? [{ to: '/admin/orders', label: 'Orders', icon: ClipboardList }] : []),
-        ...(hasPermission('can_access_pos') ? [{ to: '/admin/counter-billing', label: 'POS', icon: ReceiptIndianRupee }] : []),
-        ...(hasPermission('can_access_inventory') ? [{ to: '/admin/inventory', label: 'Inventory', icon: Package2 }] : []),
-        ...(hasPermission('can_manage_employees') ? [{ to: '/admin/employees', label: 'Employees', icon: Users }] : []),
-        ...(hasPermission('can_manage_menu') ? [{ to: '/admin/menu', label: 'Menu', icon: ScrollText }] : []),
-        ...(hasPermission('can_view_reports') ? [{ to: '/admin/reports', label: 'Reports', icon: BarChart3 }] : []),
-        ...(hasPermission('can_manage_stores') ? [{ to: '/admin/stores', label: 'Stores', icon: Store }] : []),
+        { to: '/operations/summary', label: 'Summary', icon: LayoutDashboard },
+        ...(hasPermission('can_access_orders') ? [{ to: '/operations/orders', label: 'Orders', icon: ClipboardList }] : []),
+        ...(hasPermission('can_access_pos') ? [{ to: '/operations/counter-billing', label: 'POS', icon: ReceiptIndianRupee }] : []),
+        ...(hasPermission('can_access_inventory') ? [{ to: '/operations/inventory', label: 'Inventory', icon: Package2 }] : []),
+        ...(hasPermission('can_manage_employees') ? [{ to: '/operations/employees', label: 'Employees', icon: Users }] : []),
+        ...(hasPermission('can_manage_menu') ? [{ to: '/operations/menu', label: 'Menu', icon: ScrollText }] : []),
+        ...(hasPermission('can_view_reports') ? [{ to: '/operations/reports', label: 'Reports', icon: BarChart3 }] : []),
+        ...(hasPermission('can_manage_stores') ? [{ to: '/operations/stores', label: 'Stores', icon: Store }] : []),
       ];
 
   const scopeLabel = session.scopeType === 'global'
@@ -60,7 +60,7 @@ export function AdminDashboardLayout() {
           <div className="flex items-center gap-3 border-b border-primary/10 pb-4">
             <Logo variant="emblem" animated />
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-primary/58">Internal Dashboard</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-primary/58">Operations Dashboard</p>
               <p className="mt-1 text-lg font-semibold tracking-[-0.03em] text-foreground">CULTIV Store Ops</p>
             </div>
           </div>

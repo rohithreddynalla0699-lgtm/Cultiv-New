@@ -7,6 +7,10 @@ export interface StoreRecord {
   name: string;
   city: string;
   code: string;
+  addressLine1?: string;
+  state?: string;
+  postalCode?: string;
+  phone?: string;
   pin: string;
   isActive: boolean;
   createdAt: string;
@@ -16,6 +20,10 @@ export interface StoreInput {
   name: string;
   city: string;
   code: string;
+  addressLine1?: string;
+  state?: string;
+  postalCode?: string;
+  phone?: string;
   pin: string;
   isActive: boolean;
 }
