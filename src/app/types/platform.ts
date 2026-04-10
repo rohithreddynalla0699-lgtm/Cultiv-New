@@ -203,32 +203,6 @@ export interface CreateCounterWalkInOrderInput {
 	placedBy?: string;
 }
 
-export interface SavedAddressInput {
-	label: string;
-	addressLine: string;
-	landmark?: string;
-	city: string;
-	pincode: string;
-	isDefault?: boolean;
-}
-
-export interface UpdateSavedAddressInput extends SavedAddressInput {
-	id: string;
-}
-
-export interface SavedPaymentMethodInput {
-	type: PaymentMethodType;
-	label: string;
-	last4?: string;
-	upiId?: string;
-	billingName?: string;
-	isDefault?: boolean;
-}
-
-export interface UpdateSavedPaymentMethodInput extends SavedPaymentMethodInput {
-	id: string;
-}
-
 export interface AuthActionResult {
 	success: boolean;
 	message: string;

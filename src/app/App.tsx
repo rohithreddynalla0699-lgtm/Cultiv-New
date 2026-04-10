@@ -94,7 +94,14 @@ function HomePage({ onOrderClick, onCategorySelect }: { onOrderClick: () => void
 function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, pendingGuestOrderClaims, claimPendingGuestOrders, rejectPendingGuestClaims } = useAuth();
+  const {
+    user,
+    pendingGuestOrderClaims,
+    pendingGuestClaimsLoading,
+    pendingGuestClaimsError,
+    claimPendingGuestOrders,
+    rejectPendingGuestClaims,
+  } = useAuth();
   const [isCartPanelOpen, setIsCartPanelOpen] = useState(false);
   const [draftCartLines, setDraftCartLines] = useState(() => loadDraftCart());
   const previouslyAuthenticatedRef = useRef(Boolean(user));
@@ -365,25 +372,30 @@ function AppShell() {
             </p>
             <div className="mt-4 max-h-48 space-y-2 overflow-y-auto">
               {pendingGuestOrderClaims.map((order) => (
-                <div key={order.id} className="rounded-xl border border-primary/12 bg-white/75 px-3 py-2 text-sm">
-                  <p className="font-medium">Order #{order.id.slice(-6)}</p>
+                <div key={order.orderId} className="rounded-xl border border-primary/12 bg-white/75 px-3 py-2 text-sm">
+                  <p className="font-medium">Order #{order.orderId.slice(-6)}</p>
                   <p className="mt-0.5 text-xs text-foreground/60">
                     {new Date(order.createdAt).toLocaleDateString()} · ₹{order.total}
                   </p>
                 </div>
               ))}
             </div>
+            {pendingGuestClaimsError ? (
+              <p className="mt-4 text-sm text-red-600">{pendingGuestClaimsError}</p>
+            ) : null}
             <div className="mt-5 flex flex-col gap-2 sm:flex-row">
               <button
                 type="button"
                 onClick={claimPendingGuestOrders}
+                disabled={pendingGuestClaimsLoading}
                 className="flex-1 rounded-full bg-primary py-3 text-sm font-semibold text-white transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary/90"
               >
-                Yes, link my orders
+                {pendingGuestClaimsLoading ? 'Linking...' : 'Yes, link my orders'}
               </button>
               <button
                 type="button"
                 onClick={rejectPendingGuestClaims}
+                disabled={pendingGuestClaimsLoading}
                 className="flex-1 rounded-full border border-primary/16 py-3 text-sm font-medium text-foreground/70 transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#F7FAF3] hover:text-foreground"
               >
                 No, this wasn't me

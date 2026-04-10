@@ -2,7 +2,6 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type {
-  Address,
   AuthActionResult,
   LoyaltyProfile,
   PointsActivityItem,
@@ -15,14 +14,8 @@ import type {
   PlaceOrderInput,
   CustomerCheckoutPaymentMethod,
   CreateCounterWalkInOrderInput,
-  SavedPaymentMethod,
-  SavedPaymentMethodInput,
-  SavedAddressInput,
   SignupInput,
-  UpdateSavedPaymentMethodInput,
-  UpdateSavedAddressInput,
   User,
-  UserPreferences,
   WalkInLinkInput,
 } from '../types/platform';
 import { createEmptyLoyaltyProfile, type LoyaltyBatchSummary, type LoyaltySummary } from '../types/loyalty';
@@ -48,19 +41,6 @@ interface AuthRecord extends User {
   password: string;
 }
 
-interface ResetTokenRecord {
-  token: string;
-  userId: string;
-  expiresAt: string;
-}
-
-interface PhoneChangeVerificationRecord {
-  code: string;
-  userId: string;
-  newPhone: string;
-  expiresAt: string;
-}
-
 interface InternalAccessSessionSnapshot {
   internalSessionToken: string;
   roleKey: 'owner' | 'admin' | 'store';
@@ -73,6 +53,12 @@ interface CustomerAccountSummary {
   reward_points: number;
   phone_verified: boolean;
   email_verified: boolean;
+}
+
+interface PendingGuestOrderClaim {
+  orderId: string;
+  createdAt: string;
+  total: number;
 }
 
 interface AuthContextType {
@@ -99,21 +85,12 @@ interface AuthContextType {
   lookupPosCustomerByPhone: (phone: string) => Promise<PosCustomerLookupResult | null>;
   linkWalkInOrder: (input: WalkInLinkInput) => Promise<AuthActionResult>;
   redeemReward: (offerId: string) => Promise<AuthActionResult>;
-  updateProfile: (updates: Partial<Pick<User, 'fullName'>> & { preferences?: Partial<UserPreferences> }) => Promise<AuthActionResult>;
-  addSavedAddress: (input: SavedAddressInput) => Promise<AuthActionResult>;
-  updateSavedAddress: (input: UpdateSavedAddressInput) => Promise<AuthActionResult>;
-  deleteSavedAddress: (addressId: string) => Promise<AuthActionResult>;
-  setDefaultAddress: (addressId: string) => Promise<AuthActionResult>;
-  addSavedPaymentMethod: (input: SavedPaymentMethodInput) => Promise<AuthActionResult>;
-  updateSavedPaymentMethod: (input: UpdateSavedPaymentMethodInput) => Promise<AuthActionResult>;
-  deleteSavedPaymentMethod: (paymentMethodId: string) => Promise<AuthActionResult>;
-  setDefaultPaymentMethod: (paymentMethodId: string) => Promise<AuthActionResult>;
-  requestPhoneChangeVerification: (newPhone: string) => Promise<AuthActionResult>;
-  confirmPhoneChangeVerification: (code: string) => Promise<AuthActionResult>;
   getOrderById: (orderId: string) => Order | undefined;
   updateOrderStatus: (orderId: string, status: OrderStatus, reason?: string) => Promise<AuthActionResult>;
-  pendingGuestOrderClaims: Order[];
-  claimPendingGuestOrders: () => void;
+  pendingGuestOrderClaims: PendingGuestOrderClaim[];
+  pendingGuestClaimsLoading: boolean;
+  pendingGuestClaimsError: string | null;
+  claimPendingGuestOrders: () => Promise<void>;
   rejectPendingGuestClaims: () => void;
 }
 
@@ -126,20 +103,11 @@ interface CheckoutPaymentResult {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const STORAGE_KEYS = {
-  users: 'cultiv_users_v2',
-  currentUserId: 'cultiv_current_user_v2',
-  customerAccount: 'cultiv_customer_account_v1',
   customerSessionToken: 'cultiv_customer_session_token_v1',
-  orders: 'cultiv_orders_v2',
-  resetTokens: 'cultiv_reset_tokens_v2',
-  phoneChangeVerifications: 'cultiv_phone_change_verifications_v1',
   rejectedGuestClaims: 'cultiv_rejected_guest_claims_v1',
 } as const;
 
 const ADMIN_ACCESS_SESSION_STORAGE_KEY = 'cultiv_admin_access_session_v1';
-
-const SYNC_URL: string | undefined = (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_SYNC_SERVER_URL;
-const AUTH_SYNC_CLIENT_ID = typeof crypto !== 'undefined' ? crypto.randomUUID() : Math.random().toString(36).slice(2);
 
 const STATUS_CONTENT: Record<OrderStatus, { label: string; description: string }> = {
   placed: { label: 'Order Placed', description: 'Your order is in the CULTIV queue.' },
@@ -167,13 +135,6 @@ const ensureHashedPassword = (password: string) => (
   password.startsWith(PASSWORD_HASH_PREFIX) ? password : hashPassword(password)
 );
 
-const verifyPassword = (input: string, stored: string) => {
-  if (stored.startsWith(PASSWORD_HASH_PREFIX)) {
-    return hashPassword(input) === stored;
-  }
-  return input === stored;
-};
-
 const isValidPhoneForAuthFlows = (phone: string) => /^\d{10}$/.test(phone.trim());
 
 const isValidPasswordPolicy = (password: string) => {
@@ -194,7 +155,6 @@ const createDefaultPaymentProfile = () => ({
   savedMethods: [],
 });
 
-const createVerificationCode = () => `${Math.floor(100000 + Math.random() * 900000)}`;
 const normalizeUserRecord = (record: AuthRecord): AuthRecord => {
   const savedAddresses = (record.savedAddresses ?? []).map((address, index) => ({
     ...address,
@@ -565,6 +525,64 @@ const invokeConfirmCheckoutPayment = async (input: ConfirmCheckoutPaymentInput):
   };
 };
 
+const loadPendingGuestOrderClaims = async (customerSessionToken: string): Promise<PendingGuestOrderClaim[]> => {
+  const { data, error } = await supabase.functions.invoke('customer-claim-orders', {
+    body: {
+      customerSessionToken,
+      mode: 'preview',
+    },
+  });
+
+  if (error || !data?.success) {
+    throw new Error(data?.error || error?.message || 'Could not load claimable guest orders.');
+  }
+
+  const rows = Array.isArray(data.orders) ? data.orders : [];
+  return rows.map((row: any) => ({
+    orderId: String(row.orderId ?? row.order_id),
+    createdAt: String(row.createdAt ?? row.created_at),
+    total: Number(row.total ?? row.total_amount ?? 0),
+  }));
+};
+
+const claimGuestOrders = async (customerSessionToken: string): Promise<number> => {
+  const { data, error } = await supabase.functions.invoke('customer-claim-orders', {
+    body: {
+      customerSessionToken,
+      mode: 'claim',
+    },
+  });
+
+  if (error || !data?.success) {
+    throw new Error(data?.error || error?.message || 'Could not claim guest orders.');
+  }
+
+  return Number(data.claimedCount ?? 0);
+};
+
+const fetchCanonicalCustomerProfile = async (customerSessionToken: string) => {
+  const { data, error } = await supabase.functions.invoke('customer-get-profile', {
+    body: {
+      customerSessionToken,
+    },
+  });
+
+  if (error || !data?.success || !data?.customer) {
+    throw new Error(data?.error || error?.message || 'Could not load customer profile.');
+  }
+
+  return data.customer as {
+    id: string;
+    full_name: string;
+    email: string;
+    phone: string;
+    reward_points: number;
+    phone_verified: boolean;
+    email_verified: boolean;
+    created_at: string;
+  };
+};
+
 const persistOrderToSupabase = async (order: Order): Promise<PersistOrderResult> => {
   try {
     const payload = buildSupabaseOrderPayload(order);
@@ -741,15 +759,11 @@ const deductPointsFIFO = (profile: LoyaltyProfile, pointsToRedeem: number, now =
   };
 };
 
-const daysAgo = (days: number) => new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-
 const buildSeedState = () => ({
   users: [] as AuthRecord[],
   orders: [] as Order[],
   loyaltyProfiles: {} as Record<string, LoyaltyProfile>,
   currentUserId: null as string | null,
-  resetTokens: [] as ResetTokenRecord[],
-  phoneChangeVerifications: [] as PhoneChangeVerificationRecord[],
 });
 
 const upsertBackendCustomerUser = (
@@ -807,37 +821,28 @@ interface AuthProviderProps {
 }
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const seedState = useMemo(() => buildSeedState(), []);
-  const [users, setUsers] = useState<AuthRecord[]>(() => normalizeUserRecords(readStorage(STORAGE_KEYS.users, seedState.users)));
-  const [currentUserId, setCurrentUserId] = useState<string | null>(() => readStorage(STORAGE_KEYS.currentUserId, seedState.currentUserId));
+  const [users, setUsers] = useState<AuthRecord[]>(() => normalizeUserRecords(seedState.users));
+  const [currentUserId, setCurrentUserId] = useState<string | null>(seedState.currentUserId);
   const [allOrders, setAllOrders] = useState<Order[]>([]);
   const [loyaltyProfiles, setLoyaltyProfiles] = useState<Record<string, LoyaltyProfile>>(() => normalizeLoyaltyProfiles(seedState.loyaltyProfiles));
-  const [resetTokens, setResetTokens] = useState<ResetTokenRecord[]>(() => readStorage(STORAGE_KEYS.resetTokens, seedState.resetTokens));
-  const [phoneChangeVerifications, setPhoneChangeVerifications] = useState<PhoneChangeVerificationRecord[]>(() => readStorage(STORAGE_KEYS.phoneChangeVerifications, seedState.phoneChangeVerifications));
   const [rejectedGuestClaimIds, setRejectedGuestClaimIds] = useState<string[]>(() => readStorage(STORAGE_KEYS.rejectedGuestClaims, []));
-  const [pendingGuestOrderClaims, setPendingGuestOrderClaims] = useState<Order[]>([]);
+  const [pendingGuestOrderClaims, setPendingGuestOrderClaims] = useState<PendingGuestOrderClaim[]>([]);
+  const [pendingGuestClaimsLoading, setPendingGuestClaimsLoading] = useState(false);
+  const [pendingGuestClaimsError, setPendingGuestClaimsError] = useState<string | null>(null);
   const [supabaseSharedOrders, setSupabaseSharedOrders] = useState<Order[]>([]);
   const [supabaseReadSuccessful, setSupabaseReadSuccessful] = useState(false);
   const [supabaseReadDegraded, setSupabaseReadDegraded] = useState(false);
   const [supabaseRefreshTick, setSupabaseRefreshTick] = useState(0);
-  const [customerAccount, setCustomerAccount] = useState<CustomerAccountSummary | null>(() => readStorage(STORAGE_KEYS.customerAccount, null));
+  const [customerAccount, setCustomerAccount] = useState<CustomerAccountSummary | null>(null);
   const [customerSessionToken, setCustomerSessionToken] = useState<string | null>(() => readStorage(STORAGE_KEYS.customerSessionToken, null));
   const [loyaltySummary, setLoyaltySummary] = useState<LoyaltySummary | null>(null);
   const [loyaltyLoading, setLoyaltyLoading] = useState(false);
 
   const usersRef = useRef(users);
-  const ordersRef = useRef(allOrders);
   const previousUserIdRef = useRef<string | null>(currentUserId);
 
   useEffect(() => {
     usersRef.current = users;
-  }, [users]);
-
-  useEffect(() => {
-    ordersRef.current = allOrders;
-  }, [allOrders]);
-
-  useEffect(() => {
-    writeStorage(STORAGE_KEYS.users, users);
   }, [users]);
 
   useEffect(() => {
@@ -859,14 +864,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   useEffect(() => {
-    writeStorage(STORAGE_KEYS.currentUserId, currentUserId);
-  }, [currentUserId]);
-
-  useEffect(() => {
-    writeStorage(STORAGE_KEYS.customerAccount, customerAccount);
-  }, [customerAccount]);
-
-  useEffect(() => {
     writeStorage(STORAGE_KEYS.customerSessionToken, customerSessionToken);
   }, [customerSessionToken]);
 
@@ -879,18 +876,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const onStorage = (event: StorageEvent) => {
       if (event.storageArea !== window.localStorage || !event.key) {
-        return;
-      }
-
-      if (event.key === STORAGE_KEYS.currentUserId) {
-        const nextUserId = parseStorageEventValue<string | null>(event.newValue);
-        setCurrentUserId(nextUserId);
-        return;
-      }
-
-      if (event.key === STORAGE_KEYS.customerAccount) {
-        const nextCustomerAccount = parseStorageEventValue<CustomerAccountSummary | null>(event.newValue);
-        setCustomerAccount(nextCustomerAccount);
         return;
       }
 
@@ -917,6 +902,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, [currentUserId]);
 
   useEffect(() => {
+    if (customerSessionToken) {
+      return;
+    }
+
+    setCurrentUserId(null);
+    setCustomerAccount(null);
+    setPendingGuestOrderClaims([]);
+    setPendingGuestClaimsError(null);
+    setLoyaltySummary(null);
+    setAllOrders([]);
+  }, [customerSessionToken]);
+
+  useEffect(() => {
     const previousUserId = previousUserIdRef.current;
     if (previousUserId && currentUserId && previousUserId !== currentUserId) {
       resetShoppingSessionStorage();
@@ -932,14 +930,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     setCurrentUserId(customerAccount.id);
   }, [currentUserId, customerAccount?.id]);
-
-  useEffect(() => {
-    writeStorage(STORAGE_KEYS.resetTokens, resetTokens);
-  }, [resetTokens]);
-
-  useEffect(() => {
-    writeStorage(STORAGE_KEYS.phoneChangeVerifications, phoneChangeVerifications);
-  }, [phoneChangeVerifications]);
 
   useEffect(() => {
     writeStorage(STORAGE_KEYS.rejectedGuestClaims, rejectedGuestClaimIds);
@@ -1154,33 +1144,78 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setLoyaltySummary(null);
     }
   }, [userRecord?.id]);
-  const detectClaimableGuestOrders = (targetUser: AuthRecord): Order[] => {
-    const normalizedPhoneValue = normalizePhone(targetUser.phone);
-    const targetEmail = normalizeEmail(targetUser.email);
 
-    return allOrders.filter((order) => {
-      if (order.userId || order.source !== 'app') return false;
-      if (rejectedGuestClaimIds.includes(order.id)) return false;
-      const phoneMatches = normalizePhone(order.phone) === normalizedPhoneValue;
-      const emailMatches = Boolean(targetEmail && normalizeEmail(order.email) === targetEmail);
-      return phoneMatches || emailMatches;
+  const syncCanonicalCustomerProfile = useCallback(async (sessionToken: string) => {
+    const profile = await fetchCanonicalCustomerProfile(sessionToken);
+
+    setUsers((previous) => upsertBackendCustomerUser(previous, profile));
+    setCurrentUserId(profile.id);
+    setCustomerAccount({
+      id: profile.id,
+      reward_points: profile.reward_points,
+      phone_verified: profile.phone_verified,
+      email_verified: profile.email_verified,
     });
-  };
+  }, []);
+  useEffect(() => {
+    if (!customerSessionToken) {
+      return;
+    }
 
-  const claimPendingGuestOrders = () => {
-    if (!userRecord || pendingGuestOrderClaims.length === 0) return;
-    const claimIds = new Set(pendingGuestOrderClaims.map((order) => order.id));
-    setAllOrders((previous) => previous.map((order) => {
-      if (!claimIds.has(order.id)) return order;
-      return { ...order, userId: userRecord.id, email: normalizeEmail(order.email || userRecord.email) };
-    }));
-    setPendingGuestOrderClaims([]);
+    void syncCanonicalCustomerProfile(customerSessionToken).catch((error) => {
+      console.error('Customer profile sync failed.', error);
+      setCurrentUserId(null);
+      setCustomerAccount(null);
+      setAllOrders([]);
+      setCustomerSessionToken(null);
+    });
+  }, [customerSessionToken, syncCanonicalCustomerProfile]);
+
+  const refreshPendingGuestOrderClaims = useCallback(async (sessionToken: string) => {
+    setPendingGuestClaimsLoading(true);
+    setPendingGuestClaimsError(null);
+
+    try {
+      const nextClaims = await loadPendingGuestOrderClaims(sessionToken);
+      const filteredClaims = nextClaims.filter((claim) => !rejectedGuestClaimIds.includes(claim.orderId));
+      setPendingGuestOrderClaims(filteredClaims);
+    } catch (error) {
+      console.error('Guest claim preview failed.', error);
+      setPendingGuestOrderClaims([]);
+      setPendingGuestClaimsError(
+        error instanceof Error ? error.message : 'Could not load claimable guest orders right now.',
+      );
+    } finally {
+      setPendingGuestClaimsLoading(false);
+    }
+  }, [rejectedGuestClaimIds]);
+
+  const claimPendingGuestOrders = async () => {
+    if (!customerSessionToken || pendingGuestOrderClaims.length === 0) return;
+
+    setPendingGuestClaimsLoading(true);
+    setPendingGuestClaimsError(null);
+
+    try {
+      await claimGuestOrders(customerSessionToken);
+      setPendingGuestOrderClaims([]);
+      setSupabaseRefreshTick((value) => value + 1);
+      await refreshCustomerOrdersFromSupabase();
+    } catch (error) {
+      console.error('Guest order claim failed.', error);
+      setPendingGuestClaimsError(
+        error instanceof Error ? error.message : 'Could not claim guest orders right now.',
+      );
+    } finally {
+      setPendingGuestClaimsLoading(false);
+    }
   };
 
   const rejectPendingGuestOrderClaims = () => {
-    const rejectIds = pendingGuestOrderClaims.map((order) => order.id);
+    const rejectIds = pendingGuestOrderClaims.map((order) => order.orderId);
     setRejectedGuestClaimIds((previous) => [...previous, ...rejectIds]);
     setPendingGuestOrderClaims([]);
+    setPendingGuestClaimsError(null);
   };
 
   const login = async ({ identifier, password }: LoginInput): Promise<AuthActionResult> => {
@@ -1214,18 +1249,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setCustomerSessionToken(customerSessionTokenFromLogin);
       setSupabaseRefreshTick((value) => value + 1);
 
-      const userToCheck = {
-        id: customerId,
-        fullName: customerData.full_name,
-        phone: customerData.phone,
-        email: customerData.email,
-      } as AuthRecord;
-      if (userToCheck) {
-        const claimable = detectClaimableGuestOrders(userToCheck);
-        if (claimable.length > 0) {
-          setPendingGuestOrderClaims(claimable);
-        }
-      }
+      void refreshPendingGuestOrderClaims(customerSessionTokenFromLogin);
 
       return { success: true, message: loginResponse.message };
     } catch (err) {
@@ -1315,15 +1339,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setCustomerSessionToken(customerSessionTokenFromSignup);
       setSupabaseRefreshTick((value) => value + 1);
 
-      const claimable = detectClaimableGuestOrders({
-        id: customerId,
-        fullName,
-        phone: normalizedPhoneValue,
-        email: normalizedEmail,
-      } as AuthRecord);
-      if (claimable.length > 0) {
-        setPendingGuestOrderClaims(claimable);
-      }
+      void refreshPendingGuestOrderClaims(customerSessionTokenFromSignup);
 
       return { success: true, message: 'Your CULTIV profile is ready.' };
     } catch (err) {
@@ -1343,18 +1359,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     void token;
     void password;
     return { success: false, message: 'Password reset is not enabled yet. Please contact CULTIV support.' };
-  };
-
-  const requestPhoneChangeVerification = async (newPhone: string): Promise<AuthActionResult> => {
-    void newPhone;
-    return {
-      success: false,
-      message: 'Phone change verification is not enabled yet. Please contact CULTIV support.',
-    };
-  };
-    const confirmPhoneChangeVerification = async (code: string): Promise<AuthActionResult> => {
-    void code;
-    return { success: false, message: 'Phone change verification is not enabled yet. Please contact CULTIV support.' };
   };
 
   const prepareCheckoutOrder = (input: PlaceOrderInput): { order: Order; linkedCustomerId?: string; usedRewardIds: string[] } => {
@@ -1842,237 +1846,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return { success: true, message: `${offer.title} is now saved to your CULTIV profile.` };
   };
 
-  const updateProfile = async (updates: Partial<Pick<User, 'fullName'>> & { preferences?: Partial<UserPreferences> }): Promise<AuthActionResult> => {
-    if (!userRecord) {
-      return { success: false, message: 'Sign in to update your profile.' };
-    }
-
-    setUsers((previous) =>
-      previous.map((entry) =>
-        entry.id === userRecord.id
-          ? {
-            ...entry,
-            ...updates,
-            preferences: updates.preferences ? { ...entry.preferences, ...updates.preferences } : entry.preferences,
-          }
-          : entry,
-      ),
-    );
-
-    return { success: true, message: 'Your CULTIV profile has been updated.' };
-  };
-
-  const addSavedAddress = async (input: SavedAddressInput): Promise<AuthActionResult> => {
-    if (!userRecord) {
-      return { success: false, message: 'Sign in to save addresses.' };
-    }
-
-    const shouldBeDefault = input.isDefault || !userRecord.savedAddresses.length;
-    const address: Address = {
-      id: createId('address'),
-      userId: userRecord.id,
-      label: input.label,
-      addressLine: input.addressLine,
-      landmark: input.landmark,
-      city: input.city,
-      pincode: input.pincode,
-      isDefault: shouldBeDefault,
-    };
-
-    setUsers((previous) => previous.map((entry) => (
-      entry.id === userRecord.id
-        ? {
-          ...entry,
-          savedAddresses: [
-            ...entry.savedAddresses.map((savedAddress) => ({ ...savedAddress, isDefault: shouldBeDefault ? false : savedAddress.isDefault })),
-            address,
-          ],
-          defaultAddressId: shouldBeDefault ? address.id : entry.defaultAddressId,
-        }
-        : entry
-    )));
-    return { success: true, message: 'Address saved to your CULTIV profile.' };
-  };
-
-  const updateSavedAddress = async (input: UpdateSavedAddressInput): Promise<AuthActionResult> => {
-    if (!userRecord) {
-      return { success: false, message: 'Sign in to edit saved addresses.' };
-    }
-
-    setUsers((previous) => previous.map((entry) => {
-      if (entry.id !== userRecord.id) return entry;
-      const shouldBeDefault = input.isDefault || entry.defaultAddressId === input.id;
-      return {
-        ...entry,
-        savedAddresses: entry.savedAddresses.map((address) => address.id === input.id
-          ? {
-            ...address,
-            label: input.label,
-            addressLine: input.addressLine,
-            landmark: input.landmark,
-            city: input.city,
-            pincode: input.pincode,
-            isDefault: shouldBeDefault,
-          }
-          : { ...address, isDefault: shouldBeDefault ? false : address.isDefault }),
-        defaultAddressId: shouldBeDefault ? input.id : entry.defaultAddressId,
-      };
-    }));
-
-    return { success: true, message: 'Address updated for your CULTIV profile.' };
-  };
-
-  const deleteSavedAddress = async (addressId: string): Promise<AuthActionResult> => {
-    if (!userRecord) {
-      return { success: false, message: 'Sign in to manage saved addresses.' };
-    }
-
-    let nextDefaultAddressId: string | undefined;
-    setUsers((previous) => previous.map((entry) => {
-      if (entry.id !== userRecord.id) return entry;
-      const remainingAddresses = entry.savedAddresses.filter((address) => address.id !== addressId);
-      nextDefaultAddressId = entry.defaultAddressId === addressId ? remainingAddresses[0]?.id : entry.defaultAddressId;
-      return {
-        ...entry,
-        savedAddresses: remainingAddresses.map((address, index) => ({
-          ...address,
-          isDefault: nextDefaultAddressId ? address.id === nextDefaultAddressId : index === 0,
-        })),
-        defaultAddressId: nextDefaultAddressId,
-      };
-    }));
-
-    return { success: true, message: 'Address removed from your CULTIV profile.' };
-  };
-
-  const setDefaultAddress = async (addressId: string): Promise<AuthActionResult> => {
-    if (!userRecord) {
-      return { success: false, message: 'Sign in to manage saved addresses.' };
-    }
-
-    setUsers((previous) => previous.map((entry) => entry.id === userRecord.id
-      ? {
-        ...entry,
-        defaultAddressId: addressId,
-        savedAddresses: entry.savedAddresses.map((address) => ({ ...address, isDefault: address.id === addressId })),
-      }
-      : entry));
-
-    return { success: true, message: 'Default address updated.' };
-  };
-
-  const addSavedPaymentMethod = async (input: SavedPaymentMethodInput): Promise<AuthActionResult> => {
-    if (!userRecord) {
-      return { success: false, message: 'Sign in to manage payment details.' };
-    }
-
-    const paymentMethod: SavedPaymentMethod = {
-      id: createId('payment'),
-      type: input.type,
-      label: input.label,
-      last4: input.last4,
-      upiId: input.upiId,
-      billingName: input.billingName,
-      isDefault: input.isDefault || !userRecord.paymentProfile.savedMethods.length,
-    };
-
-    setUsers((previous) => previous.map((entry) => {
-      if (entry.id !== userRecord.id) return entry;
-      const shouldBeDefault = Boolean(paymentMethod.isDefault);
-      return {
-        ...entry,
-        paymentProfile: {
-          ...entry.paymentProfile,
-          preferredMethod: shouldBeDefault ? paymentMethod.type : entry.paymentProfile.preferredMethod,
-          upiId: paymentMethod.type === 'upi' ? paymentMethod.upiId ?? entry.paymentProfile.upiId : entry.paymentProfile.upiId,
-          savedMethods: [
-            ...entry.paymentProfile.savedMethods.map((method) => ({ ...method, isDefault: shouldBeDefault ? false : method.isDefault })),
-            paymentMethod,
-          ],
-        },
-      };
-    }));
-
-    return { success: true, message: 'Payment method saved to your CULTIV profile.' };
-  };
-
-  const updateSavedPaymentMethod = async (input: UpdateSavedPaymentMethodInput): Promise<AuthActionResult> => {
-    if (!userRecord) {
-      return { success: false, message: 'Sign in to manage payment details.' };
-    }
-
-    setUsers((previous) => previous.map((entry) => {
-      if (entry.id !== userRecord.id) return entry;
-      const shouldBeDefault = input.isDefault || entry.paymentProfile.savedMethods.find((method) => method.id === input.id)?.isDefault;
-      return {
-        ...entry,
-        paymentProfile: {
-          ...entry.paymentProfile,
-          preferredMethod: shouldBeDefault ? input.type : entry.paymentProfile.preferredMethod,
-          upiId: input.type === 'upi' ? input.upiId ?? entry.paymentProfile.upiId : entry.paymentProfile.upiId,
-          savedMethods: entry.paymentProfile.savedMethods.map((method) => method.id === input.id
-            ? {
-              ...method,
-              type: input.type,
-              label: input.label,
-              last4: input.last4,
-              upiId: input.upiId,
-              billingName: input.billingName,
-              isDefault: shouldBeDefault,
-            }
-            : { ...method, isDefault: shouldBeDefault ? false : method.isDefault }),
-        },
-      };
-    }));
-
-    return { success: true, message: 'Payment details updated.' };
-  };
-
-  const deleteSavedPaymentMethod = async (paymentMethodId: string): Promise<AuthActionResult> => {
-    if (!userRecord) {
-      return { success: false, message: 'Sign in to manage payment details.' };
-    }
-
-    setUsers((previous) => previous.map((entry) => {
-      if (entry.id !== userRecord.id) return entry;
-      const remainingMethods = entry.paymentProfile.savedMethods.filter((method) => method.id !== paymentMethodId);
-      const nextDefaultMethod = remainingMethods.find((method) => method.isDefault) ?? remainingMethods[0];
-      return {
-        ...entry,
-        paymentProfile: {
-          ...entry.paymentProfile,
-          preferredMethod: nextDefaultMethod?.type,
-          upiId: nextDefaultMethod?.type === 'upi' ? nextDefaultMethod.upiId : entry.paymentProfile.upiId,
-          savedMethods: remainingMethods.map((method) => ({ ...method, isDefault: nextDefaultMethod ? method.id === nextDefaultMethod.id : false })),
-        },
-      };
-    }));
-
-    return { success: true, message: 'Payment method removed.' };
-  };
-
-  const setDefaultPaymentMethod = async (paymentMethodId: string): Promise<AuthActionResult> => {
-    if (!userRecord) {
-      return { success: false, message: 'Sign in to manage payment details.' };
-    }
-
-    setUsers((previous) => previous.map((entry) => {
-      if (entry.id !== userRecord.id) return entry;
-      const defaultMethod = entry.paymentProfile.savedMethods.find((method) => method.id === paymentMethodId);
-      return {
-        ...entry,
-        paymentProfile: {
-          ...entry.paymentProfile,
-          preferredMethod: defaultMethod?.type,
-          upiId: defaultMethod?.type === 'upi' ? defaultMethod.upiId : entry.paymentProfile.upiId,
-          savedMethods: entry.paymentProfile.savedMethods.map((method) => ({ ...method, isDefault: method.id === paymentMethodId })),
-        },
-      };
-    }));
-
-    return { success: true, message: 'Preferred payment method updated.' };
-  };
-
   const getOrderById = (orderId: string) => orders.find((order) => order.id === orderId);
 
   const updateOrderStatus = async (orderId: string, status: OrderStatus, reason?: string): Promise<AuthActionResult> => {
@@ -2157,6 +1930,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setCustomerSessionToken(null);
     setLoyaltySummary(null);
     setPendingGuestOrderClaims([]);
+    setPendingGuestClaimsError(null);
     setAllOrders([]);
   };
 
@@ -2184,20 +1958,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     lookupPosCustomerByPhone,
     linkWalkInOrder,
     redeemReward,
-    updateProfile,
-    addSavedAddress,
-    updateSavedAddress,
-    deleteSavedAddress,
-    setDefaultAddress,
-    addSavedPaymentMethod,
-    updateSavedPaymentMethod,
-    deleteSavedPaymentMethod,
-    setDefaultPaymentMethod,
-    requestPhoneChangeVerification,
-    confirmPhoneChangeVerification,
     getOrderById,
     updateOrderStatus,
     pendingGuestOrderClaims,
+    pendingGuestClaimsLoading,
+    pendingGuestClaimsError,
     claimPendingGuestOrders,
     rejectPendingGuestClaims: rejectPendingGuestOrderClaims,
   };

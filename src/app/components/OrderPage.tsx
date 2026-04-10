@@ -433,12 +433,6 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
   }, [user]);
 
   useEffect(() => {
-    if (user?.paymentProfile?.preferredMethod === 'card' || user?.paymentProfile?.preferredMethod === 'upi') {
-      setSelectedPaymentMethod(user.paymentProfile.preferredMethod);
-    }
-  }, [user]);
-
-  useEffect(() => {
     if (!isBrowser()) return;
     localStorage.setItem(CHECKOUT_CONTACT_STORAGE_KEY, JSON.stringify(customer));
   }, [customer]);

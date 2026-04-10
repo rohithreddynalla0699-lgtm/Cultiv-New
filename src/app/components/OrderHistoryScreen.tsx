@@ -57,13 +57,13 @@ export function OrderHistoryScreen() {
 		if (isInStoreOrder(order)) {
 			return 'In-store counter';
 		}
-		if (user.paymentProfile.preferredMethod === 'card') {
+		if (order.paymentMethod === 'card') {
 			return 'Card';
 		}
-		if (user.paymentProfile.preferredMethod === 'upi') {
+		if (order.paymentMethod === 'upi') {
 			return 'UPI';
 		}
-		return 'Saved method';
+		return 'Prepaid';
 	};
 
 	const handleReorder = (order: Order) => {
