@@ -12,7 +12,7 @@ interface OrdersColumnProps {
   mutatingOrderIds: Set<string>;
   onPrimaryAction: (order: OrdersBoardOrder) => void;
   onOpenNotes: (order: OrdersBoardOrder) => void;
-  onCancelOrder: (order: OrdersBoardOrder, reason: string) => void;
+  onCancelOrder: (order: OrdersBoardOrder) => void;
 }
 
 const EMPTY_MESSAGE_BY_STATUS: Record<AdminOrderBoardStatus, string> = {
@@ -61,7 +61,7 @@ export function OrdersColumn({
               primaryActionLabel={ordersService.getPrimaryActionLabel(order.boardStatus)}
               onPrimaryAction={() => onPrimaryAction(order)}
               onOpenNotes={() => onOpenNotes(order)}
-              onCancelOrder={(reason) => onCancelOrder(order, reason)}
+              onCancelOrder={() => onCancelOrder(order)}
             />
           ))
         )}

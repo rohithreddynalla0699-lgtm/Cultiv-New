@@ -128,28 +128,59 @@ const getPermissionKeys = (row: InternalUserAccessRow): string[] => {
 
 const isBcryptHash = (value: string) => /^\$2[aby]\$\d{2}\$/.test(value);
 
-const timingSafeEqual = (left: string, right: string): boolean => {
-  if (left.length !== right.length) return false;
-  let diff = 0;
-  for (let index = 0; index < left.length; index += 1) {
-    diff |= left.charCodeAt(index) ^ right.charCodeAt(index);
-  }
-  return diff === 0;
-};
-
 const verifyPin = async (rawPin: string, storedPinHash: string): Promise<boolean> => {
   if (!storedPinHash) return false;
-
-  if (isBcryptHash(storedPinHash)) {
-    try {
-      return await bcrypt.compare(rawPin, storedPinHash);
-    } catch {
-      return false;
-    }
+  if (!isBcryptHash(storedPinHash)) {
+    return false;
   }
 
-  // Legacy fallback: supports existing plain PIN rows during migration.
-  return timingSafeEqual(rawPin, storedPinHash);
+  try {
+    return await bcrypt.compare(rawPin, storedPinHash);
+  } catch {
+    return false;
+  }
+};
+
+const LOCK_THRESHOLD = 5;
+const LOCK_WINDOW_MINUTES = 15;
+
+const loadAttemptState = async (db: ReturnType<typeof createClient>, attemptKey: string) => {
+  const { data } = await db
+    .from('internal_auth_attempts')
+    .select('failure_count, locked_until')
+    .eq('attempt_key', attemptKey)
+    .maybeSingle();
+
+  return data ?? null;
+};
+
+const registerFailedAttempt = async (db: ReturnType<typeof createClient>, attemptKey: string) => {
+  const existing = await loadAttemptState(db, attemptKey);
+  const nextFailureCount = Number(existing?.failure_count ?? 0) + 1;
+  const lockedUntil = nextFailureCount >= LOCK_THRESHOLD
+    ? new Date(Date.now() + LOCK_WINDOW_MINUTES * 60 * 1000).toISOString()
+    : null;
+
+  await db
+    .from('internal_auth_attempts')
+    .upsert({
+      attempt_key: attemptKey,
+      attempt_scope: 'internal_login',
+      failure_count: nextFailureCount,
+      first_failed_at: existing ? undefined : new Date().toISOString(),
+      last_failed_at: new Date().toISOString(),
+      locked_until: lockedUntil,
+      updated_at: new Date().toISOString(),
+    });
+
+  return { nextFailureCount, lockedUntil };
+};
+
+const clearFailedAttempts = async (db: ReturnType<typeof createClient>, attemptKey: string) => {
+  await db
+    .from('internal_auth_attempts')
+    .delete()
+    .eq('attempt_key', attemptKey);
 };
 
 Deno.serve(async (req) => {
@@ -198,6 +229,13 @@ Deno.serve(async (req) => {
     },
   });
 
+  const clientIp = extractClientIp(req) ?? 'unknown';
+  const attemptKey = `${mode}:${storeCode || 'global'}:${clientIp}`;
+  const attemptState = await loadAttemptState(db, attemptKey);
+  if (attemptState?.locked_until && new Date(attemptState.locked_until) > new Date()) {
+    return json(429, { error: 'Too many failed login attempts. Try again later.' });
+  }
+
   // Read candidate users by scope/role, then verify PIN securely in function code.
   let query = db
     .from('internal_users')
@@ -225,6 +263,7 @@ Deno.serve(async (req) => {
 
   const users = (data ?? []) as InternalUserAccessRow[];
   if (users.length === 0) {
+    await registerFailedAttempt(db, attemptKey);
     return json(401, { error: 'Invalid internal credentials.' });
   }
 
@@ -238,8 +277,11 @@ Deno.serve(async (req) => {
   }
 
   if (!user) {
+    await registerFailedAttempt(db, attemptKey);
     return json(401, { error: 'Invalid internal credentials.' });
   }
+
+  await clearFailedAttempts(db, attemptKey);
 
   // Extra scope guards for defense in depth.
   if (mode === 'store') {

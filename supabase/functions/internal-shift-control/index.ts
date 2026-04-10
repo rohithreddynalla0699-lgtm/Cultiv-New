@@ -78,27 +78,99 @@ const normalizeAction = (body: InternalShiftControlRequest): { value?: ShiftActi
 
 const isBcryptHash = (value: string) => /^\$2[aby]\$\d{2}\$/.test(value);
 
-const timingSafeEqual = (left: string, right: string): boolean => {
-  if (left.length !== right.length) return false;
-  let diff = 0;
-  for (let index = 0; index < left.length; index += 1) {
-    diff |= left.charCodeAt(index) ^ right.charCodeAt(index);
-  }
-  return diff === 0;
-};
-
 const verifyPin = async (rawPin: string, storedPinHash: string): Promise<boolean> => {
   if (!storedPinHash) return false;
+  if (!isBcryptHash(storedPinHash)) {
+    return false;
+  }
 
-  if (isBcryptHash(storedPinHash)) {
-    try {
-      return await bcrypt.compare(rawPin, storedPinHash);
-    } catch {
-      return false;
+  try {
+    return await bcrypt.compare(rawPin, storedPinHash);
+  } catch {
+    return false;
+  }
+};
+
+const isValidIpv4 = (value: string) => {
+  const parts = value.split('.');
+  if (parts.length !== 4) return false;
+  return parts.every((part) => /^\d{1,3}$/.test(part) && Number(part) >= 0 && Number(part) <= 255);
+};
+
+const isLikelyIpv6 = (value: string) => value.includes(':') && /^[0-9a-fA-F:]+$/.test(value);
+
+const normalizeIpCandidate = (value: string): string => {
+  let normalized = value.trim();
+  if (normalized.toLowerCase().startsWith('for=')) normalized = normalized.slice(4).trim();
+  normalized = normalized.replace(/^"|"$/g, '');
+  if (normalized.includes(',')) normalized = normalized.split(',')[0].trim();
+  if (normalized.startsWith('[') && normalized.includes(']')) {
+    normalized = normalized.slice(1, normalized.indexOf(']'));
+  }
+  const ipv4WithPortMatch = normalized.match(/^(\d{1,3}(?:\.\d{1,3}){3}):\d+$/);
+  if (ipv4WithPortMatch) {
+    normalized = ipv4WithPortMatch[1];
+  }
+  return normalized;
+};
+
+const extractClientIp = (req: Request): string | null => {
+  const candidates = [
+    req.headers.get('x-forwarded-for'),
+    req.headers.get('cf-connecting-ip'),
+    req.headers.get('x-real-ip'),
+    req.headers.get('forwarded'),
+  ];
+
+  for (const rawValue of candidates) {
+    if (!rawValue) continue;
+    const candidate = normalizeIpCandidate(rawValue);
+    if (isValidIpv4(candidate) || isLikelyIpv6(candidate)) {
+      return candidate;
     }
   }
 
-  return timingSafeEqual(rawPin, storedPinHash);
+  return null;
+};
+
+const LOCK_THRESHOLD = 5;
+const LOCK_WINDOW_MINUTES = 15;
+
+const loadAttemptState = async (db: ReturnType<typeof createClient>, attemptKey: string) => {
+  const { data } = await db
+    .from('internal_auth_attempts')
+    .select('failure_count, locked_until')
+    .eq('attempt_key', attemptKey)
+    .maybeSingle();
+
+  return data ?? null;
+};
+
+const registerFailedAttempt = async (db: ReturnType<typeof createClient>, attemptKey: string) => {
+  const existing = await loadAttemptState(db, attemptKey);
+  const nextFailureCount = Number(existing?.failure_count ?? 0) + 1;
+  const lockedUntil = nextFailureCount >= LOCK_THRESHOLD
+    ? new Date(Date.now() + LOCK_WINDOW_MINUTES * 60 * 1000).toISOString()
+    : null;
+
+  await db
+    .from('internal_auth_attempts')
+    .upsert({
+      attempt_key: attemptKey,
+      attempt_scope: 'shift_pin',
+      failure_count: nextFailureCount,
+      first_failed_at: existing ? undefined : new Date().toISOString(),
+      last_failed_at: new Date().toISOString(),
+      locked_until: lockedUntil,
+      updated_at: new Date().toISOString(),
+    });
+};
+
+const clearFailedAttempts = async (db: ReturnType<typeof createClient>, attemptKey: string) => {
+  await db
+    .from('internal_auth_attempts')
+    .delete()
+    .eq('attempt_key', attemptKey);
 };
 
 const roundHours = (hours: number) => Number(Math.max(0, hours).toFixed(2));
@@ -233,13 +305,19 @@ const loadDashboard = async (db: ReturnType<typeof createClient>, storeId: strin
   };
 };
 
-const toggleByPin = async (db: ReturnType<typeof createClient>, storeId: string, employeeId: string, pin: string) => {
+const toggleByPin = async (db: ReturnType<typeof createClient>, storeId: string, employeeId: string, pin: string, clientIp: string) => {
   if (!employeeId.trim()) {
     return { status: 400, error: 'employeeId is required.' };
   }
 
   if (!/^\d{6}$/.test(pin.trim())) {
     return { status: 400, error: 'pin must be a valid 6-digit string.' };
+  }
+
+  const attemptKey = `shift:${storeId}:${employeeId}:${clientIp}`;
+  const attemptState = await loadAttemptState(db, attemptKey);
+  if (attemptState?.locked_until && new Date(attemptState.locked_until) > new Date()) {
+    return { status: 429, error: 'Too many incorrect PIN attempts. Try again later.' };
   }
 
   const { data: employee, error: employeeError } = await db
@@ -264,8 +342,11 @@ const toggleByPin = async (db: ReturnType<typeof createClient>, storeId: string,
 
   const pinMatched = await verifyPin(pin.trim(), employee.pin_hash);
   if (!pinMatched) {
+    await registerFailedAttempt(db, attemptKey);
     return { status: 401, error: 'Incorrect PIN' };
   }
+
+  await clearFailedAttempts(db, attemptKey);
 
   const now = new Date();
   const nowIso = now.toISOString();
@@ -405,6 +486,8 @@ Deno.serve(async (req) => {
     return json(403, { error: scopeResult.error ?? 'Store scope is required.' });
   }
 
+  const clientIp = extractClientIp(req) ?? 'unknown';
+
   if (actionResult.value === 'dashboard') {
     const result = await loadDashboard(db, scopeResult.storeId);
     if ('error' in result) {
@@ -413,7 +496,7 @@ Deno.serve(async (req) => {
     return json(200, result.data);
   }
 
-  const result = await toggleByPin(db, scopeResult.storeId, body.employeeId ?? '', body.pin ?? '');
+  const result = await toggleByPin(db, scopeResult.storeId, body.employeeId ?? '', body.pin ?? '', clientIp);
   if ('error' in result) {
     return json(result.status, { error: result.error });
   }

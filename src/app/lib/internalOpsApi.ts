@@ -6,12 +6,11 @@ export interface InternalOrderStatusUpdateResponse {
 }
 
 export interface InternalShiftToggleResponse {
-  success: boolean;
-  employeeId: string;
+  action: 'clock_in' | 'clock_out';
   shiftId: string;
-  clockInAt: string;
-  clockOutAt: string | null;
-  status: 'on_shift' | 'off_shift';
+  employeeId: string;
+  employeeName: string;
+  employeeRole: 'manager' | 'kitchen' | 'counter';
 }
 /// <reference types="vite/client" />
 
@@ -22,6 +21,9 @@ const INTERNAL_SHIFT_CONTROL_URL = `${import.meta.env.VITE_SUPABASE_URL}/functio
 const INTERNAL_EMPLOYEES_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-employees`;
 const INTERNAL_INVENTORY_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-inventory`;
 const INTERNAL_MENU_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-menu`;
+const INTERNAL_CUSTOMERS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-customers`;
+const INTERNAL_PAYMENTS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-payments`;
+const INTERNAL_REPORTS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-reports`;
 
 export interface InternalLoginResponse {
   userId: string;
@@ -260,6 +262,63 @@ export interface InternalMenuMutationResponse {
   mode: 'created' | 'updated' | 'deleted' | 'soft_disabled';
   item?: InternalMenuDashboardItem;
   menuItemId?: string;
+}
+
+export interface InternalCustomerLookupResponse {
+  success: boolean;
+  customer: null | {
+    customerId: string;
+    fullName: string;
+    phone: string;
+    email?: string;
+    rewardPoints: number;
+    phoneVerified: boolean;
+    emailVerified: boolean;
+  };
+}
+
+export interface InternalPosPaymentRecord {
+  paymentId: string;
+  orderId: string;
+  status: 'recorded' | 'pending' | 'failed' | 'cancelled';
+  paymentMethod: 'cash' | 'upi' | 'card';
+  amount: number;
+  recordedAt: string;
+  reference: string | null;
+}
+
+export interface InternalPosPaymentResponse {
+  success: boolean;
+  payment: InternalPosPaymentRecord;
+}
+
+export interface InternalReportsSummary {
+  totalRevenue: number;
+  todayRevenue: number;
+  totalOrders: number;
+  todayOrders: number;
+  averageTicket: number;
+  totalTax: number;
+  todayTax: number;
+  ordersByChannel: Record<string, number>;
+  paymentMethodSummary: Record<string, { count: number; amount: number }>;
+  itemSalesSummary: Array<{
+    itemName: string;
+    quantity: number;
+    revenue: number;
+  }>;
+  storeSalesSummary: Array<{
+    storeId: string;
+    storeName: string;
+    orderCount: number;
+    revenue: number;
+    tax: number;
+  }>;
+}
+
+export interface InternalReportsResponse {
+  success: boolean;
+  summary: InternalReportsSummary;
 }
 
 const postInternal = async <TResponse>(
@@ -589,5 +648,41 @@ export async function deleteInternalMenuItem(params: {
     INTERNAL_MENU_URL,
     { ...params, action: 'delete_item' },
     'Could not delete menu item.'
+  );
+}
+
+export async function lookupInternalCustomerByPhone(params: {
+  internalSessionToken: string;
+  phone: string;
+}): Promise<{ data: InternalCustomerLookupResponse | null; error: string | null }> {
+  return postInternal<InternalCustomerLookupResponse>(
+    INTERNAL_CUSTOMERS_URL,
+    params,
+    'Could not search customers.'
+  );
+}
+
+export async function recordInternalPosPayment(params: {
+  internalSessionToken: string;
+  orderId: string;
+  paymentMethod: 'cash' | 'upi' | 'card';
+  amount: number;
+  reference?: string;
+}): Promise<{ data: InternalPosPaymentResponse | null; error: string | null }> {
+  return postInternal<InternalPosPaymentResponse>(
+    INTERNAL_PAYMENTS_URL,
+    { ...params, action: 'record_pos_payment' },
+    'Could not record POS payment.'
+  );
+}
+
+export async function loadInternalReports(params: {
+  internalSessionToken: string;
+  storeId?: string | null;
+}): Promise<{ data: InternalReportsResponse | null; error: string | null }> {
+  return postInternal<InternalReportsResponse>(
+    INTERNAL_REPORTS_URL,
+    { ...params, action: 'dashboard' },
+    'Could not load reports.'
   );
 }

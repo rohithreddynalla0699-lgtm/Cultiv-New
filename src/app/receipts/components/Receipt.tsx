@@ -10,17 +10,6 @@ interface ReceiptProps {
   onPrint?: () => void;
 }
 
-const BUSINESS_DETAILS = {
-  brandName: 'CULTIV',
-  tagline: 'Modern Bowls. Honest Food.',
-  legalName: '',
-  addressLine1: 'Siddipet, Telangana',
-  addressLine2: '',
-  gstin: '',
-  supportEmail: 'support@eatcultiv.com',
-  placeOfSupply: 'Telangana',
-};
-
 export function Receipt({
   data,
   variant = 'screen',
@@ -28,15 +17,33 @@ export function Receipt({
   onPrint,
 }: ReceiptProps) {
   const isPrint = variant === 'print';
+  const business = {
+    brandName: data.business?.brandName || 'CULTIV',
+    storeName: data.business?.storeName || '',
+    legalName: data.business?.legalName || '',
+    addressLine1: data.business?.addressLine1 || '',
+    addressLine2: data.business?.addressLine2 || '',
+    city: data.business?.city || '',
+    state: data.business?.state || '',
+    postalCode: data.business?.postalCode || '',
+    country: data.business?.country || 'India',
+    phone: data.business?.phone || '',
+    email: data.business?.email || 'support@eatcultiv.com',
+    gstin: data.business?.gstin || '',
+    code: data.business?.code || '',
+  };
+  const storeAddressLine = [business.addressLine1, business.addressLine2].filter(Boolean).join(', ');
+  const localityLine = [business.city, business.state, business.postalCode].filter(Boolean).join(', ');
+  const placeOfSupply = business.state || localityLine || business.storeName || 'India';
   const cgst = data.totals.tax > 0 ? data.totals.tax / 2 : 0;
   const sgst = data.totals.tax > 0 ? data.totals.tax / 2 : 0;
   const taxableAmount = data.totals.subtotal - data.totals.discount;
 
   const hasLegalMeta =
-    Boolean(BUSINESS_DETAILS.legalName) ||
-    Boolean(BUSINESS_DETAILS.addressLine1) ||
-    Boolean(BUSINESS_DETAILS.addressLine2) ||
-    Boolean(BUSINESS_DETAILS.gstin);
+    Boolean(business.legalName) ||
+    Boolean(storeAddressLine) ||
+    Boolean(localityLine) ||
+    Boolean(business.gstin);
 
   return (
     <div
@@ -50,32 +57,32 @@ export function Receipt({
     >
       <div className="border-b border-[#EEF2E8] pb-2 text-center">
         <div className="text-[17px] font-extrabold tracking-[-0.03em] text-[#15230F]">
-          {BUSINESS_DETAILS.brandName}
+          {business.brandName}
         </div>
 
         <p className="mt-1 text-[8px] font-semibold uppercase tracking-[0.18em] text-[#6D7C62]">
-          {BUSINESS_DETAILS.tagline}
+          {business.storeName || 'Modern Bowls. Honest Food.'}
         </p>
 
         {hasLegalMeta ? (
           <div className="mt-1 space-y-0.5 text-[9px] leading-4 text-[#667085]">
-            {BUSINESS_DETAILS.legalName ? (
+            {business.legalName ? (
               <p className="font-semibold text-[#344054]">
-                {BUSINESS_DETAILS.legalName}
+                {business.legalName}
               </p>
             ) : null}
-            {BUSINESS_DETAILS.addressLine1 ? <p>{BUSINESS_DETAILS.addressLine1}</p> : null}
-            {BUSINESS_DETAILS.addressLine2 ? <p>{BUSINESS_DETAILS.addressLine2}</p> : null}
-            {BUSINESS_DETAILS.gstin ? (
+            {storeAddressLine ? <p>{storeAddressLine}</p> : null}
+            {localityLine ? <p>{localityLine}</p> : null}
+            {business.gstin ? (
               <p>
                 <span className="font-medium text-[#344054]">GSTIN:</span>{' '}
-                {BUSINESS_DETAILS.gstin}
+                {business.gstin}
               </p>
             ) : null}
           </div>
         ) : (
           <p className="mt-1 text-[9px] text-[#667085]">
-            {BUSINESS_DETAILS.addressLine1}
+            {storeAddressLine || localityLine || business.storeName || business.brandName}
           </p>
         )}
       </div>
@@ -96,7 +103,7 @@ export function Receipt({
         />
         <MetaRow
           label="Place of Supply"
-          value={BUSINESS_DETAILS.placeOfSupply}
+          value={placeOfSupply}
           align="right"
         />
       </div>
@@ -182,9 +189,18 @@ export function Receipt({
             <div className="flex items-center justify-between gap-2">
               <span>Status</span>
               <span className="rounded-full bg-[#ECFDF3] px-2 py-0.5 text-[8px] font-semibold text-[#027A48]">
-                Paid
+                {data.meta.paymentStatus ? String(data.meta.paymentStatus).replace(/_/g, ' ') : 'Recorded'}
               </span>
             </div>
+
+            {data.meta.paymentReference ? (
+              <div className="flex items-center justify-between gap-2">
+                <span>Reference</span>
+                <span className="font-semibold text-[#344054]">
+                  {data.meta.paymentReference}
+                </span>
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -218,7 +234,7 @@ export function Receipt({
           Thank you for choosing CULTIV.
         </p>
         <p className="mt-1 text-[8px] text-[#98A2B3]">
-          For support, contact {BUSINESS_DETAILS.supportEmail}
+          For support, contact {business.email}
         </p>
       </div>
 

@@ -34,7 +34,7 @@ export function OrderSuccessScreen() {
     return <Navigate to="/" replace />;
   }
 
-  const receiptData = useReceiptData(order);
+  const { data: receiptData, isLoading: receiptLoading, error: receiptError } = useReceiptData(order);
 
   return (
     <PageReveal className="min-h-screen bg-[radial-gradient(circle_at_10%_15%,rgba(45,80,22,0.15),transparent_32%),radial-gradient(circle_at_90%_8%,rgba(126,153,108,0.16),transparent_28%),linear-gradient(160deg,#F1F4EC_0%,#F8F7F2_52%,#EEF3E8_100%)] pt-24 pb-16 sm:pt-28">
@@ -70,7 +70,15 @@ export function OrderSuccessScreen() {
             transition={{ duration: 0.45, delay: 0.08, ease: 'easeOut' }}
             className="min-w-0"
           >
-            {receiptData ? (
+            {receiptLoading ? (
+              <div className="rounded-[18px] border border-[#EEF2E8] bg-white p-4 text-sm text-foreground/60">
+                Loading receipt...
+              </div>
+            ) : receiptError ? (
+              <div className="rounded-[18px] border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+                {receiptError}
+              </div>
+            ) : receiptData ? (
               <Receipt
                 data={receiptData}
                 variant="screen"

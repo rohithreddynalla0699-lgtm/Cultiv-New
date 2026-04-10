@@ -514,11 +514,10 @@ const invokeCreateCheckoutPaymentIntent = async (
   }
 
   const gateway = String(data.gateway).trim().toLowerCase();
-  if (gateway !== 'razorpay' && gateway !== 'mock') {
+  if (gateway !== 'razorpay') {
     throw new Error('Unsupported payment provider. Please try again.');
   }
-
-  if (gateway === 'razorpay' && (!data?.gatewayOrderId || !data?.gatewayKeyId)) {
+  if (!data?.gatewayOrderId || !data?.gatewayKeyId) {
     throw new Error('Payment gateway is unavailable right now. Please try again.');
   }
 
@@ -744,96 +743,55 @@ const deductPointsFIFO = (profile: LoyaltyProfile, pointsToRedeem: number, now =
 
 const daysAgo = (days: number) => new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
-const buildSeedState = () => {
-  const seedUser: AuthRecord = {
-    id: 'user-seed-1',
-    fullName: 'Aarav Menon',
-    phone: '9876543210',
-    email: 'member@cultiv.app',
-    password: '',
-    createdAt: daysAgo(120),
-    savedAddresses: [
-      {
-        id: 'address-seed-1',
-        userId: 'user-seed-1',
-        label: 'Home',
-        addressLine: '12 Palm Grove Road',
-        landmark: 'Near Indiranagar Metro',
-        city: 'Bengaluru',
-        pincode: '560038',
-        isDefault: true,
-      },
-    ],
-    preferences: {
-      favoriteCategory: 'Rice Bowls',
-      preferredOrderType: 'pickup',
-      preferredProtein: 'Chicken',
-      dietaryPreference: 'High-protein balance',
-      familyMealUsage: true,
-      kidsMealUsage: true,
-    },
-    paymentProfile: {
-      preferredMethod: 'upi',
-      upiId: 'aarav@upi',
-      savedMethods: [
-        {
-          id: 'payment-seed-1',
-          type: 'upi',
-          label: 'Primary UPI',
-          upiId: 'aarav@upi',
-          billingName: 'Aarav Menon',
-          isDefault: true,
-        },
-        {
-          id: 'payment-seed-2',
-          type: 'card',
-          label: 'Visa ending 4821',
-          last4: '4821',
-          billingName: 'Aarav Menon',
-        },
-      ],
-    },
-    defaultAddressId: 'address-seed-1',
+const buildSeedState = () => ({
+  users: [] as AuthRecord[],
+  orders: [] as Order[],
+  loyaltyProfiles: {} as Record<string, LoyaltyProfile>,
+  currentUserId: null as string | null,
+  resetTokens: [] as ResetTokenRecord[],
+  phoneChangeVerifications: [] as PhoneChangeVerificationRecord[],
+});
+
+const upsertBackendCustomerUser = (
+  previous: AuthRecord[],
+  customer: {
+    id: string;
+    full_name: string;
+    phone: string;
+    email: string;
+  },
+): AuthRecord[] => {
+  const existing = previous.find((entry) => entry.id === customer.id)
+    ?? previous.find((entry) =>
+      normalizePhone(entry.phone) === normalizePhone(customer.phone)
+      || normalizeEmail(entry.email) === normalizeEmail(customer.email),
+    );
+
+  const nextRecord: AuthRecord = normalizeUserRecord({
+    id: customer.id,
+    fullName: customer.full_name,
+    phone: normalizePhone(customer.phone),
+    email: normalizeEmail(customer.email),
+    password: existing?.password ?? '',
+    createdAt: existing?.createdAt ?? new Date().toISOString(),
+    savedAddresses: (existing?.savedAddresses ?? []).map((address) => ({
+      ...address,
+      userId: customer.id,
+    })),
+    preferences: existing?.preferences ?? {},
+    paymentProfile: existing?.paymentProfile ?? createDefaultPaymentProfile(),
+    defaultAddressId: existing?.defaultAddressId,
     emailLocked: true,
     phoneEditable: false,
-  };
+  });
 
-  const loyaltyProfiles: Record<string, LoyaltyProfile> = {
-    'user-seed-1': {
-      userId: 'user-seed-1',
-      pointsBatches: [
-        {
-          points: 148,
-          earnedAt: Date.now() - 12 * DAY_MS,
-          expiresAt: Date.now() + 78 * DAY_MS,
-        },
-      ],
-      availablePoints: 148,
-      expiringSoonPoints: 0,
-      expiredPoints: 0,
-      availableRewards: [],
-      pointsActivity: [
-        {
-          type: 'earn',
-          points: 148,
-          date: Date.now() - 12 * DAY_MS,
-          description: 'Points earned from recent orders.',
-        },
-      ],
-      totalOrders: 4,
-      totalSpend: 1154,
-      currentTier: 'Routine Member',
-    },
-  };
+  const withoutDuplicates = previous.filter((entry) => (
+    entry.id !== nextRecord.id
+    && normalizePhone(entry.phone) !== normalizePhone(nextRecord.phone)
+    && normalizeEmail(entry.email) !== normalizeEmail(nextRecord.email)
+  ));
 
-  return {
-    users: [seedUser],
-    orders: [] as Order[],
-    loyaltyProfiles,
-    currentUserId: null as string | null,
-    resetTokens: [] as ResetTokenRecord[],
-    phoneChangeVerifications: [] as PhoneChangeVerificationRecord[],
-  };
+  return [...withoutDuplicates, nextRecord];
 };
 
 export const useAuth = () => {
@@ -968,48 +926,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, [currentUserId]);
 
   useEffect(() => {
-    if (!SYNC_URL) return;
-    fetch(`${SYNC_URL}/api/state`, { signal: AbortSignal.timeout(4000) })
-      .then((response) => response.json())
-      .then((state: Record<string, unknown>) => {
-        if (Array.isArray(state.users) && state.users.length > 0) {
-          setUsers(normalizeUserRecords(state.users as AuthRecord[]));
-        }
-      })
-      .catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!customerAccount?.id || currentUserId === customerAccount.id) {
+      return;
+    }
 
-  useEffect(() => {
-    if (!SYNC_URL) return;
-    const id = window.setTimeout(() => {
-      fetch(`${SYNC_URL}/api/state`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'X-Client-ID': AUTH_SYNC_CLIENT_ID },
-        body: JSON.stringify({ users }),
-      }).catch(() => {});
-    }, 1200);
-    return () => window.clearTimeout(id);
-  }, [users]);
-
-  useEffect(() => {
-    if (!SYNC_URL) return;
-    const es = new EventSource(`${SYNC_URL}/api/events`);
-    es.onmessage = (event) => {
-      try {
-        const state = JSON.parse(event.data) as Record<string, unknown>;
-        if (state._sourceClientId === AUTH_SYNC_CLIENT_ID) return;
-
-        if (Array.isArray(state.users) && JSON.stringify(state.users) !== JSON.stringify(usersRef.current)) {
-          const nextUsers = normalizeUserRecords(state.users as AuthRecord[]);
-          setUsers(nextUsers);
-        }
-      } catch {
-        // ignore malformed payloads
-      }
-    };
-    return () => es.close();
-  }, []);
+    setCurrentUserId(customerAccount.id);
+  }, [currentUserId, customerAccount?.id]);
 
   useEffect(() => {
     writeStorage(STORAGE_KEYS.resetTokens, resetTokens);
@@ -1280,36 +1202,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return { success: false, message: 'Invalid email, phone, or password.' };
       }
 
-      const existingUser = users.find(
-        (u) => normalizePhone(u.phone) === normalizePhone(customerData.phone) ||
-               normalizeEmail(u.email) === normalizeEmail(customerData.email),
-      );
-
-      if (existingUser) {
-        setCurrentUserId(existingUser.id);
-      } else {
-        const newUserId = createId('user');
-        const newUser: AuthRecord = {
-          id: newUserId,
-          fullName: customerData.full_name,
-          phone: customerData.phone,
-          email: customerData.email,
-          password: '',
-          createdAt: new Date().toISOString(),
-          savedAddresses: [],
-          preferences: {},
-          paymentProfile: {
-            preferredMethod: 'upi',
-            savedMethods: [],
-          },
-          defaultAddressId: undefined,
-          emailLocked: true,
-          phoneEditable: false,
-        };
-
-        setUsers((previous) => [...previous, newUser]);
-        setCurrentUserId(newUserId);
-      }
+      setUsers((previous) => upsertBackendCustomerUser(previous, customerData));
+      setCurrentUserId(customerId);
 
       setCustomerAccount({
         id: customerId,
@@ -1320,7 +1214,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setCustomerSessionToken(customerSessionTokenFromLogin);
       setSupabaseRefreshTick((value) => value + 1);
 
-      const userToCheck = existingUser || users.find((u) => normalizePhone(u.phone) === normalizePhone(customerData.phone));
+      const userToCheck = {
+        id: customerId,
+        fullName: customerData.full_name,
+        phone: customerData.phone,
+        email: customerData.email,
+      } as AuthRecord;
       if (userToCheck) {
         const claimable = detectClaimableGuestOrders(userToCheck);
         if (claimable.length > 0) {
@@ -1401,36 +1300,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         return { success: false, message: 'Could not create a secure customer session right now. Please try signing in.' };
       }
 
-      const newUserId = createId('user');
-      const newUser: AuthRecord = {
-        id: newUserId,
-        fullName,
+      setUsers((previous) => upsertBackendCustomerUser(previous, {
+        id: customerId,
+        full_name: fullName,
         phone: normalizedPhoneValue,
         email: normalizedEmail,
-        password: '',
-        createdAt: new Date().toISOString(),
-        savedAddresses: [],
-        preferences: {},
-        paymentProfile: {
-          preferredMethod: 'upi',
-          savedMethods: [],
-        },
-        defaultAddressId: undefined,
-        emailLocked: true,
-        phoneEditable: false,
-      };
-
-      setUsers((previous) => [...previous, newUser]);
+      }));
       setLoyaltyProfiles((previous) => ({
         ...previous,
-        [newUserId]: createEmptyLoyaltyProfile(newUserId),
+        [customerId]: createEmptyLoyaltyProfile(customerId),
       }));
-      setCurrentUserId(newUserId);
+      setCurrentUserId(customerId);
       setCustomerAccount({ id: customerId, reward_points: 0, phone_verified: false, email_verified: false });
       setCustomerSessionToken(customerSessionTokenFromSignup);
       setSupabaseRefreshTick((value) => value + 1);
 
-      const claimable = detectClaimableGuestOrders(newUser);
+      const claimable = detectClaimableGuestOrders({
+        id: customerId,
+        fullName,
+        phone: normalizedPhoneValue,
+        email: normalizedEmail,
+      } as AuthRecord);
       if (claimable.length > 0) {
         setPendingGuestOrderClaims(claimable);
       }
@@ -1443,106 +1333,31 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const requestPasswordReset = async (identifier: string): Promise<AuthActionResult> => {
-    const normalizedValue = normalizePhone(identifier);
-    const candidate = users.find(
-      (entry) => entry.email?.toLowerCase() === identifier.toLowerCase() || normalizePhone(entry.phone) === normalizedValue,
-    );
-    if (!candidate) {
-      return {
-        success: false,
-        message: 'We could not find a CULTIV profile for that phone or email.',
-      };
-    }
-
-    const token = createId('reset');
-    setResetTokens((previous) => [
-      ...previous.filter((entry) => entry.userId !== candidate.id),
-      { token, userId: candidate.id, expiresAt: new Date(Date.now() + 20 * 60_000).toISOString() },
-    ]);
-
     return {
-      success: true,
-      message: 'A secure reset link is ready for this mock flow.',
-      resetToken: token,
+      success: false,
+      message: 'Self-service password reset is not enabled yet. Please contact CULTIV support for account recovery.',
     };
   };
 
   const resetPassword = async (token: string, password: string): Promise<AuthActionResult> => {
-    const tokenRecord = resetTokens.find((entry) => entry.token === token && new Date(entry.expiresAt).getTime() > Date.now());
-    if (!tokenRecord) {
-      return { success: false, message: 'This reset link is no longer valid.' };
-    }
-
-    const passwordPolicyMessage = isValidPasswordPolicy(password);
-    if (passwordPolicyMessage) {
-      return { success: false, message: passwordPolicyMessage };
-    }
-
-    setResetTokens((previous) => previous.filter((entry) => entry.token !== token));
-    return { success: true, message: 'Password reset is not yet available. Please use login if you know your password.' };
+    void token;
+    void password;
+    return { success: false, message: 'Password reset is not enabled yet. Please contact CULTIV support.' };
   };
 
   const requestPhoneChangeVerification = async (newPhone: string): Promise<AuthActionResult> => {
-    if (!userRecord) {
-      return { success: false, message: 'Sign in to update your phone number.' };
-    }
-
-    const normalizedPhoneInput = newPhone.trim();
-    if (!isValidPhoneForAuthFlows(normalizedPhoneInput)) {
-      return { success: false, message: 'Enter a valid 10-digit numeric phone number.' };
-    }
-    const normalizedPhoneValue = normalizePhone(normalizedPhoneInput);
-
-    if (normalizedPhoneValue === normalizePhone(userRecord.phone)) {
-      return { success: false, message: 'This phone number is already on your profile.' };
-    }
-
-    const phoneExists = users.some((entry) => entry.id !== userRecord.id && normalizePhone(entry.phone) === normalizedPhoneValue);
-    if (phoneExists) {
-      return { success: false, message: 'Another CULTIV profile is already using this phone number.' };
-    }
-
-    const code = createVerificationCode();
-    setPhoneChangeVerifications((previous) => [
-      ...previous.filter((entry) => entry.userId !== userRecord.id),
-      {
-        code,
-        userId: userRecord.id,
-        newPhone: normalizedPhoneValue,
-        expiresAt: new Date(Date.now() + 10 * 60_000).toISOString(),
-      },
-    ]);
-
+    void newPhone;
     return {
-      success: true,
-      message: 'A verification code was generated for this flow.',
-      verificationCode: code,
+      success: false,
+      message: 'Phone change verification is not enabled yet. Please contact CULTIV support.',
     };
   };
     const confirmPhoneChangeVerification = async (code: string): Promise<AuthActionResult> => {
-    if (!userRecord) {
-      return { success: false, message: 'Sign in to update your phone number.' };
-    }
-
-    const verification = phoneChangeVerifications.find(
-      (entry) => entry.userId === userRecord.id && entry.code === code.trim() && new Date(entry.expiresAt).getTime() > Date.now(),
-    );
-
-    if (!verification) {
-      return { success: false, message: 'This verification code is invalid or has expired.' };
-    }
-
-    setUsers((previous) => previous.map((entry) => (
-      entry.id === userRecord.id
-        ? { ...entry, phone: verification.newPhone }
-        : entry
-    )));
-    setPhoneChangeVerifications((previous) => previous.filter((entry) => entry.userId !== userRecord.id));
-
-    return { success: true, message: 'Your phone number has been updated.' };
+    void code;
+    return { success: false, message: 'Phone change verification is not enabled yet. Please contact CULTIV support.' };
   };
 
-  const prepareCheckoutOrder = (input: PlaceOrderInput): { order: Order; linkedUserId?: string; usedRewardIds: string[] } => {
+  const prepareCheckoutOrder = (input: PlaceOrderInput): { order: Order; linkedCustomerId?: string; usedRewardIds: string[] } => {
     const normalizedStoreId = input.storeId.trim();
     if (!normalizedStoreId) {
       throw new Error('Pickup store selection is required.');
@@ -1585,15 +1400,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       throw new Error('Order subtotal mismatch.');
     }
 
-    const linkedUserId = currentUserId ?? undefined;
-    const resolvedCustomerId = linkedUserId ? (customerAccount?.id ?? null) : null;
+    const linkedCustomerId = currentUserId ?? customerAccount?.id ?? undefined;
+    const resolvedCustomerId = customerAccount?.id ?? linkedCustomerId ?? null;
     const usedRewardIds = [...new Set(input.usedRewardIds ?? [])];
     const requestedDiscount = Math.max(0, input.rewardDiscount ?? 0);
     const foodSubtotal = input.items
       .filter((item) => item.category !== 'Rewards')
       .reduce((sum, item) => sum + item.price * item.quantity, 0);
 
-    if (linkedUserId && usedRewardIds.length > 0) {
+    if (linkedCustomerId && usedRewardIds.length > 0) {
       if (input.subtotal < REWARD_MIN_ORDER_SUBTOTAL) {
         throw new Error(`Minimum order of ₹${REWARD_MIN_ORDER_SUBTOTAL} is required to use rewards.`);
       }
@@ -1602,7 +1417,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         throw new Error('Rewards can only be applied to food items.');
       }
 
-      const profile = purgeExpiredPoints(loyaltyProfiles[linkedUserId] ?? createEmptyLoyaltyProfile(linkedUserId));
+      const profile = purgeExpiredPoints(loyaltyProfiles[linkedCustomerId] ?? createEmptyLoyaltyProfile(linkedCustomerId));
 
       const allRewardsAvailable = usedRewardIds.every((rewardId) => profile.availableRewards.includes(rewardId));
       if (!allRewardsAvailable) {
@@ -1653,8 +1468,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const preparedOrder: Order = {
       id: orderId,
-      userId: linkedUserId,
-      customerId: linkedUserId ? resolvedCustomerId : null,
+      userId: linkedCustomerId,
+      customerId: resolvedCustomerId,
       storeId: normalizedStoreId,
       category: input.category,
       items,
@@ -1678,26 +1493,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     return {
       order: preparedOrder,
-      linkedUserId,
+      linkedCustomerId,
       usedRewardIds,
     };
   };
 
-  const commitPlacedOrderState = (placedOrder: Order, linkedUserId: string | undefined, usedRewardIds: string[]) => {
+  const commitPlacedOrderState = (placedOrder: Order, linkedCustomerId: string | undefined, usedRewardIds: string[]) => {
     setAllOrders((previous) => [placedOrder, ...previous]);
     setSupabaseReadSuccessful(true);
     setSupabaseReadDegraded(false);
     setSupabaseRefreshTick((value) => value + 1);
-    if (linkedUserId) {
+    if (linkedCustomerId) {
       if (usedRewardIds.length > 0) {
         setLoyaltyProfiles((previous) => {
-          const existing = previous[linkedUserId];
+          const existing = previous[linkedCustomerId];
           if (!existing) return previous;
 
           const used = new Set(usedRewardIds);
           return {
             ...previous,
-            [linkedUserId]: {
+            [linkedCustomerId]: {
               ...existing,
               availableRewards: existing.availableRewards.filter((rewardId) => !used.has(rewardId)),
             },
@@ -1736,7 +1551,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         throw new Error('Order payload is missing for payment confirmation.');
       }
 
-      const { order, linkedUserId, usedRewardIds } = prepareCheckoutOrder(input.orderInput);
+      const { order, linkedCustomerId, usedRewardIds } = prepareCheckoutOrder(input.orderInput);
       const placedOrder: Order = {
         ...order,
         id: persisted.orderId,
@@ -1744,7 +1559,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         items: order.items.map((item) => ({ ...item, orderId: persisted.orderId })),
       };
 
-      commitPlacedOrderState(placedOrder, linkedUserId, usedRewardIds);
+      commitPlacedOrderState(placedOrder, linkedCustomerId, usedRewardIds);
       return { success: true, order: placedOrder };
     } catch (error) {
       if (input.outcome === 'failed' || input.outcome === 'cancelled') {
@@ -1766,7 +1581,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const createCounterWalkInOrder = async (input: CreateCounterWalkInOrderInput): Promise<Order> => {
   const normalizedStoreId = input.storeId.trim();
-  const linkedUserId = input.linkedUserId?.trim() || undefined;
   const linkedCustomerId = input.linkedCustomerId?.trim() || null;
 
   if (!normalizedStoreId) {
@@ -1818,7 +1632,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const newOrder: Order = {
     id: orderId,
-    userId: linkedUserId,
+    userId: linkedCustomerId ?? undefined,
     customerId: linkedCustomerId,
     storeId: normalizedStoreId,
     category: items[0]?.category ?? 'Counter Billing',
@@ -1863,24 +1677,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }
 };
 
-  const lookupPosCustomerByPhone = async (phone: string): Promise<PosCustomerLookupResult | null> => {
-    const normalizedPhoneValue = normalizePhone(phone);
-    if (normalizedPhoneValue.length !== 10) {
-      throw new Error('Enter a valid 10-digit phone number to search.');
-    }
-
-    const matchedUser = users.find((entry) => normalizePhone(entry.phone) === normalizedPhoneValue);
-    if (!matchedUser) {
-      return null;
-    }
-
-    return {
-      userId: matchedUser.id,
-      customerId: matchedUser.id === currentUserId ? (customerAccount?.id ?? null) : null,
-      fullName: matchedUser.fullName,
-      phone: normalizedPhoneValue,
-      email: normalizeEmail(matchedUser.email) || undefined,
-    };
+  const lookupPosCustomerByPhone = async (_phone: string): Promise<PosCustomerLookupResult | null> => {
+    throw new Error('POS customer lookup now requires the internal customer directory service.');
   };
 
   const linkWalkInOrder = async ({ phone, reference }: WalkInLinkInput): Promise<AuthActionResult> => {

@@ -29,6 +29,21 @@ interface InternalAccessSessionRow {
   last_seen_at: string;
 }
 
+const loadPermissionKeys = async (db: ReturnType<typeof createClient>, internalUserId: string): Promise<string[]> => {
+  const { data } = await db
+    .from('internal_users')
+    .select('roles!inner(role_permissions(is_allowed, permissions(permission_key)))')
+    .eq('id', internalUserId)
+    .maybeSingle();
+
+  const permissionKeys = (data?.roles?.role_permissions ?? [])
+    .filter((entry: any) => entry?.is_allowed)
+    .map((entry: any) => entry?.permissions?.permission_key?.trim())
+    .filter((permissionKey: string | undefined): permissionKey is string => Boolean(permissionKey));
+
+  return Array.from(new Set(permissionKeys));
+};
+
 interface OrderStatusRow {
   order_id: string;
   order_status: OrderStatus;
@@ -155,6 +170,11 @@ Deno.serve(async (req) => {
   const verifyResult = await verifyAndLoadSession(db, tokenResult.value);
   if (!verifyResult.valid) {
     return json(401, { success: false, error: verifyResult.error });
+  }
+
+  const permissionKeys = await loadPermissionKeys(db, verifyResult.session.internal_user_id);
+  if (!permissionKeys.includes('can_access_orders')) {
+    return json(403, { success: false, error: 'This internal session cannot update orders.' });
   }
 
   const { role_key: roleKey, scope_type: scopeType, scope_store_id: scopeStoreId } = verifyResult.session;

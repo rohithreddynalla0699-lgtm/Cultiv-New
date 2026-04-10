@@ -1,3 +1,4 @@
+import type { InternalPosPaymentRecord } from '../lib/internalOpsApi';
 import type { CreateCounterWalkInOrderInput, Order } from '../types/platform';
 import type {
   PosCreateOrderResult,
@@ -15,7 +16,7 @@ interface CreateOrderDeps {
 }
 
 interface RecordPaymentDeps {
-  // Reserved for payment repository integration.
+  recordManualPayment: (payload: PosPaymentPayload) => Promise<InternalPosPaymentRecord>;
 }
 
 interface SendReceiptPayload {
@@ -31,7 +32,6 @@ const mapToCounterOrderInput = (payload: PosOrderPayload): CreateCounterWalkInOr
     fullName: payload.customerName,
     phone: payload.customerPhone?.trim() || undefined,
     email: payload.customerEmail?.trim() || undefined,
-    linkedUserId: payload.linkedUserId,
     linkedCustomerId: payload.linkedCustomerId,
     paymentMethod: payload.paymentMethod,
     tipPercentage: payload.tipPercentage,
@@ -73,13 +73,17 @@ export const posService = {
   },
 
   async recordPayment(_payload: PosPaymentPayload, _deps?: RecordPaymentDeps) {
-    // Payment table write should happen in repository integration phase.
-    return { success: true };
+    if (!_deps?.recordManualPayment) {
+      throw new Error('POS payment recording is not configured.');
+    }
+    return _deps.recordManualPayment(_payload);
   },
 
-  async sendReceipt(_payload: SendReceiptPayload) {
-    // Receipt delivery integration can be wired here without leaking transport concerns into the UI.
-    return { success: true };
+  async sendReceipt(payload: SendReceiptPayload) {
+    if (payload.option === 'print') {
+      return { success: true };
+    }
+    throw new Error('Digital receipt delivery is not enabled yet. Use print receipt for now.');
   },
 
   mapCreatedOrder(input: {

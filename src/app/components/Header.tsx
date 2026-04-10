@@ -28,29 +28,37 @@ export function Header() {
   const [activeHomeTab, setActiveHomeTab] = useState<'home' | 'journal' | 'about'>('home');
   const [showStoreSelector, setShowStoreSelector] = useState(false);
   const [showAppWaitlist, setShowAppWaitlist] = useState(false);
-  const [stores, setStores] = useState<StoreSelectorItem[]>(() => loadStores() as StoreSelectorItem[]);
-  const [selectedStoreId, setSelectedStoreIdState] = useState<string>(() => loadSelectedStoreId(loadStores()));
+  const [stores, setStores] = useState<StoreSelectorItem[]>([]);
+  const [selectedStoreId, setSelectedStoreIdState] = useState<string>('');
   const menuRef = useRef<HTMLDivElement>(null);
   const HEADER_SCROLL_OFFSET = 128;
 
   const activeStore = getSelectedStore(stores);
 
   useEffect(() => {
-    const loadedStores = loadStores() as StoreSelectorItem[];
-    setStores(loadedStores);
-    setSelectedStoreIdState(loadSelectedStoreId(loadedStores));
+    let active = true;
+
+    void loadStores().then((loadedStores) => {
+      if (!active) return;
+      setStores(loadedStores);
+      setSelectedStoreIdState(loadSelectedStoreId(loadedStores));
+    });
 
     const unsubscribeSelection = subscribeSelectedStore((nextStoreId) => {
-      const refreshedStores = loadStores() as StoreSelectorItem[];
-      setStores(refreshedStores);
-      setSelectedStoreIdState(nextStoreId);
+      void loadStores().then((refreshedStores) => {
+        if (!active) return;
+        setStores(refreshedStores);
+        setSelectedStoreIdState(nextStoreId);
+      });
     });
 
     const unsubscribeOpen = subscribeOpenStoreSelector(() => {
-      const refreshedStores = loadStores() as StoreSelectorItem[];
-      setStores(refreshedStores);
-      setSelectedStoreIdState(loadSelectedStoreId(refreshedStores));
-      setShowStoreSelector(true);
+      void loadStores().then((refreshedStores) => {
+        if (!active) return;
+        setStores(refreshedStores);
+        setSelectedStoreIdState(loadSelectedStoreId(refreshedStores));
+        setShowStoreSelector(true);
+      });
     });
 
     const unsubscribeWaitlist = subscribeOpenAppWaitlist(() => {
@@ -58,6 +66,7 @@ export function Header() {
     });
 
     return () => {
+      active = false;
       unsubscribeSelection();
       unsubscribeOpen();
       unsubscribeWaitlist();

@@ -30,7 +30,7 @@ function isBrowser() {
   return typeof window !== 'undefined' && typeof localStorage !== 'undefined';
 }
 
-export async function loadStores(): Promise<StoreLocatorStore[]> {
+export async function loadStores(allowFallback = true): Promise<StoreLocatorStore[]> {
   const { data, error } = await supabase
     .from('stores')
     .select('id, name, city, code, postal_code, is_active')
@@ -38,7 +38,7 @@ export async function loadStores(): Promise<StoreLocatorStore[]> {
 
   if (error || !data) {
     console.error('Failed to load stores:', error);
-    return CUSTOMER_STORE_METADATA;
+    return allowFallback ? CUSTOMER_STORE_METADATA : [];
   }
 
   return data.map((store: any) => ({

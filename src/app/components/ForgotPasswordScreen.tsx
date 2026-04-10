@@ -1,4 +1,4 @@
-// ForgotPasswordScreen — password recovery form that generates a reset token for this frontend flow.
+// ForgotPasswordScreen — password recovery request screen.
 
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -30,7 +30,7 @@ export function ForgotPasswordScreen() {
 	};
 
 	return (
-		<AuthShell title="Recover Access" subtitle="Use your phone or email to generate a secure reset step for this frontend flow." footer={<p className="text-center text-sm text-foreground/60">Remembered your password? <Link to="/login" className="font-medium text-primary">Back to sign in</Link></p>}>
+		<AuthShell title="Recover Access" subtitle="Use your phone or email to request account recovery support." footer={<p className="text-center text-sm text-foreground/60">Remembered your password? <Link to="/login" className="font-medium text-primary">Back to sign in</Link></p>}>
 			<motion.form 
 				onSubmit={handleSubmit} 
 				className="space-y-5"

@@ -77,7 +77,7 @@ export interface InventoryAdjustmentHistoryItem {
   itemId: string;
   itemCode: string;
   itemName: string;
-  adjustmentType: 'set' | 'add' | 'reduce' | 'threshold_update' | 'receive' | 'manual_correction' | 'out_of_stock';
+  adjustmentType: 'set' | 'add' | 'reduce' | 'threshold_update' | 'receive' | 'manual_correction' | 'out_of_stock' | 'opening_balance';
   quantityDelta: number;
   quantityBefore: number;
   quantityAfter: number;

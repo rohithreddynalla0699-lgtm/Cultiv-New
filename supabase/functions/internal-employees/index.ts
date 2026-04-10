@@ -39,6 +39,21 @@ interface InternalAccessSessionRow {
   last_seen_at: string;
 }
 
+const loadPermissionKeys = async (db: ReturnType<typeof createClient>, internalUserId: string): Promise<string[]> => {
+  const { data } = await db
+    .from('internal_users')
+    .select('roles!inner(role_permissions(is_allowed, permissions(permission_key)))')
+    .eq('id', internalUserId)
+    .maybeSingle();
+
+  const permissionKeys = (data?.roles?.role_permissions ?? [])
+    .filter((entry: any) => entry?.is_allowed)
+    .map((entry: any) => entry?.permissions?.permission_key?.trim())
+    .filter((permissionKey: string | undefined): permissionKey is string => Boolean(permissionKey));
+
+  return Array.from(new Set(permissionKeys));
+};
+
 interface EmployeeRow {
   id: string;
   full_name: string;
@@ -626,6 +641,10 @@ Deno.serve(async (req) => {
   }
 
   const session = sessionResult.session;
+  const permissionKeys = await loadPermissionKeys(db, session.internal_user_id);
+  if (!permissionKeys.includes('can_manage_employees')) {
+    return json(403, { error: 'This internal session cannot manage employees.' });
+  }
 
   if (action.value === 'dashboard') {
     const period = normalizePeriod(body.period);

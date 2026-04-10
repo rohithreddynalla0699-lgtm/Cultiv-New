@@ -33,7 +33,7 @@ interface CreatePaymentIntentRequest {
   items?: Array<Record<string, unknown>>;
 }
 
-type CheckoutGateway = "mock" | "razorpay";
+type CheckoutGateway = "razorpay";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -234,7 +234,10 @@ const createRazorpayOrder = async (
 
 const resolveCheckoutGateway = (): CheckoutGateway => {
   const configured = (Deno.env.get("PAYMENT_PROVIDER") || "").trim().toLowerCase();
-  return configured === "razorpay" ? "razorpay" : "mock";
+  if (configured !== "razorpay") {
+    throw new Error("Online payment gateway is not configured.");
+  }
+  return "razorpay";
 };
 
 serve(async (req: any) => {
@@ -250,7 +253,13 @@ serve(async (req: any) => {
       method: req.method,
       hasAuthorizationHeader: Boolean(req.headers?.get("authorization")),
       authPathUsed: "custom_session",
-      paymentProvider: resolveCheckoutGateway(),
+      paymentProvider: (() => {
+        try {
+          return resolveCheckoutGateway();
+        } catch {
+          return "unconfigured";
+        }
+      })(),
       hasSupabaseUrl: Boolean(Deno.env.get("SUPABASE_URL")),
       hasServiceRoleKey: Boolean(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")),
       hasRazorpayKeyId: Boolean(Deno.env.get("RAZORPAY_KEY_ID")),
@@ -321,7 +330,12 @@ serve(async (req: any) => {
       });
     }
 
-    const checkoutGateway = resolveCheckoutGateway();
+    let checkoutGateway: CheckoutGateway;
+    try {
+      checkoutGateway = resolveCheckoutGateway();
+    } catch (error) {
+      return errorResponse(503, "payment_gateway_unavailable", error instanceof Error ? error.message : "Online payment gateway is not configured.");
+    }
     const razorpayKeyId = Deno.env.get("RAZORPAY_KEY_ID") || "";
     const razorpayKeySecret = Deno.env.get("RAZORPAY_KEY_SECRET") || "";
 
@@ -470,6 +484,10 @@ serve(async (req: any) => {
     }
 
     if (existing?.payment_id) {
+      if (existing.gateway !== 'razorpay') {
+        return errorResponse(503, "payment_gateway_unavailable", "Online payment gateway is not configured.");
+      }
+
       if (existing.status === "succeeded" && existing.order_id) {
         return jsonResponse({
           success: true,
@@ -504,27 +522,14 @@ serve(async (req: any) => {
     const receipt = createSafeReceipt(idempotencyKey);
     let gatewayOrder: { orderId: string; currency: string; amountPaise: number };
 
-    if (checkoutGateway === "razorpay") {
-      try {
-        gatewayOrder = await createRazorpayOrder(razorpayKeyId, razorpayKeySecret, amountPaise, receipt);
-      } catch (error) {
-        logStage("razorpay_order_create_failed", {
-          message: error instanceof Error ? error.message : String(error),
-        });
-        return errorResponse(502, "razorpay_order_create_failed", "Could not create payment order with gateway.", {
-          reason: error instanceof Error ? error.message : "unknown_gateway_error",
-        });
-      }
-    } else {
-      gatewayOrder = {
-        orderId: `mock_order_${idempotencyKey.replace(/[^a-zA-Z0-9]/g, "").slice(0, 24) || Date.now()}`,
-        currency: "INR",
-        amountPaise,
-      };
-
-      logStage("mock_payment_intent_created", {
-        gatewayOrderId: gatewayOrder.orderId,
-        amountPaise,
+    try {
+      gatewayOrder = await createRazorpayOrder(razorpayKeyId, razorpayKeySecret, amountPaise, receipt);
+    } catch (error) {
+      logStage("razorpay_order_create_failed", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return errorResponse(502, "razorpay_order_create_failed", "Could not create payment order with gateway.", {
+        reason: error instanceof Error ? error.message : "unknown_gateway_error",
       });
     }
 

@@ -16,7 +16,7 @@ import { DEFAULT_FIRST_ORDER_CATEGORY_SLUG, PICKUP_ESTIMATE_WINDOW, POS_TAX_RATE
 type OrderFilter = 'all' | 'online' | 'instore';
 
 const isInStoreOrder = (order: Order) =>
-	order.orderType === 'walk_in' || order.source === 'walk_in' || order.source === 'walk-in';
+	order.orderType === 'walk_in' || order.source === 'walk_in';
 
 export function OrderHistoryScreen() {
 	const { user, orders, activeOrders } = useAuth();

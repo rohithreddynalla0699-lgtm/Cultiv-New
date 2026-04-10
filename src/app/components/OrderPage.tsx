@@ -39,7 +39,6 @@ import {
   resolveProteinBlend,
 } from '../data/bowlConfigurations';
 import { AuthPromptBeforeCheckout } from './AuthPromptBeforeCheckout';
-import { MockCheckoutPaymentModal } from './MockCheckoutPaymentModal';
 import { OrderReviewModal } from './OrderReviewModal';
 import { useAuth } from '../contexts/AuthContext';
 import { DISCOUNT_REWARD_VALUES, FREE_ITEM_REWARD_DETAILS } from '../config/rewardsCatalog';
@@ -93,15 +92,6 @@ interface PaymentLaunchResult {
   outcome: 'succeeded' | 'failed' | 'cancelled';
   message?: string;
   payload?: GatewaySuccessPayload;
-}
-
-interface MockPaymentSession {
-  paymentMethod: CustomerCheckoutPaymentMethod;
-  amount: number;
-  itemCount: number;
-  customerName: string;
-  paymentReference: string;
-  idempotencyKey: string;
 }
 
 declare global {
@@ -384,9 +374,7 @@ export function OrderPage() {
   const [selectedTipOption, setSelectedTipOption] = useState<TipOption>('none');
   const [customTipInput, setCustomTipInput] = useState('');
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<CustomerCheckoutPaymentMethod>('upi');
-  const [mockPaymentSession, setMockPaymentSession] = useState<MockPaymentSession | null>(null);
   const submissionLockRef = useRef(false);
-  const mockPaymentResolverRef = useRef<((result: PaymentLaunchResult) => void) | null>(null);
   const menuScrollRef = useRef<HTMLDivElement | null>(null);
   const [stores, setStores] = useState<StoreLocatorStore[]>([]);
 const [selectedStoreId, setSelectedStoreId] = useState<string>('');
@@ -454,18 +442,6 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
     if (!isBrowser()) return;
     localStorage.setItem(CHECKOUT_CONTACT_STORAGE_KEY, JSON.stringify(customer));
   }, [customer]);
-
-  useEffect(() => {
-    return () => {
-      if (mockPaymentResolverRef.current) {
-        mockPaymentResolverRef.current({
-          outcome: 'cancelled',
-          message: 'Payment was cancelled. Your cart is still saved.',
-        });
-        mockPaymentResolverRef.current = null;
-      }
-    };
-  }, []);
 
   useEffect(() => {
     if (!isBrowser()) return;
@@ -1156,70 +1132,11 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
     });
   };
 
-  const runMockCheckout = async (intent: CheckoutPaymentIntent, orderInput: PlaceOrderInput): Promise<PaymentLaunchResult> => {
-    const paymentReference = intent.gatewayOrderId || `mock_order_${intent.paymentId.slice(0, 10)}`;
-
-    return new Promise((resolve) => {
-      mockPaymentResolverRef.current = resolve;
-      setMockPaymentSession({
-        paymentMethod: intent.paymentMethod,
-        amount: orderInput.total,
-        itemCount: orderInput.items.reduce((sum, item) => sum + item.quantity, 0),
-        customerName: orderInput.fullName,
-        paymentReference,
-        idempotencyKey: intent.idempotencyKey,
-      });
-    });
-  };
-
-  const finalizeMockPaymentDecision = (outcome: 'succeeded' | 'failed' | 'cancelled') => {
-    setMockPaymentSession((current) => {
-      if (!current) return current;
-
-      const resolver = mockPaymentResolverRef.current;
-      mockPaymentResolverRef.current = null;
-
-      const paymentReference = current.paymentReference;
-      if (outcome === 'succeeded') {
-        const mockGatewayPaymentId = `mock_pay_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        resolver?.({
-          outcome: 'succeeded',
-          payload: {
-            gatewayOrderId: paymentReference,
-            gatewayPaymentId: mockGatewayPaymentId,
-            gatewaySignature: `mock_sig_${mockGatewayPaymentId.slice(-6)}`,
-          },
-        });
-      } else if (outcome === 'failed') {
-        resolver?.({
-          outcome: 'failed',
-          message: 'Payment failed. Please retry.',
-          payload: {
-            gatewayOrderId: paymentReference,
-          },
-        });
-      } else {
-        resolver?.({
-          outcome: 'cancelled',
-          message: 'Payment was cancelled. Your cart is still saved.',
-          payload: {
-            gatewayOrderId: paymentReference,
-          },
-        });
-      }
-
-      return current;
-    });
-
-    setTimeout(() => {
-      setMockPaymentSession(null);
-    }, 120);
-  };
-
   const launchCheckoutPayment = async (intent: CheckoutPaymentIntent, orderInput: PlaceOrderInput): Promise<PaymentLaunchResult> => {
+    void orderInput;
     const provider = resolveCheckoutPaymentProvider(intent.gateway);
-    if (provider === 'mock') {
-      return runMockCheckout(intent, orderInput);
+    if (provider !== 'razorpay') {
+      throw new Error('Online payment gateway is not configured yet. Please use in-store payment for now.');
     }
 
     return runRazorpayCheckout(intent);
@@ -2048,19 +1965,6 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
       </AnimatePresence>
 
       <AnimatePresence>
-        {mockPaymentSession ? (
-          <MockCheckoutPaymentModal
-            paymentMethod={mockPaymentSession.paymentMethod}
-            amount={mockPaymentSession.amount}
-            itemCount={mockPaymentSession.itemCount}
-            customerName={mockPaymentSession.customerName}
-            paymentReference={mockPaymentSession.paymentReference}
-            idempotencyKey={mockPaymentSession.idempotencyKey}
-            onSimulateSuccess={() => finalizeMockPaymentDecision('succeeded')}
-            onSimulateFailure={() => finalizeMockPaymentDecision('failed')}
-            onSimulateCancel={() => finalizeMockPaymentDecision('cancelled')}
-          />
-        ) : null}
       </AnimatePresence>
     </PageReveal>
   );

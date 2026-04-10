@@ -94,7 +94,7 @@ function HomePage({ onOrderClick, onCategorySelect }: { onOrderClick: () => void
 function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, pendingGuestOrderClaims, claimPendingGuestOrders, rejectPendingGuestOrderClaims } = useAuth();
+  const { user, pendingGuestOrderClaims, claimPendingGuestOrders, rejectPendingGuestClaims } = useAuth();
   const [isCartPanelOpen, setIsCartPanelOpen] = useState(false);
   const [draftCartLines, setDraftCartLines] = useState(() => loadDraftCart());
   const previouslyAuthenticatedRef = useRef(Boolean(user));
@@ -383,7 +383,7 @@ function AppShell() {
               </button>
               <button
                 type="button"
-                onClick={rejectPendingGuestOrderClaims}
+                onClick={rejectPendingGuestClaims}
                 className="flex-1 rounded-full border border-primary/16 py-3 text-sm font-medium text-foreground/70 transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#F7FAF3] hover:text-foreground"
               >
                 No, this wasn't me

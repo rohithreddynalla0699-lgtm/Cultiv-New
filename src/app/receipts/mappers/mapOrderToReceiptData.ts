@@ -1,4 +1,5 @@
 import type { Order } from '../../types/platform';
+import type { ReceiptData, ReceiptLineItem } from '../types/receipt';
 
 import { getDisplayOrderNumber } from '../../utils/orderDisplay';
 
@@ -8,8 +9,10 @@ export function mapOrderToReceiptData(order: Order): ReceiptData {
     orderId: order.id,
     createdAt: order.createdAt,
     paymentMethod: order.paymentMethod || undefined,
+    paymentStatus: order.status === 'completed' ? 'recorded' : null,
     customerName: order.fullName || undefined,
     customerPhone: order.phone || undefined,
+    customerEmail: order.email || undefined,
   };
 
   const items: ReceiptLineItem[] = order.items.map((item) => ({
@@ -31,5 +34,24 @@ export function mapOrderToReceiptData(order: Order): ReceiptData {
     total: Number(order.total),
   };
 
-  return { meta, items, totals };
+  return {
+    meta,
+    items,
+    totals,
+    business: {
+      brandName: 'CULTIV',
+      storeName: '',
+      legalName: '',
+      addressLine1: '',
+      addressLine2: '',
+      city: '',
+      state: '',
+      postalCode: '',
+      country: 'India',
+      phone: '',
+      email: '',
+      gstin: '',
+      code: '',
+    },
+  };
 }

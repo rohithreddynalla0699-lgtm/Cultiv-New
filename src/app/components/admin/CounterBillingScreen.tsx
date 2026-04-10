@@ -16,6 +16,8 @@ import { useAdminDashboard } from '../../contexts/AdminDashboardContext';
 import { useStoreSession } from '../../hooks/useStoreSession';
 import { menuService } from '../../services/menuService';
 import { posService } from '../../services/posService';
+import { customerDirectoryService } from '../../services/customerDirectoryService';
+import { opsPaymentsService } from '../../services/opsPaymentsService';
 import { POS_TAX_RATE } from '../../constants/business';
 import { CategoryRail } from './counter-billing/CategoryRail';
 import { ItemGrid } from './counter-billing/ItemGrid';
@@ -435,8 +437,8 @@ function addOrMergePosLine(previous: PosCartLine[], nextLine: PosCartLine) {
 }
 
 export function CounterBillingScreen() {
-  const { createCounterWalkInOrder, lookupPosCustomerByPhone } = useAuth();
-  const { activeStoreScope, activeStoreUuid, activeStore, permissions } = useAdminDashboard();
+  const { createCounterWalkInOrder } = useAuth();
+  const { session, activeStoreScope, activeStoreUuid, activeStore, permissions } = useAdminDashboard();
   const { touchActivity } = useStoreSession();
 
   const [activeCategorySlug, setActiveCategorySlug] =
@@ -560,7 +562,7 @@ export function CounterBillingScreen() {
     total,
     payment: checkoutState.payment,
   });
-  const receiptData = useReceiptData(createdOrderRecord ?? undefined);
+  const { data: receiptData } = useReceiptData(createdOrderRecord ?? undefined);
 
   const addItemToCart = (item: FoodItem) => {
     void touchActivity();
@@ -792,7 +794,6 @@ export function CounterBillingScreen() {
           customerEmail: isValidEmail(checkoutState.customer.email)
             ? checkoutState.customer.email.trim()
             : undefined,
-          linkedUserId: checkoutState.customerLookup.linkedCustomer?.userId,
           linkedCustomerId: checkoutState.customerLookup.linkedCustomer?.customerId,
           paymentMethod: checkoutState.payment.method,
           tipPercentage,
@@ -816,7 +817,14 @@ export function CounterBillingScreen() {
         orderId: createResult.receipt.orderId,
         paymentMethod: checkoutState.payment.method,
         amount: createResult.receipt.total,
-        recordedBy: permissions.canManageEmployees ? 'manager-session' : 'staff-session',
+        reference: checkoutState.payment.reference.trim() || undefined,
+      }, {
+        recordManualPayment: (payload) => {
+          if (!session) {
+            throw new Error('Internal session expired. Please sign in again before recording payment.');
+          }
+          return opsPaymentsService.recordPosPayment(session, payload);
+        },
       });
 
       const createdOrder = posService.mapCreatedOrder(createResult);
@@ -848,7 +856,11 @@ export function CounterBillingScreen() {
     dispatch({ type: 'start_customer_lookup' });
 
     try {
-      const result = await lookupPosCustomerByPhone(checkoutState.customer.phone);
+      if (!session) {
+        throw new Error('Internal session expired. Please sign in again before linking a customer.');
+      }
+
+      const result = await customerDirectoryService.lookupPosCustomerByPhone(session, checkoutState.customer.phone);
       if (result) {
         dispatch({ type: 'customer_lookup_found', customer: result });
         return;
@@ -1090,7 +1102,7 @@ export function CounterBillingScreen() {
               <ReceiptView
                 createdOrder={checkoutState.createdOrder}
                 customer={checkoutState.customer}
-                receiptData={receiptData}
+                receiptData={receiptData ?? null}
                 selectedDeliveryOption={checkoutState.receiptDeliveryOption}
                 isSendingReceipt={checkoutState.isSendingReceipt}
                 receiptError={checkoutState.receiptError}
@@ -1166,8 +1178,8 @@ function NoticeBanner({
 }
 
 function getReceiptSuccessMessage(option: PosReceiptDeliveryOption) {
-  if (option === 'all') return 'Receipt printed, emailed, and sent by text.';
-  if (option === 'email') return 'Receipt email queued successfully.';
-  if (option === 'text') return 'Receipt text queued successfully.';
+  if (option === 'all') return 'Receipt printed. Digital delivery is not enabled yet.';
+  if (option === 'email') return 'Digital receipt delivery is not enabled yet.';
+  if (option === 'text') return 'Digital receipt delivery is not enabled yet.';
   return 'Print dialog opened. You can print again if needed.';
 }

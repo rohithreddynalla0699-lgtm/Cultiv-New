@@ -1,6 +1,6 @@
 import { Building2, ShieldCheck } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAdminDashboard } from '../../contexts/AdminDashboardContext';
 import { Logo } from '../Logo';
@@ -31,6 +31,14 @@ export function AdminAccessScreen({
   }
 
   const activeStores = stores.filter((store) => store.isActive);
+
+  useEffect(() => {
+    if (storeCode || activeStores.length === 0) {
+      return;
+    }
+
+    setStoreCode(activeStores[0].code);
+  }, [activeStores, storeCode]);
 
   const handleOwnerLogin = async () => {
     setIsLoading(true);

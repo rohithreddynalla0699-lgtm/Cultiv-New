@@ -474,28 +474,38 @@ interface AdminDashboardProviderProps {
 }
 
 export function AdminDashboardProvider({ children }: AdminDashboardProviderProps) {
-  const [stores, setStores] = useState<StoreRecord[]>(() => normalizeStores(readStorage(STORAGE_KEYS.stores, seedStores)));
+  const [stores, setStores] = useState<StoreRecord[]>([]);
   const [canonicalStores, setCanonicalStores] = useState<StoreLocatorStore[]>([]);
-  const [employees, setEmployees] = useState<EmployeeRecord[]>(() => normalizeEmployees(readStorage(STORAGE_KEYS.employees, seedEmployees)));
+  const [employees, setEmployees] = useState<EmployeeRecord[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [inventoryHistory, setInventoryHistory] = useState<InventoryAdjustmentHistoryItem[]>([]);
   const [inventoryLoading, setInventoryLoading] = useState(false);
   const [inventoryError, setInventoryError] = useState<string | null>(null);
   const [orderNotes, setOrderNotes] = useState<AdminOrderNoteMap>(() => readStorage(STORAGE_KEYS.orderNotes, {}));
   const [storedScope, setStoredScope] = useState<StoreScope>(() => readStorage(STORAGE_KEYS.activeStoreScope, 'all'));
-  const [session, setSession] = useState<InternalAccessSession | null>(() => normalizeSession(readStorage(STORAGE_KEYS.session, null), seedStores));
+  const [session, setSession] = useState<InternalAccessSession | null>(() => normalizeSession(readStorage(STORAGE_KEYS.session, null), []));
 
   useEffect(() => {
     let isActive = true;
 
-    void loadStores()
+    void loadStores(false)
       .then((loadedStores) => {
         if (!isActive) return;
         setCanonicalStores(loadedStores);
+        setStores(loadedStores.map((store) => ({
+          id: store.id,
+          name: store.name,
+          city: store.city,
+          code: normalizeStoreCode(store.code),
+          pin: '',
+          isActive: store.isActive,
+          createdAt: nowIso(),
+        })));
       })
       .catch(() => {
         if (!isActive) return;
         setCanonicalStores([]);
+        setStores([]);
       });
 
     return () => {
@@ -512,14 +522,6 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
       localStorage.removeItem(key);
     });
   }, []);
-
-  useEffect(() => {
-    writeStorage(STORAGE_KEYS.stores, stores);
-  }, [stores]);
-
-  useEffect(() => {
-    writeStorage(STORAGE_KEYS.employees, employees);
-  }, [employees]);
 
   useEffect(() => {
     writeStorage(STORAGE_KEYS.orderNotes, orderNotes);
@@ -690,7 +692,7 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
 
   const activeStoreScope = storedScope;
   const activeStoreUuid = session?.scopeStoreId
-    ?? (activeStoreScope === 'all' ? null : localStoreIdToUuid[activeStoreScope] ?? null);
+    ?? (activeStoreScope === 'all' ? null : localStoreIdToUuid[activeStoreScope] ?? activeStoreScope);
   const activeStore = activeStoreScope === 'all' ? null : stores.find((store) => store.id === activeStoreScope) ?? null;
 
   const matchesScope = (storeId: string) => activeStoreScope === 'all' || storeId === activeStoreScope;
@@ -810,45 +812,14 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
   };
 
   const addStore = (input: StoreInput) => {
-    const error = validateStoreInput(input);
-    if (error) return { success: false, message: error };
-
-    const storeId = createId('store');
-
-    setStores((previous) => [
-      {
-        id: storeId,
-        name: input.name.trim(),
-        city: input.city.trim(),
-        code: normalizeStoreCode(input.code),
-        pin: input.pin.trim(),
-        isActive: input.isActive,
-        createdAt: nowIso(),
-      },
-      ...previous,
-    ]);
-
-    return { success: true, message: 'Store added.' };
+    void input;
+    return { success: false, message: 'Store management is backend-controlled and not available in this build.' };
   };
 
   const updateStore = (storeId: string, input: StoreInput) => {
-    const error = validateStoreInput(input, storeId);
-    if (error) return { success: false, message: error };
-
-    setStores((previous) => previous.map((store) => (
-      store.id === storeId
-        ? {
-          ...store,
-          name: input.name.trim(),
-          city: input.city.trim(),
-          code: normalizeStoreCode(input.code),
-          pin: input.pin.trim(),
-          isActive: input.isActive,
-        }
-        : store
-    )));
-
-    return { success: true, message: 'Store updated.' };
+    void storeId;
+    void input;
+    return { success: false, message: 'Store management is backend-controlled and not available in this build.' };
   };
 
   const validateEmployeeInput = (input: EmployeeInput, currentEmployeeId?: string) => {

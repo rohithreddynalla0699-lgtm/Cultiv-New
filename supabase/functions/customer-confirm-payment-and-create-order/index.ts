@@ -208,8 +208,8 @@ serve(async (req: any) => {
     }
 
     const gateway = String(paymentRow.gateway || "").trim().toLowerCase();
-    if (gateway !== "razorpay" && gateway !== "mock") {
-      return jsonResponse({ success: false, message: "Unsupported payment gateway for confirmation." }, 400);
+    if (gateway !== "razorpay") {
+      return jsonResponse({ success: false, message: "Online payment gateway is not configured for live confirmation." }, 400);
     }
 
     let gatewayOrderId = body.gatewayOrderId?.trim() || paymentRow.gateway_order_id || undefined;
@@ -262,13 +262,6 @@ serve(async (req: any) => {
           .eq("payment_id", paymentId);
 
         return jsonResponse({ success: false, message: "Payment signature verification failed." }, 400);
-      }
-    } else {
-      if (!gatewayPaymentId) {
-        gatewayPaymentId = `mock_pay_${paymentId.slice(0, 10)}`;
-      }
-      if (!gatewaySignature) {
-        gatewaySignature = `mock_sig_${gatewayPaymentId.slice(-6)}`;
       }
     }
 
@@ -431,7 +424,64 @@ serve(async (req: any) => {
       return jsonResponse({ success: false, message: "Payment captured but order could not be finalized." }, 500);
     }
 
-    const nowIso = new Date().toISOString();
+    const paymentRecordedAt = new Date().toISOString();
+    const { error: paymentInsertError } = await supabase
+      .from("order_payments")
+      .upsert({
+        order_id: orderId,
+        store_id: order.store_id,
+        customer_id: order.customer_id ?? null,
+        recorded_by_internal_user_id: null,
+        payment_method: paymentRow.payment_method,
+        payment_source: "customer_checkout",
+        provider_type: "gateway",
+        status: "recorded",
+        amount: order.total_amount,
+        currency: paymentRow.currency ?? "INR",
+        reference: gatewayPaymentId,
+        provider_reference: gatewayOrderId,
+        recorded_at: paymentRecordedAt,
+        metadata: {
+          customer_payment_id: paymentId,
+          gateway,
+        },
+      }, {
+        onConflict: "order_id",
+      });
+
+    if (paymentInsertError) {
+      console.error("[customer-confirm-payment-and-create-order] order payment insert failed", paymentInsertError);
+
+      await supabase
+        .from("order_item_selections")
+        .delete()
+        .in("order_item_id", insertedOrderItemIds);
+
+      await supabase
+        .from("order_items")
+        .delete()
+        .eq("order_id", orderId);
+
+      await supabase
+        .from("orders")
+        .delete()
+        .eq("order_id", orderId);
+
+      await supabase
+        .from("customer_payments")
+        .update({
+          status: "orphaned",
+          failure_message: "Payment captured but payment ledger write failed.",
+          gateway_payment_id: gatewayPaymentId,
+          gateway_signature: gatewaySignature,
+          updated_at: paymentRecordedAt,
+        })
+        .eq("payment_id", paymentId);
+
+      return jsonResponse({ success: false, message: "Payment captured but order payment record could not be finalized." }, 500);
+    }
+
+    const nowIso = paymentRecordedAt;
     await supabase
       .from("customer_payments")
       .update({

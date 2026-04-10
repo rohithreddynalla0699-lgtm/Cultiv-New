@@ -52,7 +52,7 @@ export function OrderDetailScreen() {
   const rawOrder = orderId ? getOrderById(orderId) : undefined;
   const order = (rawOrder ?? null) as OrderLike | null;
 
-  const receiptData = useReceiptData(order as never);
+  const { data: receiptData, isLoading: receiptLoading, error: receiptError } = useReceiptData(order as never);
 
   const getStoreName = (storeId?: string) => {
     if (!storeId) return 'CULTIV Store';
@@ -247,7 +247,7 @@ export function OrderDetailScreen() {
         </CardStagger>
 
         <AnimatePresence>
-          {showReceipt && receiptData && (
+          {showReceipt && (
             <motion.div
               className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(22,28,18,0.42)] p-4 backdrop-blur-[2px]"
               onClick={() => setShowReceipt(false)}
@@ -271,12 +271,22 @@ export function OrderDetailScreen() {
                   ×
                 </button>
 
-                <Receipt
-                  data={receiptData}
-                  variant="screen"
-                  showActions
-                  onPrint={printReceiptElement}
-                />
+                {receiptLoading ? (
+                  <div className="rounded-2xl border border-[#E5EBDD] bg-white p-4 text-sm text-foreground/60">
+                    Loading receipt...
+                  </div>
+                ) : receiptError ? (
+                  <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+                    {receiptError}
+                  </div>
+                ) : receiptData ? (
+                  <Receipt
+                    data={receiptData}
+                    variant="screen"
+                    showActions
+                    onPrint={printReceiptElement}
+                  />
+                ) : null}
               </motion.div>
             </motion.div>
           )}

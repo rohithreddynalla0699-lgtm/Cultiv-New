@@ -8,7 +8,7 @@ interface OrdersKanbanProps {
   mutatingOrderIds: Set<string>;
   onPrimaryAction: (order: OrdersBoardOrder) => void;
   onOpenNotes: (order: OrdersBoardOrder) => void;
-  onCancelOrder: (order: OrdersBoardOrder, reason: string) => void;
+  onCancelOrder: (order: OrdersBoardOrder) => void;
 }
 
 const ORDER_COLUMNS: Array<{ status: AdminOrderBoardStatus; label: string }> = [

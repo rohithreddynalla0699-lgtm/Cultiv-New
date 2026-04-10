@@ -29,11 +29,11 @@ export interface PosCustomerDraft {
 }
 
 export interface PosCustomerLookupResult {
-  userId: string;
-  customerId: string | null;
+  customerId: string;
   fullName: string;
   phone: string;
   email?: string;
+  rewardPoints?: number;
 }
 
 export interface PosCustomerLookupState {
@@ -56,7 +56,6 @@ export interface PosOrderPayload {
   customerName?: string;
   customerPhone?: string;
   customerEmail?: string;
-  linkedUserId?: string;
   linkedCustomerId?: string | null;
   tipPercentage: number;
   tipAmount: number;
@@ -76,7 +75,7 @@ export interface PosPaymentPayload {
   orderId: string;
   paymentMethod: CounterPaymentMethod;
   amount: number;
-  recordedBy?: string;
+  reference?: string;
 }
 
 export interface PosCreatedOrder {

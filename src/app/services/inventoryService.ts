@@ -21,6 +21,11 @@ const sessionPayload = (session: InternalAccessSession) => ({
   roleKey: session.roleKey,
   scopeType: session.scopeType === 'store' ? 'store' : 'global',
   scopeStoreId: session.scopeStoreId,
+} satisfies {
+  internalSessionToken: string;
+  roleKey: 'owner' | 'admin' | 'store';
+  scopeType: 'global' | 'store';
+  scopeStoreId: string | null;
 });
 
 export const inventoryService = {

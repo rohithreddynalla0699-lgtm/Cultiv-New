@@ -194,7 +194,6 @@ export interface CreateCounterWalkInOrderInput {
 	fullName?: string;
 	phone?: string;
 	email?: string;
-	linkedUserId?: string;
 	linkedCustomerId?: string | null;
 	orderChannel?: 'in_store';
 	items: CounterOrderItemInput[];
