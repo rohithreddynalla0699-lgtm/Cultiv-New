@@ -60,6 +60,7 @@ export interface PosOrderPayload {
   tipPercentage: number;
   tipAmount: number;
   paymentMethod: CounterPaymentMethod;
+  paymentReference?: string;
   items: Array<{
     itemId: string;
     title: string;

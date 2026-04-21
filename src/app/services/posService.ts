@@ -1,4 +1,4 @@
-import type { InternalPosPaymentRecord } from '../lib/internalOpsApi';
+import type { InternalPosCheckoutResponse, InternalPosPaymentRecord } from '../lib/internalOpsApi';
 import type { CreateCounterWalkInOrderInput, Order } from '../types/platform';
 import type {
   PosCreateOrderResult,
@@ -17,6 +17,25 @@ interface CreateOrderDeps {
 
 interface RecordPaymentDeps {
   recordManualPayment: (payload: PosPaymentPayload) => Promise<InternalPosPaymentRecord>;
+}
+
+interface CheckoutOrderDeps {
+  createPosOrder: (payload: PosAtomicCheckoutPayload) => Promise<InternalPosCheckoutResponse>;
+}
+
+interface PosAtomicCheckoutPayload {
+  storeId: string;
+  customerId?: string | null;
+  customerName?: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  paymentMethod: PosOrderPayload['paymentMethod'];
+  paymentReference?: string;
+  subtotal: number;
+  taxAmount: number;
+  tipAmount: number;
+  total: number;
+  items: PosOrderPayload['items'];
 }
 
 interface SendReceiptPayload {
@@ -70,6 +89,84 @@ export const posService = {
     };
 
     return { order: createdOrder, receipt };
+  },
+
+  async checkoutOrder(payload: PosOrderPayload, deps: CheckoutOrderDeps): Promise<PosCreateOrderResult> {
+    const subtotal = Number(payload.items.reduce((sum, item) => sum + item.quantity * item.price, 0).toFixed(2));
+    const taxAmount = Number((subtotal * POS_TAX_RATE).toFixed(2));
+    const tipAmount = Number(payload.tipAmount.toFixed(2));
+    const total = Number((subtotal + taxAmount + tipAmount).toFixed(2));
+
+    const checkout = await deps.createPosOrder({
+      storeId: payload.storeId,
+      customerId: payload.linkedCustomerId ?? null,
+      customerName: payload.customerName?.trim() || 'Walk-in Guest',
+      customerPhone: payload.customerPhone?.trim() || undefined,
+      customerEmail: payload.customerEmail?.trim() || undefined,
+      paymentMethod: payload.paymentMethod,
+      paymentReference: payload.paymentReference,
+      subtotal,
+      taxAmount,
+      tipAmount,
+      total,
+      items: payload.items,
+    });
+
+    const createdAt = checkout.order.createdAt ?? new Date().toISOString();
+    const order: Order = {
+      id: checkout.order.orderId,
+      customerId: checkout.order.customerId,
+      storeId: checkout.order.storeId,
+      category: payload.items[0]?.category ?? 'POS',
+      items: payload.items.map((item, index) => ({
+        id: `${checkout.order.orderId}-${item.itemId || index}`,
+        orderId: checkout.order.orderId,
+        category: item.category,
+        title: item.title,
+        selections: item.selections,
+        quantity: item.quantity,
+        price: item.price,
+      })),
+      orderType: 'walk_in',
+      subtotal: checkout.order.subtotal,
+      rewardDiscount: 0,
+      taxAmount: checkout.order.taxAmount,
+      total: checkout.order.total,
+      status: 'completed',
+      createdAt,
+      phone: checkout.order.customerPhone ?? payload.customerPhone ?? '',
+      fullName: checkout.order.customerName,
+      email: checkout.order.customerEmail ?? payload.customerEmail ?? '',
+      source: 'walk_in',
+      paymentMethod: checkout.order.paymentMethod,
+      tipPercentage: payload.tipPercentage,
+      tipAmount: checkout.order.tipAmount,
+      fulfillmentWindow: 'Counter order',
+      statusTimeline: [
+        {
+          status: 'completed',
+          label: 'Paid at counter',
+          description: 'The POS order and manual payment were recorded together.',
+          at: createdAt,
+        },
+      ],
+    };
+
+    const receipt: PosReceipt = {
+      orderId: checkout.order.orderId,
+      orderChannel: payload.orderChannel,
+      customerName: checkout.order.customerName,
+      customerPhone: checkout.order.customerPhone ?? undefined,
+      customerEmail: checkout.order.customerEmail ?? undefined,
+      paymentMethod: checkout.order.paymentMethod,
+      subtotal: checkout.order.subtotal,
+      taxAmount: checkout.order.taxAmount,
+      tipAmount: checkout.order.tipAmount,
+      total: checkout.order.total,
+      createdAt,
+    };
+
+    return { order, receipt };
   },
 
   async recordPayment(_payload: PosPaymentPayload, _deps?: RecordPaymentDeps) {

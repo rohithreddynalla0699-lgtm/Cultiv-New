@@ -11,13 +11,12 @@ import {
   type FoodItem,
   type MenuCategoryData,
 } from '../../data/menuData';
-import { useAuth } from '../../contexts/AuthContext';
 import { useAdminDashboard } from '../../contexts/AdminDashboardContext';
 import { useStoreSession } from '../../hooks/useStoreSession';
+import { createInternalPosOrder } from '../../lib/internalOpsApi';
 import { menuService } from '../../services/menuService';
 import { posService } from '../../services/posService';
 import { customerDirectoryService } from '../../services/customerDirectoryService';
-import { opsPaymentsService } from '../../services/opsPaymentsService';
 import { POS_TAX_RATE } from '../../constants/business';
 import { CategoryRail } from './counter-billing/CategoryRail';
 import { ItemGrid } from './counter-billing/ItemGrid';
@@ -437,7 +436,6 @@ function addOrMergePosLine(previous: PosCartLine[], nextLine: PosCartLine) {
 }
 
 export function CounterBillingScreen() {
-  const { createCounterWalkInOrder } = useAuth();
   const { session, activeStoreScope, activeStoreUuid, activeStore, permissions } = useAdminDashboard();
   const { touchActivity } = useStoreSession();
 
@@ -788,7 +786,11 @@ export function CounterBillingScreen() {
     dispatch({ type: 'start_payment_submit' });
 
     try {
-      const createResult = await posService.createOrder(
+      if (!session) {
+        throw new Error('Internal session expired. Please sign in again before completing checkout.');
+      }
+
+      const createResult = await posService.checkoutOrder(
         {
           storeId: activeStoreUuid || activeStore?.id || '',
           orderChannel: 'in_store',
@@ -798,6 +800,7 @@ export function CounterBillingScreen() {
             : undefined,
           linkedCustomerId: checkoutState.customerLookup.linkedCustomer?.customerId,
           paymentMethod: checkoutState.payment.method,
+          paymentReference: checkoutState.payment.reference.trim() || undefined,
           tipPercentage,
           tipAmount,
           placedBy: permissions.canManageEmployees ? 'manager-session' : 'staff-session',
@@ -811,23 +814,20 @@ export function CounterBillingScreen() {
           })),
         },
         {
-          createCounterWalkInOrder,
+          createPosOrder: async (payload) => {
+            const { data, error } = await createInternalPosOrder({
+              internalSessionToken: session.internalSessionToken,
+              ...payload,
+            });
+
+            if (error || !data) {
+              throw new Error(error ?? 'POS checkout could not be completed.');
+            }
+
+            return data;
+          },
         },
       );
-
-      await posService.recordPayment({
-        orderId: createResult.receipt.orderId,
-        paymentMethod: checkoutState.payment.method,
-        amount: createResult.receipt.total,
-        reference: checkoutState.payment.reference.trim() || undefined,
-      }, {
-        recordManualPayment: (payload) => {
-          if (!session) {
-            throw new Error('Internal session expired. Please sign in again before recording payment.');
-          }
-          return opsPaymentsService.recordPosPayment(session, payload);
-        },
-      });
 
       const createdOrder = posService.mapCreatedOrder(createResult);
       dispatch({ type: 'payment_succeeded', createdOrder });

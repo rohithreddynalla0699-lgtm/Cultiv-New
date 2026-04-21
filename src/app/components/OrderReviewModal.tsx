@@ -17,6 +17,7 @@ interface OrderReviewModalProps {
   pickupEstimate: string;
   paymentMethod: 'upi' | 'card';
   isSubmitting: boolean;
+  submitError?: string;
   onConfirm: () => void;
   onEdit: () => void;
 }
@@ -33,6 +34,7 @@ export function OrderReviewModal({
   pickupEstimate,
   paymentMethod,
   isSubmitting,
+  submitError,
   onConfirm,
   onEdit,
 }: OrderReviewModalProps) {
@@ -147,6 +149,11 @@ export function OrderReviewModal({
         </div>
 
         {/* Footer Actions */}
+        {submitError ? (
+          <div className="mx-5 mb-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700 sm:mx-6">
+            {submitError}
+          </div>
+        ) : null}
         <div className="border-t border-border/50 flex gap-3 px-5 py-4 sm:px-6">
           <button
             type="button"

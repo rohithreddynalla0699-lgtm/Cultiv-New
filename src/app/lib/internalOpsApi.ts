@@ -23,6 +23,7 @@ const INTERNAL_INVENTORY_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v
 const INTERNAL_MENU_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-menu`;
 const INTERNAL_CUSTOMERS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-customers`;
 const INTERNAL_PAYMENTS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-payments`;
+const INTERNAL_CREATE_POS_ORDER_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-create-pos-order`;
 const INTERNAL_REPORTS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-reports`;
 const INTERNAL_UPDATE_CREDENTIALS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-update-credentials`;
 const INTERNAL_MANAGE_OPERATIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-manage-operations`;
@@ -291,6 +292,42 @@ export interface InternalPosPaymentRecord {
 
 export interface InternalPosPaymentResponse {
   success: boolean;
+  payment: InternalPosPaymentRecord;
+}
+
+export interface InternalPosCheckoutItem {
+  itemId?: string;
+  title: string;
+  category: string;
+  quantity: number;
+  price: number;
+  selections: Array<{
+    section: string;
+    choices: string[];
+  }>;
+}
+
+export interface InternalPosCheckoutOrder {
+  orderId: string;
+  orderNumber: string;
+  orderStatus: 'completed';
+  storeId: string;
+  customerId: string | null;
+  customerName: string;
+  customerPhone: string | null;
+  customerEmail: string | null;
+  paymentMethod: 'cash' | 'upi' | 'card';
+  paymentReference: string | null;
+  subtotal: number;
+  taxAmount: number;
+  tipAmount: number;
+  total: number;
+  createdAt: string;
+}
+
+export interface InternalPosCheckoutResponse {
+  success: boolean;
+  order: InternalPosCheckoutOrder;
   payment: InternalPosPaymentRecord;
 }
 
@@ -759,6 +796,28 @@ export async function recordInternalPosPayment(params: {
     INTERNAL_PAYMENTS_URL,
     { ...params, action: 'record_pos_payment' },
     'Could not record POS payment.'
+  );
+}
+
+export async function createInternalPosOrder(params: {
+  internalSessionToken: string;
+  storeId: string;
+  customerId?: string | null;
+  customerName?: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  paymentMethod: 'cash' | 'upi' | 'card';
+  paymentReference?: string;
+  subtotal: number;
+  taxAmount: number;
+  tipAmount: number;
+  total: number;
+  items: InternalPosCheckoutItem[];
+}): Promise<{ data: InternalPosCheckoutResponse | null; error: string | null }> {
+  return postInternal<InternalPosCheckoutResponse>(
+    INTERNAL_CREATE_POS_ORDER_URL,
+    params,
+    'Could not complete POS checkout.'
   );
 }
 
