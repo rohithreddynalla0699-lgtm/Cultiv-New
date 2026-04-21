@@ -127,6 +127,8 @@ const CATEGORY_PRIORITY = [
 ] as const;
 
 const CATEGORY_INDEX = Object.fromEntries(MENU_CATEGORIES.map((category) => [category.slug, category]));
+const CUSTOMER_ONLINE_CHECKOUT_ENABLED = false;
+const ONLINE_CHECKOUT_DISABLED_MESSAGE = 'Online checkout is not live yet. Please place your order at the store.';
 const STEP_BY_ID = Object.fromEntries(
   [...BOWL_BUILDER_STEPS, ...BREAKFAST_CUSTOMIZE_STEPS].map((step) => [step.id, step]),
 );
@@ -1052,6 +1054,10 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
     if (submissionLockRef.current || isSubmitting) {
       return;
     }
+    if (!CUSTOMER_ONLINE_CHECKOUT_ENABLED) {
+      setErrors((previous) => ({ ...previous, submit: ONLINE_CHECKOUT_DISABLED_MESSAGE }));
+      return;
+    }
     if (!validateOrder()) return;
 
     // Show review modal instead of immediately placing order
@@ -1884,6 +1890,12 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
 
                   {errors.cart ? <p className="mt-2 text-xs text-red-600">{errors.cart}</p> : null}
                   {errors.reward ? <p className="mt-1.5 text-xs text-red-600">{errors.reward}</p> : null}
+                  {!CUSTOMER_ONLINE_CHECKOUT_ENABLED ? (
+                    <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-800">
+                      <p className="font-semibold">Online checkout coming soon</p>
+                      <p className="mt-0.5">{ONLINE_CHECKOUT_DISABLED_MESSAGE}</p>
+                    </div>
+                  ) : null}
                   {errors.submit ? <p className="mt-1.5 text-xs text-red-600">{errors.submit}</p> : null}
 
                   {guestOrderConfirmation ? (
@@ -1900,11 +1912,11 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
                   <button
                     type="button"
                     onClick={placeFromCart}
-                    disabled={isSubmitting || Boolean(customizing)}
+                    disabled={!CUSTOMER_ONLINE_CHECKOUT_ENABLED || isSubmitting || Boolean(customizing)}
                     className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-full bg-primary py-3 text-sm font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
                   >
                     <ShoppingBag className="h-4 w-4" />
-                    {isSubmitting ? 'Processing Payment...' : customizing ? 'Finish customization to continue' : `Pay & Place Order · ₹${payableTotal.toFixed(2)}`}
+                    {!CUSTOMER_ONLINE_CHECKOUT_ENABLED ? 'Order at store for now' : isSubmitting ? 'Processing Payment...' : customizing ? 'Finish customization to continue' : `Pay & Place Order · ₹${payableTotal.toFixed(2)}`}
                   </button>
 
                   {!user && showGuestAuthPrompt && cartCount > 0 ? (
@@ -1952,6 +1964,7 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
             pickupEstimate={PICKUP_ESTIMATE_WINDOW}
             paymentMethod={selectedPaymentMethod}
             isSubmitting={isSubmitting}
+            submitError={errors.submit}
             onConfirm={confirmAndPlaceOrder}
             onEdit={() => setShowReviewModal(false)}
           />
