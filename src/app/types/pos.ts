@@ -1,5 +1,6 @@
-import type { CounterPaymentMethod, Order, OrderItemSelection } from './platform';
+import type { Order, OrderItemSelection } from './platform';
 
+export type PosPaymentMethod = 'cash' | 'upi' | 'card';
 export type PosOrderChannel = 'in_store';
 export type PosStep = 'cart' | 'payment' | 'receipt';
 export type PosReceiptDeliveryOption = 'print' | 'email' | 'text' | 'all';
@@ -44,7 +45,7 @@ export interface PosCustomerLookupState {
 }
 
 export interface PosPaymentDraft {
-  method: CounterPaymentMethod | null;
+  method: PosPaymentMethod | null;
   cashReceived: string;
   changeDue: number;
   reference: string;
@@ -59,7 +60,7 @@ export interface PosOrderPayload {
   linkedCustomerId?: string | null;
   tipPercentage: number;
   tipAmount: number;
-  paymentMethod: CounterPaymentMethod;
+  paymentMethod: PosPaymentMethod;
   paymentReference?: string;
   items: Array<{
     itemId: string;
@@ -74,7 +75,7 @@ export interface PosOrderPayload {
 
 export interface PosPaymentPayload {
   orderId: string;
-  paymentMethod: CounterPaymentMethod;
+  paymentMethod: PosPaymentMethod;
   amount: number;
   reference?: string;
 }
@@ -87,7 +88,7 @@ export interface PosCreatedOrder {
   tax: number;
   tip: number;
   total: number;
-  paymentMethod: CounterPaymentMethod;
+  paymentMethod: PosPaymentMethod;
   createdAt: string;
   customerPhone?: string;
   customerEmail?: string;
@@ -111,7 +112,7 @@ export interface PosReceipt {
   customerName: string;
   customerPhone?: string;
   customerEmail?: string;
-  paymentMethod: CounterPaymentMethod;
+  paymentMethod: PosPaymentMethod;
   subtotal: number;
   taxAmount: number;
   tipAmount: number;

@@ -45,14 +45,24 @@ interface SendReceiptPayload {
   email?: string;
 }
 
+const normalizePaymentMethod = (method: unknown): PosOrderPayload['paymentMethod'] => {
+  const normalized = String(method).trim().toLowerCase().replace(/[\s-]+/g, '_');
+  if (normalized === 'cash' || normalized === 'upi' || normalized === 'card') {
+    return normalized;
+  }
+  throw new Error('Select a valid payment method.');
+};
+
 const mapToCounterOrderInput = (payload: PosOrderPayload): CreateCounterWalkInOrderInput => {
+  const paymentMethod = normalizePaymentMethod(payload.paymentMethod);
+
   return {
     storeId: payload.storeId,
     fullName: payload.customerName,
     phone: payload.customerPhone?.trim() || undefined,
     email: payload.customerEmail?.trim() || undefined,
     linkedCustomerId: payload.linkedCustomerId,
-    paymentMethod: payload.paymentMethod,
+    paymentMethod,
     tipPercentage: payload.tipPercentage,
     tipAmount: payload.tipAmount,
     orderChannel: payload.orderChannel,
@@ -69,6 +79,7 @@ const mapToCounterOrderInput = (payload: PosOrderPayload): CreateCounterWalkInOr
 
 export const posService = {
   async createOrder(payload: PosOrderPayload, deps: CreateOrderDeps): Promise<PosCreateOrderResult> {
+    const paymentMethod = normalizePaymentMethod(payload.paymentMethod);
     const createdOrder = await deps.createCounterWalkInOrder(mapToCounterOrderInput(payload));
     const subtotal = payload.items.reduce((sum, item) => sum + item.quantity * item.price, 0);
     const taxAmount = Math.round(subtotal * POS_TAX_RATE * 100) / 100;
@@ -80,7 +91,7 @@ export const posService = {
       customerName: payload.customerName?.trim() || 'Walk-in Guest',
       customerPhone: payload.customerPhone,
       customerEmail: payload.customerEmail?.trim() || undefined,
-      paymentMethod: payload.paymentMethod,
+      paymentMethod,
       subtotal,
       taxAmount,
       tipAmount: payload.tipAmount,
@@ -92,6 +103,7 @@ export const posService = {
   },
 
   async checkoutOrder(payload: PosOrderPayload, deps: CheckoutOrderDeps): Promise<PosCreateOrderResult> {
+    const paymentMethod = normalizePaymentMethod(payload.paymentMethod);
     const subtotal = Number(payload.items.reduce((sum, item) => sum + item.quantity * item.price, 0).toFixed(2));
     const taxAmount = Number((subtotal * POS_TAX_RATE).toFixed(2));
     const tipAmount = Number(payload.tipAmount.toFixed(2));
@@ -103,7 +115,7 @@ export const posService = {
       customerName: payload.customerName?.trim() || 'Walk-in Guest',
       customerPhone: payload.customerPhone?.trim() || undefined,
       customerEmail: payload.customerEmail?.trim() || undefined,
-      paymentMethod: payload.paymentMethod,
+      paymentMethod,
       paymentReference: payload.paymentReference,
       subtotal,
       taxAmount,
@@ -138,7 +150,7 @@ export const posService = {
       fullName: checkout.order.customerName,
       email: checkout.order.customerEmail ?? payload.customerEmail ?? '',
       source: 'walk_in',
-      paymentMethod: checkout.order.paymentMethod,
+      paymentMethod,
       tipPercentage: payload.tipPercentage,
       tipAmount: checkout.order.tipAmount,
       fulfillmentWindow: 'Counter order',
@@ -158,7 +170,7 @@ export const posService = {
       customerName: checkout.order.customerName,
       customerPhone: checkout.order.customerPhone ?? undefined,
       customerEmail: checkout.order.customerEmail ?? undefined,
-      paymentMethod: checkout.order.paymentMethod,
+      paymentMethod,
       subtotal: checkout.order.subtotal,
       taxAmount: checkout.order.taxAmount,
       tipAmount: checkout.order.tipAmount,

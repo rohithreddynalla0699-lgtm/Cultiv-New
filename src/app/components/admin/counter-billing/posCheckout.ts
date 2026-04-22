@@ -1,5 +1,4 @@
-import type { CounterPaymentMethod } from '../../../types/platform';
-import type { PosCustomerDraft, PosPaymentDraft, PosReceiptDeliveryOption } from '../../../types/pos';
+import type { PosCustomerDraft, PosPaymentDraft, PosPaymentMethod, PosReceiptDeliveryOption } from '../../../types/pos';
 
 export function normalizePosPhone(value: string) {
   return value.replace(/\D/g, '').slice(0, 10);
@@ -27,6 +26,17 @@ export function calculateChangeDue(total: number, cashReceived: string) {
   return Math.max(0, Math.round((parsed - total) * 100) / 100);
 }
 
+export function normalizePosPaymentMethod(value: unknown): PosPaymentMethod | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, '_');
+
+  if (normalized === 'cash') return 'cash';
+  if (normalized === 'upi') return 'upi';
+  if (normalized === 'card') return 'card';
+
+  return null;
+}
+
 export function getCashValidationMessage(total: number, cashReceived: string) {
   const parsed = parseCashReceived(cashReceived);
   if (parsed === null) return 'Enter the amount received.';
@@ -46,7 +56,7 @@ export function getPaymentValidationMessage(params: {
   const { cartCount, total, payment } = params;
 
   if (cartCount === 0) return 'Add at least one item before taking payment.';
-  if (!payment.method || payment.method === 'card') return 'Select a payment method.';
+  if (!normalizePosPaymentMethod(payment.method)) return 'Select a payment method.';
   if (payment.method === 'cash') return getCashValidationMessage(total, payment.cashReceived);
   return null;
 }
@@ -76,6 +86,8 @@ export function getReceiptContactErrors(
   };
 }
 
-export function formatPosPaymentMethod(method: CounterPaymentMethod) {
-  return method.toUpperCase();
+export function formatPosPaymentMethod(method: PosPaymentMethod) {
+  if (method === 'upi') return 'UPI';
+  if (method === 'card') return 'Card';
+  return 'Cash';
 }

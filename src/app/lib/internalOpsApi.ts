@@ -461,6 +461,17 @@ const postInternal = async <TResponse>(
   }
 };
 
+const normalizeInternalPosPaymentMethod = (value: unknown): 'cash' | 'upi' | 'card' | null => {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, '_');
+
+  if (normalized === 'cash') return 'cash';
+  if (normalized === 'upi') return 'upi';
+  if (normalized === 'card') return 'card';
+
+  return null;
+};
+
 export async function loginInternal(params: {
   mode: 'owner' | 'admin' | 'store';
   pin: string;
@@ -814,9 +825,19 @@ export async function createInternalPosOrder(params: {
   total: number;
   items: InternalPosCheckoutItem[];
 }): Promise<{ data: InternalPosCheckoutResponse | null; error: string | null }> {
+  const paymentMethod = normalizeInternalPosPaymentMethod(params.paymentMethod);
+  if (!paymentMethod) {
+    return { data: null, error: 'paymentMethod must be cash, upi, or card.' };
+  }
+
+  const payload = {
+    ...params,
+    paymentMethod,
+  };
+
   return postInternal<InternalPosCheckoutResponse>(
     INTERNAL_CREATE_POS_ORDER_URL,
-    params,
+    payload,
     'Could not complete POS checkout.'
   );
 }

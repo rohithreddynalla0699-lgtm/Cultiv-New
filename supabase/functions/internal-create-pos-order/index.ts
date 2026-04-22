@@ -149,133 +149,137 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
-  if (req.method !== 'POST') {
-    return json(405, { error: 'Method not allowed.' });
-  }
-
-  const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-
-  if (!supabaseUrl || !serviceRoleKey) {
-    return json(500, { error: 'Server is not configured for POS checkout.' });
-  }
-
-  let body: InternalCreatePosOrderRequest;
   try {
-    body = await req.json();
-  } catch {
-    return json(400, { error: 'Invalid JSON body.' });
-  }
+    if (req.method !== 'POST') {
+      return json(405, { error: 'Method not allowed.' });
+    }
 
-  const internalSessionToken = (body.internalSessionToken ?? '').trim();
-  const storeId = (body.storeId ?? '').trim();
-  const customerId = typeof body.customerId === 'string' ? body.customerId.trim() : null;
-  const paymentMethod = body.paymentMethod;
-  const paymentReference = typeof body.paymentReference === 'string' ? body.paymentReference.trim() : '';
-  const subtotal = roundMoney(body.subtotal);
-  const taxAmount = roundMoney(body.taxAmount);
-  const tipAmount = roundMoney(body.tipAmount);
-  const total = roundMoney(body.total);
+    const supabaseUrl = Deno.env.get('SUPABASE_URL');
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-  if (!internalSessionToken) {
-    return json(400, { error: 'internalSessionToken is required.' });
-  }
-  if (!isValidUuid(storeId)) {
-    return json(400, { error: 'storeId must be a valid store UUID.' });
-  }
-  if (customerId && !isValidUuid(customerId)) {
-    return json(400, { error: 'customerId must be a valid customer UUID.' });
-  }
-  if (paymentMethod !== 'cash' && paymentMethod !== 'upi' && paymentMethod !== 'card') {
-    return json(400, { error: 'paymentMethod must be cash, upi, or card.' });
-  }
-  if (![subtotal, taxAmount, tipAmount, total].every((amount) => Number.isFinite(amount) && amount >= 0)) {
-    return json(400, { error: 'subtotal, taxAmount, tipAmount, and total must be non-negative numbers.' });
-  }
-  if (total <= 0) {
-    return json(400, { error: 'total must be greater than zero.' });
-  }
-  if (!validateItems(body.items)) {
-    return json(400, { error: 'POS order must include valid items.' });
-  }
+    if (!supabaseUrl || !serviceRoleKey) {
+      return json(500, { error: 'Server is not configured for POS checkout.' });
+    }
 
-  const computedSubtotal = roundMoney(body.items.reduce((sum, item) => sum + Number(item.price) * Number(item.quantity), 0));
-  if (Math.abs(computedSubtotal - subtotal) > 0.01) {
-    return json(400, { error: 'subtotal must match POS item totals.' });
+    let body: InternalCreatePosOrderRequest;
+    try {
+      body = await req.json();
+    } catch {
+      return json(400, { error: 'Invalid JSON body.' });
+    }
+
+    const internalSessionToken = (body.internalSessionToken ?? '').trim();
+    const storeId = (body.storeId ?? '').trim();
+    const customerId = typeof body.customerId === 'string' ? body.customerId.trim() : null;
+    const paymentMethod = body.paymentMethod;
+    const paymentReference = typeof body.paymentReference === 'string' ? body.paymentReference.trim() : '';
+    const subtotal = roundMoney(body.subtotal);
+    const taxAmount = roundMoney(body.taxAmount);
+    const tipAmount = roundMoney(body.tipAmount);
+    const total = roundMoney(body.total);
+
+    if (!internalSessionToken) {
+      return json(400, { error: 'internalSessionToken is required.' });
+    }
+    if (!isValidUuid(storeId)) {
+      return json(400, { error: 'storeId must be a valid store UUID.' });
+    }
+    if (customerId && !isValidUuid(customerId)) {
+      return json(400, { error: 'customerId must be a valid customer UUID.' });
+    }
+    if (paymentMethod !== 'cash' && paymentMethod !== 'upi' && paymentMethod !== 'card') {
+      return json(400, { error: 'paymentMethod must be cash, upi, or card.' });
+    }
+    if (![subtotal, taxAmount, tipAmount, total].every((amount) => Number.isFinite(amount) && amount >= 0)) {
+      return json(400, { error: 'subtotal, taxAmount, tipAmount, and total must be non-negative numbers.' });
+    }
+    if (total <= 0) {
+      return json(400, { error: 'total must be greater than zero.' });
+    }
+    if (!validateItems(body.items)) {
+      return json(400, { error: 'POS order must include valid items.' });
+    }
+
+    const computedSubtotal = roundMoney(body.items.reduce((sum, item) => sum + Number(item.price) * Number(item.quantity), 0));
+    if (Math.abs(computedSubtotal - subtotal) > 0.01) {
+      return json(400, { error: 'subtotal must match POS item totals.' });
+    }
+    if (Math.abs(roundMoney(subtotal + taxAmount + tipAmount) - total) > 0.01) {
+      return json(400, { error: 'total must match subtotal, taxAmount, and tipAmount.' });
+    }
+
+    const db = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+
+    const verifiedSession = await verifyAndLoadSession(db, internalSessionToken);
+    if (!verifiedSession.valid) {
+      return json(401, { error: verifiedSession.error });
+    }
+
+    const permissionsResult = await loadPermissionKeys(db, verifiedSession.session.internal_user_id);
+    if (permissionsResult.error) {
+      return json(500, { error: permissionsResult.error });
+    }
+
+    if (!permissionsResult.permissionKeys.includes('can_access_pos')) {
+      return json(403, { error: 'You do not have permission to create POS orders.' });
+    }
+
+    if (verifiedSession.session.scope_type === 'store' && verifiedSession.session.scope_store_id !== storeId) {
+      return json(403, { error: 'Store scope does not allow checkout for this store.' });
+    }
+
+    const { data: rpcResult, error: rpcError } = await db.rpc('create_internal_pos_order_with_payment', {
+      p_store_id: storeId,
+      p_internal_user_id: verifiedSession.session.internal_user_id,
+      p_customer_id: customerId || null,
+      p_customer_name: body.customerName ?? null,
+      p_customer_phone: body.customerPhone ?? null,
+      p_customer_email: body.customerEmail ?? null,
+      p_payment_method: paymentMethod,
+      p_payment_reference: paymentReference || null,
+      p_subtotal_amount: subtotal,
+      p_tax_amount: taxAmount,
+      p_tip_amount: tipAmount,
+      p_total_amount: total,
+      p_items: body.items,
+    });
+
+    if (rpcError || !rpcResult) {
+      return json(500, { error: rpcError?.message ?? 'Could not complete POS checkout.' });
+    }
+
+    return json(200, {
+      success: true,
+      order: {
+        orderId: rpcResult.orderId,
+        orderNumber: rpcResult.orderNumber,
+        orderStatus: rpcResult.orderStatus,
+        storeId: rpcResult.storeId,
+        customerId: rpcResult.customerId ?? null,
+        customerName: rpcResult.customerName,
+        customerPhone: rpcResult.customerPhone ?? null,
+        customerEmail: rpcResult.customerEmail ?? null,
+        paymentMethod: rpcResult.paymentMethod,
+        paymentReference: rpcResult.paymentReference ?? null,
+        subtotal: Number(rpcResult.subtotal ?? 0),
+        taxAmount: Number(rpcResult.taxAmount ?? 0),
+        tipAmount: Number(rpcResult.tipAmount ?? 0),
+        total: Number(rpcResult.total ?? 0),
+        createdAt: rpcResult.createdAt,
+      },
+      payment: {
+        paymentId: rpcResult.paymentId,
+        orderId: rpcResult.orderId,
+        status: rpcResult.paymentStatus,
+        paymentMethod: rpcResult.paymentMethod,
+        amount: Number(rpcResult.total ?? 0),
+        recordedAt: rpcResult.createdAt,
+        reference: rpcResult.paymentReference ?? null,
+      },
+    });
+  } catch (error) {
+    return json(500, { error: 'Could not complete POS checkout.' });
   }
-  if (Math.abs(roundMoney(subtotal + taxAmount + tipAmount) - total) > 0.01) {
-    return json(400, { error: 'total must match subtotal, taxAmount, and tipAmount.' });
-  }
-
-  const db = createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-
-  const verifiedSession = await verifyAndLoadSession(db, internalSessionToken);
-  if (!verifiedSession.valid) {
-    return json(401, { error: verifiedSession.error });
-  }
-
-  const permissionsResult = await loadPermissionKeys(db, verifiedSession.session.internal_user_id);
-  if (permissionsResult.error) {
-    return json(500, { error: permissionsResult.error });
-  }
-
-  if (!permissionsResult.permissionKeys.includes('can_access_pos')) {
-    return json(403, { error: 'You do not have permission to create POS orders.' });
-  }
-
-  if (verifiedSession.session.scope_type === 'store' && verifiedSession.session.scope_store_id !== storeId) {
-    return json(403, { error: 'Store scope does not allow checkout for this store.' });
-  }
-
-  const { data: rpcResult, error: rpcError } = await db.rpc('create_internal_pos_order_with_payment', {
-    p_store_id: storeId,
-    p_internal_user_id: verifiedSession.session.internal_user_id,
-    p_customer_id: customerId || null,
-    p_customer_name: body.customerName ?? null,
-    p_customer_phone: body.customerPhone ?? null,
-    p_customer_email: body.customerEmail ?? null,
-    p_payment_method: paymentMethod,
-    p_payment_reference: paymentReference || null,
-    p_subtotal_amount: subtotal,
-    p_tax_amount: taxAmount,
-    p_tip_amount: tipAmount,
-    p_total_amount: total,
-    p_items: body.items,
-  });
-
-  if (rpcError || !rpcResult) {
-    return json(500, { error: rpcError?.message ?? 'Could not complete POS checkout.' });
-  }
-
-  return json(200, {
-    success: true,
-    order: {
-      orderId: rpcResult.orderId,
-      orderNumber: rpcResult.orderNumber,
-      orderStatus: rpcResult.orderStatus,
-      storeId: rpcResult.storeId,
-      customerId: rpcResult.customerId ?? null,
-      customerName: rpcResult.customerName,
-      customerPhone: rpcResult.customerPhone ?? null,
-      customerEmail: rpcResult.customerEmail ?? null,
-      paymentMethod: rpcResult.paymentMethod,
-      paymentReference: rpcResult.paymentReference ?? null,
-      subtotal: Number(rpcResult.subtotal ?? 0),
-      taxAmount: Number(rpcResult.taxAmount ?? 0),
-      tipAmount: Number(rpcResult.tipAmount ?? 0),
-      total: Number(rpcResult.total ?? 0),
-      createdAt: rpcResult.createdAt,
-    },
-    payment: {
-      paymentId: rpcResult.paymentId,
-      orderId: rpcResult.orderId,
-      status: rpcResult.paymentStatus,
-      paymentMethod: rpcResult.paymentMethod,
-      amount: Number(rpcResult.total ?? 0),
-      recordedAt: rpcResult.createdAt,
-      reference: rpcResult.paymentReference ?? null,
-    },
-  });
 });

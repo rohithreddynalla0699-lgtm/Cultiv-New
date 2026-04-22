@@ -1,20 +1,3 @@
--- Atomic POS checkout: create the completed walk-in order and recorded manual payment together.
--- Edge functions validate internal sessions and store scope before calling this RPC.
-
-alter table public.orders
-  alter column subtotal_amount type numeric(10,2) using round(subtotal_amount::numeric, 2),
-  alter column discount_amount type numeric(10,2) using round(discount_amount::numeric, 2),
-  alter column tax_amount type numeric(10,2) using round(tax_amount::numeric, 2),
-  alter column tip_amount type numeric(10,2) using round(tip_amount::numeric, 2),
-  alter column total_amount type numeric(10,2) using round(total_amount::numeric, 2);
-
-alter table public.order_items
-  alter column unit_price type numeric(10,2) using round(unit_price::numeric, 2),
-  alter column line_total type numeric(10,2) using round(line_total::numeric, 2);
-
-alter table public.order_item_selections
-  alter column price_modifier type numeric(10,2) using round(price_modifier::numeric, 2);
-
 create or replace function public.create_internal_pos_order_with_payment(
   p_store_id uuid,
   p_internal_user_id uuid,

@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react';
-import { ArrowLeft, ArrowRight, Banknote, Smartphone } from 'lucide-react';
-import type { CounterPaymentMethod } from '../../../types/platform';
+import { ArrowLeft, ArrowRight, Banknote, CreditCard, Smartphone } from 'lucide-react';
 import type {
   PosCustomerDraft,
   PosCustomerLookupState,
   PosPaymentDraft,
+  PosPaymentMethod,
 } from '../../../types/pos';
 
 interface PaymentPanelProps {
@@ -24,7 +24,7 @@ interface PaymentPanelProps {
   onLinkCustomer: () => void;
   onRemoveLinkedCustomer: () => void;
   onSkipCustomer: () => void;
-  onSelectPaymentMethod: (method: CounterPaymentMethod) => void;
+  onSelectPaymentMethod: (method: PosPaymentMethod) => void;
   onCashReceivedChange: (value: string) => void;
   onReferenceChange: (value: string) => void;
   onExactCash: () => void;
@@ -33,19 +33,24 @@ interface PaymentPanelProps {
 }
 
 const PAYMENT_OPTIONS: Array<{
-  method: Extract<CounterPaymentMethod, 'cash' | 'upi'>;
+  value: PosPaymentMethod;
   label: string;
   icon: typeof Smartphone;
 }> = [
   {
-    method: 'cash',
+    value: 'cash',
     label: 'Cash',
     icon: Banknote,
   },
   {
-    method: 'upi',
+    value: 'upi',
     label: 'UPI',
     icon: Smartphone,
+  },
+  {
+    value: 'card',
+    label: 'Card',
+    icon: CreditCard,
   },
 ];
 
@@ -174,16 +179,16 @@ export function PaymentPanel({
         </SectionCard>
 
         <SectionCard eyebrow="Payment method">
-          <div className="grid gap-2 md:grid-cols-2">
+          <div className="grid gap-2 md:grid-cols-3">
             {PAYMENT_OPTIONS.map((option) => {
               const Icon = option.icon;
-              const selected = payment.method === option.method;
+              const selected = payment.method === option.value;
 
               return (
                 <button
-                  key={option.method}
+                  key={option.value}
                   type="button"
-                  onClick={() => onSelectPaymentMethod(option.method)}
+                  onClick={() => onSelectPaymentMethod(option.value)}
                   className={[
                     'flex min-h-[62px] items-center gap-2 rounded-[16px] border px-2.5 py-2 text-left transition',
                     selected

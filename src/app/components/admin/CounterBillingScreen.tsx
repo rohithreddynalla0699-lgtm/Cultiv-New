@@ -27,12 +27,13 @@ import { ReceiptView } from './counter-billing/ReceiptView';
 import { useReceiptData } from '../../receipts/hooks/useReceiptData';
 import { printReceiptElement } from '../../receipts/utils/printReceiptElement';
 import { createDraftLineKey } from '../../data/cartDraft';
-import type { CounterPaymentMethod, Order, OrderItemSelection } from '../../types/platform';
+import type { Order, OrderItemSelection } from '../../types/platform';
 import type {
   PosCartLine,
   PosCheckoutState,
   PosCustomerLookupResult,
   PosCreatedOrder,
+  PosPaymentMethod,
   PosReceiptDeliveryOption,
   PosStep,
 } from '../../types/pos';
@@ -41,6 +42,7 @@ import {
   getPaymentValidationMessage,
   getReceiptContactErrors,
   isValidEmail,
+  normalizePosPaymentMethod,
   normalizePosPhone,
 } from './counter-billing/posCheckout';
 
@@ -77,7 +79,7 @@ type CheckoutAction =
   | { type: 'customer_lookup_failed'; message: string }
   | { type: 'link_customer' }
   | { type: 'unlink_customer' }
-  | { type: 'set_payment_method'; method: CounterPaymentMethod }
+  | { type: 'set_payment_method'; method: PosPaymentMethod }
   | { type: 'set_cash_received'; value: string; total: number }
   | { type: 'set_exact_cash'; total: number }
   | { type: 'set_reference'; value: string }
@@ -253,14 +255,24 @@ function checkoutReducer(state: CheckoutUiState, action: CheckoutAction): Checko
         },
       };
     case 'set_payment_method':
-      return {
-        ...state,
-        payment: {
-          ...state.payment,
-          method: action.method,
-        },
-        paymentError: null,
-      };
+      {
+        const method = normalizePosPaymentMethod(action.method);
+        if (!method) {
+          return {
+            ...state,
+            paymentError: 'Select a valid payment method.',
+          };
+        }
+
+        return {
+          ...state,
+          payment: {
+            ...state.payment,
+            method,
+          },
+          paymentError: null,
+        };
+      }
     case 'set_cash_received':
       return {
         ...state,
