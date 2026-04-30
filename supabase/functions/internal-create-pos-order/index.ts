@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { canonicalizeOrderPricing } from '../_shared/canonical-pricing.ts';
 
 type RoleKey = 'owner' | 'admin' | 'store';
 type ScopeType = 'global' | 'store' | 'owner' | 'admin';
@@ -29,6 +30,7 @@ interface InternalCreatePosOrderRequest {
   subtotal?: number;
   taxAmount?: number;
   tipAmount?: number;
+  tipPercentage?: number;
   total?: number;
   items?: InternalPosOrderItem[];
 }
@@ -176,6 +178,7 @@ Deno.serve(async (req) => {
     const subtotal = roundMoney(body.subtotal);
     const taxAmount = roundMoney(body.taxAmount);
     const tipAmount = roundMoney(body.tipAmount);
+    const tipPercentage = roundMoney(body.tipPercentage);
     const total = roundMoney(body.total);
 
     if (!internalSessionToken) {
@@ -190,7 +193,7 @@ Deno.serve(async (req) => {
     if (paymentMethod !== 'cash' && paymentMethod !== 'upi' && paymentMethod !== 'card') {
       return json(400, { error: 'paymentMethod must be cash, upi, or card.' });
     }
-    if (![subtotal, taxAmount, tipAmount, total].every((amount) => Number.isFinite(amount) && amount >= 0)) {
+    if (![subtotal, taxAmount, tipAmount, tipPercentage, total].every((amount) => Number.isFinite(amount) && amount >= 0)) {
       return json(400, { error: 'subtotal, taxAmount, tipAmount, and total must be non-negative numbers.' });
     }
     if (total <= 0) {
@@ -198,14 +201,6 @@ Deno.serve(async (req) => {
     }
     if (!validateItems(body.items)) {
       return json(400, { error: 'POS order must include valid items.' });
-    }
-
-    const computedSubtotal = roundMoney(body.items.reduce((sum, item) => sum + Number(item.price) * Number(item.quantity), 0));
-    if (Math.abs(computedSubtotal - subtotal) > 0.01) {
-      return json(400, { error: 'subtotal must match POS item totals.' });
-    }
-    if (Math.abs(roundMoney(subtotal + taxAmount + tipAmount) - total) > 0.01) {
-      return json(400, { error: 'total must match subtotal, taxAmount, and tipAmount.' });
     }
 
     const db = createClient(supabaseUrl, serviceRoleKey, {
@@ -230,6 +225,28 @@ Deno.serve(async (req) => {
       return json(403, { error: 'Store scope does not allow checkout for this store.' });
     }
 
+    let canonicalPricing;
+    try {
+      canonicalPricing = await canonicalizeOrderPricing(db, {
+        items: body.items.map((item) => ({
+          itemId: item.itemId,
+          title: item.title,
+          category: item.category,
+          quantity: item.quantity,
+          price: item.price,
+          selections: item.selections,
+        })),
+        requestedSubtotal: subtotal,
+        requestedTaxAmount: taxAmount,
+        requestedTipAmount: tipAmount,
+        requestedTipPercentage: tipPercentage,
+        requestedTotal: total,
+        requestedDiscount: 0,
+      });
+    } catch (error) {
+      return json(400, { error: error instanceof Error ? error.message : 'Invalid POS pricing payload.' });
+    }
+
     const { data: rpcResult, error: rpcError } = await db.rpc('create_internal_pos_order_with_payment', {
       p_store_id: storeId,
       p_internal_user_id: verifiedSession.session.internal_user_id,
@@ -239,11 +256,18 @@ Deno.serve(async (req) => {
       p_customer_email: body.customerEmail ?? null,
       p_payment_method: paymentMethod,
       p_payment_reference: paymentReference || null,
-      p_subtotal_amount: subtotal,
-      p_tax_amount: taxAmount,
-      p_tip_amount: tipAmount,
-      p_total_amount: total,
-      p_items: body.items,
+      p_subtotal_amount: canonicalPricing.subtotal,
+      p_tax_amount: canonicalPricing.taxAmount,
+      p_tip_amount: canonicalPricing.tipAmount,
+      p_total_amount: canonicalPricing.total,
+      p_items: canonicalPricing.items.map((item) => ({
+        itemId: item.menu_item_id,
+        title: item.item_name,
+        category: item.item_category,
+        quantity: item.quantity,
+        price: item.unit_price,
+        selections: item.selections,
+      })),
     });
 
     if (rpcError || !rpcResult) {

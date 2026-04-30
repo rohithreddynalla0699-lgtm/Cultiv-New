@@ -16,21 +16,27 @@ export function ForgotPasswordScreen() {
 	const [identifier, setIdentifier] = useState('');
 	const [message, setMessage] = useState('');
 	const [resetToken, setResetToken] = useState('');
+	const [isSubmitting, setIsSubmitting] = useState(false);
 
 	const handleSubmit = async (event: React.FormEvent) => {
 		event.preventDefault();
-		const result = await requestPasswordReset(identifier);
-		setMessage(result.message);
-		setResetToken(result.resetToken ?? '');
-		if (result.resetToken) {
-			sessionStorage.setItem(RESET_TOKEN_STORAGE_KEY, result.resetToken);
-			const nextState: ResetPasswordLocationState = { resetToken: result.resetToken };
-			navigate('/reset-password', { state: nextState });
+		setIsSubmitting(true);
+		try {
+			const result = await requestPasswordReset(identifier);
+			setMessage(result.message);
+			setResetToken(result.resetToken ?? '');
+			if (result.resetToken) {
+				sessionStorage.setItem(RESET_TOKEN_STORAGE_KEY, result.resetToken);
+				const nextState: ResetPasswordLocationState = { resetToken: result.resetToken };
+				navigate('/reset-password', { state: nextState });
+			}
+		} finally {
+			setIsSubmitting(false);
 		}
 	};
 
 	return (
-		<AuthShell title="Recover Access" subtitle="Use your phone or email to request account recovery support." footer={<p className="text-center text-sm text-foreground/60">Remembered your password? <Link to="/login" className="font-medium text-primary">Back to sign in</Link></p>}>
+		<AuthShell title="Recover Access" subtitle="Enter your phone or email and we will start a secure password reset if an account matches." footer={<p className="text-center text-sm text-foreground/60">Remembered your password? <Link to="/login" className="font-medium text-primary">Back to sign in</Link></p>}>
 			<motion.form 
 				onSubmit={handleSubmit} 
 				className="space-y-5"
@@ -55,11 +61,12 @@ export function ForgotPasswordScreen() {
 				<motion.button 
 					variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }}
 					type="submit" 
+					disabled={isSubmitting}
 					whileHover={{ scale: 1.02 }}
 					whileTap={{ scale: 0.98 }}
-					className="w-full rounded-full bg-primary py-3.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-92"
+					className="w-full rounded-full bg-primary py-3.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-92 disabled:cursor-not-allowed disabled:opacity-60"
 				>
-					Continue
+					{isSubmitting ? 'Submitting…' : 'Continue'}
 				</motion.button>
 
 				<AnimatePresence>

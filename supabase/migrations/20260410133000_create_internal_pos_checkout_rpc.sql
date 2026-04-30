@@ -150,7 +150,6 @@ begin
         tip_amount,
         total_amount,
         customer_id,
-        user_id,
         order_number,
         created_at,
         updated_at
@@ -174,7 +173,6 @@ begin
         v_tip,
         v_total,
         p_customer_id,
-        null,
         v_order_number,
         v_now,
         v_now

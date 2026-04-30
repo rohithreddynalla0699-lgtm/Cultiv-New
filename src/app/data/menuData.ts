@@ -60,6 +60,7 @@ interface BreakfastPresetConfig {
   basePrice: number;
   image: string;
   family: BreakfastFamily;
+  fruitMode: 'fixed' | 'selectable';
   seasonalFruitId?: 'mango';
   defaultFruitIds: string[] | 'all-available';
   badge?: string;
@@ -75,6 +76,7 @@ const BREAKFAST_PRESET_CONFIGS: BreakfastPresetConfig[] = [
     basePrice: 119,
     image: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=1080',
     family: 'chia-yogurt',
+    fruitMode: 'fixed',
     defaultFruitIds: ['banana'],
   },
   {
@@ -86,6 +88,7 @@ const BREAKFAST_PRESET_CONFIGS: BreakfastPresetConfig[] = [
     basePrice: 119,
     image: 'https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=1080',
     family: 'chia-yogurt',
+    fruitMode: 'fixed',
     defaultFruitIds: ['apple'],
   },
   {
@@ -97,6 +100,7 @@ const BREAKFAST_PRESET_CONFIGS: BreakfastPresetConfig[] = [
     basePrice: 129,
     image: 'https://images.unsplash.com/photo-1488477181946-6428a0291777?w=1080',
     family: 'chia-yogurt',
+    fruitMode: 'fixed',
     defaultFruitIds: ['mango'],
     seasonalFruitId: 'mango',
     badge: 'Seasonal',
@@ -110,6 +114,7 @@ const BREAKFAST_PRESET_CONFIGS: BreakfastPresetConfig[] = [
     basePrice: 139,
     image: 'https://images.unsplash.com/photo-1464306076886-da185f6a9d05?w=1080',
     family: 'chia-yogurt',
+    fruitMode: 'fixed',
     defaultFruitIds: ['mixed-berries'],
   },
   {
@@ -121,6 +126,7 @@ const BREAKFAST_PRESET_CONFIGS: BreakfastPresetConfig[] = [
     basePrice: 159,
     image: 'https://images.unsplash.com/photo-1517673400267-0251440c45dc?w=1080',
     family: 'chia-yogurt',
+    fruitMode: 'selectable',
     defaultFruitIds: 'all-available',
   },
   {
@@ -132,6 +138,7 @@ const BREAKFAST_PRESET_CONFIGS: BreakfastPresetConfig[] = [
     basePrice: 109,
     image: 'https://images.unsplash.com/photo-1517673400267-0251440c45dc?w=1080',
     family: 'overnight-oats',
+    fruitMode: 'fixed',
     defaultFruitIds: ['banana'],
   },
   {
@@ -143,6 +150,7 @@ const BREAKFAST_PRESET_CONFIGS: BreakfastPresetConfig[] = [
     basePrice: 119,
     image: 'https://images.unsplash.com/photo-1498837167922-ddd27525d352?w=1080',
     family: 'overnight-oats',
+    fruitMode: 'fixed',
     defaultFruitIds: ['apple'],
   },
   {
@@ -154,6 +162,7 @@ const BREAKFAST_PRESET_CONFIGS: BreakfastPresetConfig[] = [
     basePrice: 129,
     image: 'https://images.unsplash.com/photo-1525351484163-7529414344d8?w=1080',
     family: 'overnight-oats',
+    fruitMode: 'fixed',
     defaultFruitIds: ['mango'],
     seasonalFruitId: 'mango',
     badge: 'Seasonal',
@@ -167,6 +176,7 @@ const BREAKFAST_PRESET_CONFIGS: BreakfastPresetConfig[] = [
     basePrice: 139,
     image: 'https://images.unsplash.com/photo-1543332164-6e82f355badc?w=1080',
     family: 'overnight-oats',
+    fruitMode: 'fixed',
     defaultFruitIds: ['mixed-berries'],
   },
   {
@@ -178,6 +188,7 @@ const BREAKFAST_PRESET_CONFIGS: BreakfastPresetConfig[] = [
     basePrice: 159,
     image: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=1080',
     family: 'overnight-oats',
+    fruitMode: 'selectable',
     defaultFruitIds: 'all-available',
   },
 ];
@@ -213,19 +224,19 @@ export const BREAKFAST_PRESET_META_BY_ID = Object.fromEntries(
       family: item.family,
       basePrice: item.basePrice,
       defaultFruitIds: BREAKFAST_DEFAULT_FRUIT_IDS_BY_ITEM_ID[item.id],
-      hasGranolaByDefault: item.family === 'chia-yogurt',
+      fruitMode: item.fruitMode,
     },
   ]),
 ) as Record<
   string,
   {
     itemId: string;
-    title: string;
-    family: BreakfastFamily;
-    basePrice: number;
-    defaultFruitIds: string[];
-    hasGranolaByDefault: boolean;
-  }
+      title: string;
+      family: BreakfastFamily;
+      basePrice: number;
+      defaultFruitIds: string[];
+      fruitMode: 'fixed' | 'selectable';
+    }
 >;
 
 export const BREAKFAST_PRESET_ITEMS: FoodItem[] = BREAKFAST_VISIBLE_PRESET_CONFIGS.map((item) => ({
@@ -248,59 +259,20 @@ export const BREAKFAST_SECTION_ITEM_IDS: Record<'chiaYogurtBowls' | 'overnightOa
     .map((item) => item.id),
 };
 
-export const BREAKFAST_DYNAMIC_PRICING = {
-  'chia-yogurt': {
-    oneFruit: 119,
-    twoFruits: 139,
-    threeFruits: 149,
-    power: 159,
-  },
-  'overnight-oats': {
-    oneFruit: 109,
-    twoFruits: 129,
-    threeFruits: 139,
-    power: 149,
-  },
-} as const;
-
 export function getBreakfastFamilyFromItemId(itemId: string): BreakfastFamily | null {
   if (BREAKFAST_SECTION_ITEM_IDS.chiaYogurtBowls.includes(itemId)) return 'chia-yogurt';
   if (BREAKFAST_SECTION_ITEM_IDS.overnightOats.includes(itemId)) return 'overnight-oats';
   return null;
 }
 
-export function resolveBreakfastPriceFromFruitSelections(family: BreakfastFamily, selectedFruitIds: string[]) {
-  const selectedCount = new Set(selectedFruitIds.filter((id) => BREAKFAST_AVAILABLE_FRUIT_IDS.includes(id))).size;
-  const availableFruitCount = BREAKFAST_AVAILABLE_FRUIT_IDS.length;
-  const normalizedCount = Math.max(1, selectedCount);
-  const pricing = BREAKFAST_DYNAMIC_PRICING[family];
-  const isPower = normalizedCount >= availableFruitCount;
-
-  if (isPower) {
-    return {
-      basePrice: pricing.power,
-      isPower: true,
-    };
-  }
-
-  if (normalizedCount >= 3) {
-    return {
-      basePrice: pricing.threeFruits,
-      isPower: false,
-    };
-  }
-
-  if (normalizedCount === 2) {
-    return {
-      basePrice: pricing.twoFruits,
-      isPower: false,
-    };
-  }
-
+export function getBreakfastCustomizationPolicy(itemId: string) {
+  const meta = BREAKFAST_PRESET_META_BY_ID[itemId];
+  if (!meta) return null;
   return {
-    basePrice: pricing.oneFruit,
-    isPower: false,
-  };
+    fruitMode: meta.fruitMode,
+    fixedFruitIds: meta.fruitMode === 'fixed' ? [...meta.defaultFruitIds] : [],
+    editableGroupIds: meta.fruitMode === 'selectable' ? ['fruits', 'crunch', 'add-ons'] : ['crunch', 'add-ons'],
+  } as const;
 }
 
 const BREAKFAST_FRUIT_INGREDIENTS_BY_ID: Record<string, BuilderIngredient> = {
@@ -336,8 +308,8 @@ export const BREAKFAST_CUSTOMIZE_STEPS: BuilderStep[] = [
     type: 'multiple',
     required: false,
     ingredients: [
-      { id: 'honey', name: 'Honey', calories: 20, protein: 0, price: 10 },
-      { id: 'extra-fruit', name: 'Extra Fruit', calories: 30, protein: 0, price: 20 },
+      { id: 'honey', name: 'Honey', calories: 20, protein: 0, price: 20 },
+      { id: 'extra-fruit', name: 'Extra Fruit', calories: 30, protein: 0, price: 30 },
       { id: 'extra-granola', name: 'Extra Granola', calories: 55, protein: 2, price: 20 },
     ],
   },
@@ -788,10 +760,6 @@ const BREAKFAST_DEFAULTS_FALLBACK = Object.fromEntries(
   Object.values(BREAKFAST_PRESET_META_BY_ID).map((meta) => [meta.itemId, [...meta.defaultFruitIds]]),
 ) as Record<string, string[]>;
 
-const BREAKFAST_GRANOLA_FALLBACK = Object.fromEntries(
-  Object.values(BREAKFAST_PRESET_META_BY_ID).map((meta) => [meta.itemId, meta.hasGranolaByDefault]),
-) as Record<string, boolean>;
-
 function inferBreakfastFamily(itemId: string, subcategorySlug: string | null): BreakfastFamily {
   if (subcategorySlug === 'overnight-oats') return 'overnight-oats';
   if (subcategorySlug === 'chia-yogurt') return 'chia-yogurt';
@@ -1004,7 +972,7 @@ export async function hydrateMenuCatalogFromSupabase() {
           family,
           basePrice: item.price,
           defaultFruitIds: BREAKFAST_DEFAULTS_FALLBACK[item.id] ?? [...BREAKFAST_AVAILABLE_FRUIT_IDS],
-          hasGranolaByDefault: BREAKFAST_GRANOLA_FALLBACK[item.id] ?? family === 'chia-yogurt',
+          fruitMode: item.id.startsWith('power-') ? 'selectable' : 'fixed',
         },
       ];
     }),

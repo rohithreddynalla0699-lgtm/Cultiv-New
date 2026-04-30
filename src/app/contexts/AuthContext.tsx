@@ -366,12 +366,11 @@ const buildSelectionSnapshotRows = (orderItemId: string, selections: OrderItem['
   });
 };
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
 const resolveMenuItemId = (itemId: string) => {
   const normalized = itemId.trim();
   if (!normalized) return null;
-  return UUID_PATTERN.test(normalized) ? normalized : null;
+  if (normalized.startsWith('reward-')) return null;
+  return normalized;
 };
 
 const buildSelectionSnapshotPayload = (selections: OrderItem['selections']) => (
@@ -440,6 +439,7 @@ const isWalkInOrder = order.orderType === 'walk_in' || sourceChannel === 'walk_i
       discount_amount: Number(order.rewardDiscount.toFixed(2)),
       tax_amount: Number((order.taxAmount ?? 0).toFixed(2)),
       tip_amount: Number((order.tipAmount ?? 0).toFixed(2)),
+      tip_percentage: Number((order.tipPercentage ?? 0).toFixed(2)),
       total_amount: Number(order.total.toFixed(2)),
     },
     items: order.items.map((item) => ({
@@ -474,10 +474,13 @@ const invokeCreateCheckoutPaymentIntent = async (
   }
 
   const gateway = String(data.gateway).trim().toLowerCase();
-  if (gateway !== 'razorpay') {
+  if (gateway !== 'razorpay' && gateway !== 'mock') {
     throw new Error('Unsupported payment provider. Please try again.');
   }
-  if (!data?.gatewayOrderId || !data?.gatewayKeyId) {
+  if (!data?.gatewayOrderId) {
+    throw new Error('Payment gateway is unavailable right now. Please try again.');
+  }
+  if (gateway === 'razorpay' && !data?.gatewayKeyId) {
     throw new Error('Payment gateway is unavailable right now. Please try again.');
   }
 
@@ -488,7 +491,7 @@ const invokeCreateCheckoutPaymentIntent = async (
     amount: Number(data.amount ?? order.total),
     amountPaise: Number(data.amountPaise ?? Math.round(order.total * 100)),
     currency: String(data.currency ?? 'INR'),
-    gateway,
+    gateway: gateway as CheckoutPaymentIntent['gateway'],
     gatewayOrderId: data?.gatewayOrderId ? String(data.gatewayOrderId) : undefined,
     gatewayKeyId: data?.gatewayKeyId ? String(data.gatewayKeyId) : undefined,
   };
@@ -581,43 +584,6 @@ const fetchCanonicalCustomerProfile = async (customerSessionToken: string) => {
     email_verified: boolean;
     created_at: string;
   };
-};
-
-const persistOrderToSupabase = async (order: Order): Promise<PersistOrderResult> => {
-  try {
-    const payload = buildSupabaseOrderPayload(order);
-    const { data, error } = await supabase.functions.invoke('customer-create-order', {
-      body: payload,
-    });
-
-    let errorPayload: { message?: string } | null = null;
-    if (error?.context && typeof error.context.json === 'function') {
-      try {
-        errorPayload = await error.context.json();
-      } catch {
-        errorPayload = null;
-      }
-    }
-
-    if (error || !data?.success || !data?.orderId) {
-      throw new Error(
-        data?.message
-        || errorPayload?.message
-        || error?.message
-        || 'Could not create orders row.'
-      );
-    }
-
-    return {
-      orderId: data.orderId,
-      orderNumber: data.orderNumber,
-      orderStatus: (data.orderStatus ?? order.status) as OrderStatus,
-      customerId: data.customerId ?? data.customer_id ?? order.customerId ?? null,
-    };
-  } catch (error) {
-    console.error('Supabase order persistence failed.');
-    throw error instanceof Error ? error : new Error('Supabase order persistence failed.');
-  }
 };
 
 const deriveTier = (totalSpend: number) => {
@@ -1349,16 +1315,62 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const requestPasswordReset = async (identifier: string): Promise<AuthActionResult> => {
-    return {
-      success: false,
-      message: 'Self-service password reset is not enabled yet. Please contact CULTIV support for account recovery.',
-    };
+    const trimmedIdentifier = identifier.trim();
+    if (!trimmedIdentifier) {
+      return { success: false, message: 'Enter your phone number or email address.' };
+    }
+
+    try {
+      const { data, error } = await supabase.functions.invoke('customer-request-password-reset', {
+        body: { identifier: trimmedIdentifier },
+      });
+
+      const message = data?.message
+        || (error ? 'Could not start password reset right now. Please try again later.' : 'If an account matches that phone or email, a password reset link will be prepared for you.');
+
+      if (error || data?.success === false) {
+        return { success: false, message };
+      }
+
+      return {
+        success: true,
+        message,
+        resetToken: typeof data?.debug_reset_token === 'string' ? data.debug_reset_token : undefined,
+      };
+    } catch (err) {
+      console.error('[requestPasswordReset] unexpected error calling edge function', err);
+      return { success: false, message: 'Could not start password reset right now. Please try again later.' };
+    }
   };
 
   const resetPassword = async (token: string, password: string): Promise<AuthActionResult> => {
-    void token;
-    void password;
-    return { success: false, message: 'Password reset is not enabled yet. Please contact CULTIV support.' };
+    const trimmedToken = token.trim();
+    if (!trimmedToken) {
+      return { success: false, message: 'A valid reset link is required.' };
+    }
+
+    const passwordPolicyMessage = isValidPasswordPolicy(password);
+    if (passwordPolicyMessage) {
+      return { success: false, message: passwordPolicyMessage };
+    }
+
+    try {
+      const { data, error } = await supabase.functions.invoke('customer-reset-password', {
+        body: { token: trimmedToken, password },
+      });
+
+      const message = data?.message
+        || (error ? 'Could not reset your password right now. Please try again later.' : 'Could not reset your password right now. Please try again later.');
+
+      if (error || data?.success === false) {
+        return { success: false, message };
+      }
+
+      return { success: true, message };
+    } catch (err) {
+      console.error('[resetPassword] unexpected error calling edge function', err);
+      return { success: false, message: 'Could not reset your password right now. Please try again later.' };
+    }
   };
 
   const prepareCheckoutOrder = (input: PlaceOrderInput): { order: Order; linkedCustomerId?: string; usedRewardIds: string[] } => {
@@ -1584,216 +1596,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const createCounterWalkInOrder = async (input: CreateCounterWalkInOrderInput): Promise<Order> => {
-  const normalizedStoreId = input.storeId.trim();
-  const linkedCustomerId = input.linkedCustomerId?.trim() || null;
-
-  if (!normalizedStoreId) {
-    throw new Error('Store is required for walk-in billing.');
-  }
-  if (!input.items.length) {
-    throw new Error('Add at least one item before billing.');
-  }
-
-  if (!hasValidOrderItems(input.items.map((item) => ({
-    title: item.title,
-    category: item.category,
-    quantity: item.quantity,
-    price: item.price,
-  })))) {
-    throw new Error('Invalid item details in counter billing cart.');
-  }
-
-  const normalizedPhoneValue = normalizePhone(input.phone ?? '');
-  if (input.phone?.trim() && normalizedPhoneValue.length !== 10) {
-    throw new Error('Enter a valid 10-digit phone number or skip customer details.');
-  }
-  if (input.tipPercentage < 0 || input.tipAmount < 0) {
-    throw new Error('Tip details are invalid.');
-  }
-
-  const normalizedEmailValue = input.email?.trim() || '';
-  const displayName = input.fullName?.trim() || 'Walk-in Guest';
-  const createdAt = new Date().toISOString();
-  const orderId = createId('walkin');
-
-  const items: OrderItem[] = input.items.map((item) => ({
-    id: createId('item'),
-    orderId,
-    category: item.category,
-    title: item.title,
-    selections: item.selections,
-    quantity: item.quantity,
-    price: item.price,
-  }));
-
-  const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const taxAmount = Math.round(subtotal * POS_TAX_RATE * 100) / 100;
-  const total = Math.round((subtotal + taxAmount + input.tipAmount) * 100) / 100;
-
-  if (!Number.isFinite(total) || total < 0) {
-    throw new Error('Computed billing total is invalid.');
-  }
-
-  const newOrder: Order = {
-    id: orderId,
-    userId: linkedCustomerId ?? undefined,
-    customerId: linkedCustomerId,
-    storeId: normalizedStoreId,
-    category: items[0]?.category ?? 'Counter Billing',
-    items,
-    orderType: 'walk_in',
-    subtotal,
-    rewardDiscount: 0,
-    taxAmount,
-    total,
-    status: 'completed',
-    createdAt,
-    phone: normalizedPhoneValue,
-    fullName: displayName,
-    email: normalizedEmailValue,
-    source: 'walk_in',
-    paymentMethod: input.paymentMethod,
-    tipPercentage: input.tipPercentage,
-    tipAmount: input.tipAmount,
-    fulfillmentWindow: 'Handed to customer at counter',
-    statusTimeline: buildCompletedWalkInStatusTimeline(createdAt),
+    void input;
+    throw new Error('Direct counter order creation is disabled. Use the secure POS checkout flow.');
   };
-
-  try {
-    const persisted = await persistOrderToSupabase(newOrder);
-    const syncedOrder: Order = {
-      ...newOrder,
-      id: persisted.orderId,
-      customerId: persisted.customerId ?? newOrder.customerId,
-      status: persisted.orderStatus,
-      items: newOrder.items.map((item) => ({ ...item, orderId: persisted.orderId })),
-    };
-    setAllOrders((previous) => [syncedOrder, ...previous]);
-    setSupabaseReadSuccessful(true);
-    setSupabaseReadDegraded(false);
-    setSupabaseRefreshTick((value) => value + 1);
-    return syncedOrder;
-  } catch (error) {
-    setSupabaseReadDegraded(true);
-    throw error instanceof Error
-      ? error
-      : new Error('Could not create counter billing order right now. Please try again.');
-  }
-};
 
   const lookupPosCustomerByPhone = async (_phone: string): Promise<PosCustomerLookupResult | null> => {
     throw new Error('POS customer lookup now requires the internal customer directory service.');
   };
 
   const linkWalkInOrder = async ({ phone, reference }: WalkInLinkInput): Promise<AuthActionResult> => {
-    if (!userRecord) {
-      return {
-        success: false,
-        message: 'Sign in to link walk-in orders.',
-        userExists: false,
-      };
-    }
-
-    const normalizedPhoneValue = normalizePhone(phone);
-    const currentUserPhone = normalizePhone(userRecord.phone);
-    if (normalizedPhoneValue !== currentUserPhone) {
-      return {
-        success: false,
-        message: 'Use your logged-in phone number to link walk-in orders.',
-        userExists: true,
-      };
-    }
-
-    const candidate = users.find((entry) => entry.id === userRecord.id);
-    if (!candidate) {
-      return {
-        success: false,
-        message: 'No CULTIV profile was found for this phone number.',
-        userExists: false,
-      };
-    }
-
-    const internalSession = readStorage<InternalAccessSessionSnapshot | null>(ADMIN_ACCESS_SESSION_STORAGE_KEY, null);
-    const canonicalStoreId = internalSession?.scopeStoreId?.trim() || '';
-    if (!canonicalStoreId) {
-      return {
-        success: false,
-        message: 'Select a store before linking a walk-in order.',
-        userExists: true,
-      };
-    }
-
-    const orderId = createId('walkin');
-    const createdAt = new Date().toISOString();
-    const subtotal = 189;
-    const taxAmount = Math.round(subtotal * POS_TAX_RATE * 100) / 100;
-    const tipAmount = 0;
-    const total = subtotal + taxAmount;
-    const linkedOrder: Order = {
-      id: orderId,
-      userId: candidate.id,
-      customerId: customerAccount?.id ?? null,
-      storeId: canonicalStoreId,
-      category: 'Walk-In Bowl',
-      items: [
-        {
-          id: createId('item'),
-          orderId,
-          category: 'Walk-In Bowl',
-          title: 'Counter order linked to profile',
-          selections: [
-            { section: 'Source', choices: ['In-store purchase'] },
-            { section: 'Benefit', choices: ['Rewards attached to profile'] },
-            ...(reference ? [{ section: 'Reference', choices: [reference] }] : []),
-          ],
-          quantity: 1,
-          price: 189,
-        },
-      ],
-      orderType: 'walk_in',
-      subtotal,
-      rewardDiscount: 0,
-      taxAmount,
-      tipAmount,
-      total,
-      status: 'completed',
-      createdAt,
-      phone: normalizedPhoneValue,
-      fullName: candidate.fullName,
-      email: normalizeEmail(candidate.email),
-      source: 'walk_in',
-      fulfillmentWindow: 'In-store linked successfully',
-      statusTimeline: buildStatusTimeline(createdAt),
+    void phone;
+    void reference;
+    return {
+      success: false,
+      message: 'Walk-in order linking is temporarily disabled until a secure authenticated linking flow is implemented.',
+      userExists: Boolean(userRecord),
     };
-
-    try {
-      const persisted = await persistOrderToSupabase(linkedOrder);
-      const syncedOrder: Order = {
-        ...linkedOrder,
-        id: persisted.orderId,
-        status: persisted.orderStatus,
-        items: linkedOrder.items.map((item) => ({ ...item, orderId: persisted.orderId })),
-      };
-      setAllOrders((previous) => [syncedOrder, ...previous]);
-      setSupabaseReadSuccessful(true);
-      setSupabaseReadDegraded(false);
-      setSupabaseRefreshTick((value) => value + 1);
-
-      return {
-        success: true,
-        message: reference
-          ? `In-store order ${reference} is now attached to the CULTIV profile.`
-          : 'This walk-in order is now attached to the CULTIV profile.',
-        userExists: true,
-      };
-    } catch {
-      setSupabaseReadDegraded(true);
-      return {
-        success: false,
-        message: 'Could not link walk-in order right now. Please try again.',
-        userExists: true,
-      };
-    }
   };
 
   const redeemReward = async (offerId: string): Promise<AuthActionResult> => {
@@ -1924,6 +1742,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   };
 
   const logout = () => {
+    const sessionTokenToRevoke = customerSessionToken;
     resetShoppingSessionStorage();
     setCurrentUserId(null);
     setCustomerAccount(null);
@@ -1932,6 +1751,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setPendingGuestOrderClaims([]);
     setPendingGuestClaimsError(null);
     setAllOrders([]);
+
+    if (sessionTokenToRevoke) {
+      void supabase.functions.invoke('customer-logout', {
+        body: { customerSessionToken: sessionTokenToRevoke },
+      }).catch((error: unknown) => {
+        console.error('Customer logout revoke failed.', error);
+      });
+    }
   };
 
   const value: AuthContextType = {

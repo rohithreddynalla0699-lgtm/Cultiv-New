@@ -8,6 +8,7 @@ interface ItemCustomizerProps {
   quantity: number;
   totalPrice: number;
   validationError?: string;
+  helperText?: string;
   submitLabel?: string;
   onBack: () => void;
   onToggleChoice: (step: BuilderStep, ingredientId: string) => void;
@@ -22,6 +23,7 @@ export function ItemCustomizer({
   quantity,
   totalPrice,
   validationError,
+  helperText,
   submitLabel = 'Add to Cart',
   onBack,
   onToggleChoice,
@@ -34,6 +36,7 @@ export function ItemCustomizer({
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.1em] text-foreground/55">Customize Item</p>
           <h3 className="text-base font-semibold text-foreground">{item.name}</h3>
+          {helperText ? <p className="mt-1 text-xs font-medium text-foreground/60">{helperText}</p> : null}
         </div>
         <button type="button" onClick={onBack} className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-foreground/75 transition-all duration-200 hover:-translate-y-0.5 hover:bg-background/70">
           Back to Items

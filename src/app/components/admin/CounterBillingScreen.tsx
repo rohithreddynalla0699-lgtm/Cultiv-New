@@ -5,8 +5,7 @@ import { PRESETS_BY_ITEM_ID } from '../../data/bowlConfigurations';
 import {
   BOWL_BUILDER_STEPS,
   BREAKFAST_CUSTOMIZE_STEPS,
-  getBreakfastFamilyFromItemId,
-  resolveBreakfastPriceFromFruitSelections,
+  getBreakfastCustomizationPolicy,
   type BuilderStep,
   type FoodItem,
   type MenuCategoryData,
@@ -375,15 +374,31 @@ function mapSelectionsToLabels(
       choices: selectedIds.map(
         (id) => stepById[stepId]?.ingredients.find((ingredient) => ingredient.id === id)?.name ?? id,
       ),
+      groupIdSnapshot: stepById[stepId]?.id ?? stepId,
+      optionItemIds: [...selectedIds],
     }))
     .filter((entry) => entry.choices.length > 0);
 }
 
 function mapSelectionLabelsToIds(selections: OrderItemSelection[], steps: BuilderStep[]) {
+  const stepById = new Map(steps.map((step) => [step.id, step]));
   const stepByTitle = new Map(steps.map((step) => [step.title.toLowerCase(), step]));
   const nextSelections: Record<string, string[]> = {};
 
   for (const selection of selections) {
+    const stepFromSnapshot = selection.groupIdSnapshot
+      ? stepById.get(selection.groupIdSnapshot)
+      : undefined;
+    if (stepFromSnapshot) {
+      const ids = (selection.optionItemIds ?? []).filter((optionItemId) =>
+        stepFromSnapshot.ingredients.some((ingredient) => ingredient.id === optionItemId),
+      );
+      if (ids.length > 0) {
+        nextSelections[stepFromSnapshot.id] = ids;
+        continue;
+      }
+    }
+
     const step = stepByTitle.get(selection.section.toLowerCase());
     if (!step) continue;
 
@@ -400,7 +415,10 @@ function mapSelectionLabelsToIds(selections: OrderItemSelection[], steps: Builde
 function getCustomizeSteps(itemId: string) {
   const preset = PRESETS_BY_ITEM_ID[itemId];
   if (!preset) return [] as BuilderStep[];
-  if (preset.mode === 'breakfast') return BREAKFAST_CUSTOMIZE_STEPS;
+  if (preset.mode === 'breakfast') {
+    const policy = getBreakfastCustomizationPolicy(itemId);
+    return BREAKFAST_CUSTOMIZE_STEPS.filter((step) => policy?.editableGroupIds.includes(step.id) ?? true);
+  }
   return BOWL_BUILDER_STEPS;
 }
 
@@ -414,24 +432,25 @@ function calculateUnitPrice(item: FoodItem, selections: Record<string, string[]>
     return step.ingredients.filter((ingredient) => selectedIds.includes(ingredient.id));
   });
 
-  let basePrice = preset.basePrice;
-
-  if (preset.mode === 'breakfast') {
-    const family = getBreakfastFamilyFromItemId(item.id);
-    if (family) {
-      basePrice = resolveBreakfastPriceFromFruitSelections(
-        family,
-        selections.fruits ?? [],
-      ).basePrice;
-    }
-  }
-
   const extrasPrice = extras.reduce((sum, ingredient) => sum + ingredient.price, 0);
-  return basePrice + extrasPrice;
+  return preset.basePrice + extrasPrice;
 }
 
 function buildPosLineKey(itemId: string, selections: OrderItemSelection[] = []) {
   return createDraftLineKey(itemId, selections);
+}
+
+function getBreakfastFixedFruitLabel(itemId: string) {
+  const policy = getBreakfastCustomizationPolicy(itemId);
+  if (!policy || policy.fruitMode !== 'fixed') return null;
+  const fruitStep = BREAKFAST_CUSTOMIZE_STEPS.find((step) => step.id === 'fruits');
+  return policy.fixedFruitIds
+    .map((fruitId) => fruitStep?.ingredients.find((ingredient) => ingredient.id === fruitId)?.name ?? fruitId)
+    .join(', ');
+}
+
+function requiresBreakfastCustomization(itemId: string) {
+  return getBreakfastCustomizationPolicy(itemId)?.fruitMode === 'selectable';
 }
 
 function addOrMergePosLine(previous: PosCartLine[], nextLine: PosCartLine) {
@@ -530,6 +549,7 @@ export function CounterBillingScreen() {
 
   const activeCategory = menuCatalog.find((entry) => entry.slug === activeCategorySlug) ?? null;
   const activeItems = activeCategory?.items ?? [];
+  const activeBreakfastFixedFruitLabel = customizer ? getBreakfastFixedFruitLabel(customizer.item.id) : null;
 
   const subtotal = useMemo(
     () => cartLines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0),
@@ -578,6 +598,11 @@ export function CounterBillingScreen() {
 
   const addItemToCart = (item: FoodItem) => {
     void touchActivity();
+
+    if (requiresBreakfastCustomization(item.id)) {
+      openCustomizer(item);
+      return;
+    }
 
     const preset = PRESETS_BY_ITEM_ID[item.id];
 
@@ -716,6 +741,8 @@ export function CounterBillingScreen() {
     const selections = steps
       .map((step) => ({
         section: step.title,
+        groupIdSnapshot: step.id,
+        optionItemIds: [...(customizer.selections[step.id] ?? [])].sort((left, right) => left.localeCompare(right)),
         choices: [...(customizer.selections[step.id] ?? [])]
           .sort((left, right) => left.localeCompare(right))
           .map((id) => step.ingredients.find((ingredient) => ingredient.id === id)?.name ?? id)
@@ -1029,6 +1056,7 @@ export function CounterBillingScreen() {
               quantity={customizer.quantity}
               totalPrice={calculateUnitPrice(customizer.item, customizer.selections) * customizer.quantity}
               validationError={customizerError}
+              helperText={activeBreakfastFixedFruitLabel ? `Included fruit: ${activeBreakfastFixedFruitLabel}` : undefined}
               onBack={closeCustomizer}
               onToggleChoice={updateCustomizerChoice}
               onQuantityChange={(delta) =>

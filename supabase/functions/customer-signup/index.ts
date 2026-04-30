@@ -4,6 +4,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.43.0";
 // @ts-ignore: Deno remote imports
 import { hash } from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
+import { createCustomerSession } from "../_shared/customer-session.ts";
 
 declare const Deno: any;
 
@@ -70,51 +71,6 @@ const createPbkdf2Hash = async (password: string): Promise<string> => {
   const hashBytes = new Uint8Array(derivedBits);
 
   return `pbkdf2$${PBKDF2_ITERATIONS}$${bytesToBase64(salt)}$${bytesToBase64(hashBytes)}`;
-};
-
-const toBase64Url = (value: string | Uint8Array): string => {
-  const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-};
-
-const createCustomerSessionToken = async (
-  customer: { id: string; email: string; phone: string },
-  signingSecret: string,
-): Promise<{ token: string; expiresAtIso: string }> => {
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  const expirySeconds = nowSeconds + (60 * 60 * 24 * 7);
-  const payload = {
-    customer_id: customer.id,
-    email: customer.email,
-    phone: customer.phone,
-    iat: nowSeconds,
-    exp: expirySeconds,
-    iss: "cultiv-customer-auth",
-  };
-
-  const payloadBase64 = toBase64Url(JSON.stringify(payload));
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(signingSecret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const signatureBuffer = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(payloadBase64),
-  );
-  const signatureBase64 = toBase64Url(new Uint8Array(signatureBuffer));
-
-  return {
-    token: `${payloadBase64}.${signatureBase64}`,
-    expiresAtIso: new Date(expirySeconds * 1000).toISOString(),
-  };
 };
 
 serve(async (req: any) => {
@@ -284,24 +240,16 @@ serve(async (req: any) => {
       }, 500);
     }
 
-    // Success
-    const signingSecret = Deno.env.get("CUSTOMER_SESSION_SIGNING_SECRET") || "";
-    if (!signingSecret) {
-      console.error("[customer-signup] CUSTOMER_SESSION_SIGNING_SECRET is missing");
+    let customerSession;
+    try {
+      customerSession = await createCustomerSession(supabase, insertedCustomer.id, req);
+    } catch (sessionError) {
+      console.error("[customer-signup] customer session create failed", sessionError);
       return jsonResponse({
         success: false,
-        message: "Customer session configuration is missing. Please contact support.",
+        message: "Your account was created, but we could not start your session. Please sign in.",
       }, 500);
     }
-
-    const customerSession = await createCustomerSessionToken(
-      {
-        id: insertedCustomer.id,
-        email: normalizedEmail,
-        phone: normalizedPhone,
-      },
-      signingSecret,
-    );
 
     return jsonResponse({
       success: true,

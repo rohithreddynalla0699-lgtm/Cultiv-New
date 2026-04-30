@@ -81,10 +81,10 @@ begin
 
   for v_item in select value from jsonb_array_elements(p_items)
   loop
-    v_item_name := nullif(trim(v_item->>'title'), '');
-    v_item_category := nullif(trim(v_item->>'category'), '');
+    v_item_name := nullif(trim(coalesce(v_item->>'title', v_item->>'item_name')), '');
+    v_item_category := nullif(trim(coalesce(v_item->>'category', v_item->>'item_category')), '');
     v_item_quantity := coalesce((v_item->>'quantity')::integer, 0);
-    v_item_price := round(coalesce((v_item->>'price')::numeric, -1), 2);
+    v_item_price := round(coalesce((coalesce(v_item->>'price', v_item->>'unit_price'))::numeric, -1), 2);
 
     if v_item_name is null or v_item_category is null or v_item_quantity <= 0 or v_item_price < 0 then
       raise exception 'Invalid POS item payload.';
@@ -148,7 +148,7 @@ begin
         'paid',
         v_now,
         nullif(trim(p_payment_reference), ''),
-        null,
+        'pos',
         null,
         v_subtotal,
         0,
@@ -173,11 +173,11 @@ begin
 
   for v_item in select value from jsonb_array_elements(p_items)
   loop
-    v_item_id := nullif(trim(v_item->>'itemId'), '');
-    v_item_name := nullif(trim(v_item->>'title'), '');
-    v_item_category := nullif(trim(v_item->>'category'), '');
+    v_item_id := nullif(trim(coalesce(v_item->>'itemId', v_item->>'menu_item_id')), '');
+    v_item_name := nullif(trim(coalesce(v_item->>'title', v_item->>'item_name')), '');
+    v_item_category := nullif(trim(coalesce(v_item->>'category', v_item->>'item_category')), '');
     v_item_quantity := coalesce((v_item->>'quantity')::integer, 0);
-    v_item_price := round(coalesce((v_item->>'price')::numeric, 0), 2);
+    v_item_price := round(coalesce((coalesce(v_item->>'price', v_item->>'unit_price'))::numeric, 0), 2);
     v_item_line_total := round(v_item_price * v_item_quantity, 2);
 
     insert into public.order_items (
@@ -202,29 +202,47 @@ begin
     if jsonb_typeof(v_item->'selections') = 'array' then
       for v_selection in select value from jsonb_array_elements(v_item->'selections')
       loop
-        v_selection_section := nullif(trim(v_selection->>'section'), '');
+        if jsonb_typeof(v_selection->'choices') = 'array' then
+          v_selection_section := nullif(trim(v_selection->>'section'), '');
 
-        if v_selection_section is not null and jsonb_typeof(v_selection->'choices') = 'array' then
-          for v_selection_choice in select jsonb_array_elements_text(v_selection->'choices')
-          loop
-            if nullif(trim(v_selection_choice), '') is not null then
-              insert into public.order_item_selections (
-                order_item_id,
-                option_item_id,
-                group_id_snapshot,
-                group_name_snapshot,
-                option_name,
-                price_modifier
-              ) values (
-                v_order_item_id,
-                null,
-                lower(regexp_replace(v_selection_section, '[^a-zA-Z0-9]+', '-', 'g')),
-                v_selection_section,
-                trim(v_selection_choice),
-                0
-              );
-            end if;
-          end loop;
+          if v_selection_section is not null then
+            for v_selection_choice in select jsonb_array_elements_text(v_selection->'choices')
+            loop
+              if nullif(trim(v_selection_choice), '') is not null then
+                insert into public.order_item_selections (
+                  order_item_id,
+                  option_item_id,
+                  group_id_snapshot,
+                  group_name_snapshot,
+                  option_name,
+                  price_modifier
+                ) values (
+                  v_order_item_id,
+                  null,
+                  lower(regexp_replace(v_selection_section, '[^a-zA-Z0-9]+', '-', 'g')),
+                  v_selection_section,
+                  trim(v_selection_choice),
+                  0
+                );
+              end if;
+            end loop;
+          end if;
+        else
+          insert into public.order_item_selections (
+            order_item_id,
+            option_item_id,
+            group_id_snapshot,
+            group_name_snapshot,
+            option_name,
+            price_modifier
+          ) values (
+            v_order_item_id,
+            nullif(trim(v_selection->>'option_item_id'), ''),
+            coalesce(nullif(trim(v_selection->>'group_id_snapshot'), ''), 'selection'),
+            coalesce(nullif(trim(v_selection->>'group_name_snapshot'), ''), coalesce(nullif(trim(v_selection->>'section'), ''), 'Selection')),
+            coalesce(nullif(trim(v_selection->>'option_name'), ''), coalesce(nullif(trim(v_selection->>'choice'), ''), 'Choice')),
+            round(coalesce((v_selection->>'price_modifier')::numeric, 0), 2)
+          );
         end if;
       end loop;
     end if;
@@ -288,35 +306,3 @@ begin
   );
 end;
 $$;
-
-revoke all on function public.create_internal_pos_order_with_payment(
-  uuid,
-  uuid,
-  uuid,
-  text,
-  text,
-  text,
-  text,
-  text,
-  numeric,
-  numeric,
-  numeric,
-  numeric,
-  jsonb
-) from public, anon, authenticated;
-
-grant execute on function public.create_internal_pos_order_with_payment(
-  uuid,
-  uuid,
-  uuid,
-  text,
-  text,
-  text,
-  text,
-  text,
-  numeric,
-  numeric,
-  numeric,
-  numeric,
-  jsonb
-) to service_role;

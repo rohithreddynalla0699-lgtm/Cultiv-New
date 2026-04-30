@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { verifyAndLoadCustomerSession } from '../_shared/customer-session.ts';
+import { revokeCustomerSessionByToken, verifyAndLoadCustomerSession } from '../_shared/customer-session.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -29,6 +29,7 @@ Deno.serve(async (req) => {
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
   if (!supabaseUrl || !serviceRoleKey) {
     return json(500, { success: false, error: 'Server is not configured.' });
   }
@@ -42,44 +43,17 @@ Deno.serve(async (req) => {
 
   const customerSessionToken = (body.customerSessionToken ?? '').trim();
   if (!customerSessionToken) {
-    return json(400, { success: false, error: 'customerSessionToken is required.' });
+    return json(200, { success: true });
   }
 
   const db = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const verifiedSession = await verifyAndLoadCustomerSession(db, customerSessionToken);
-  if (!verifiedSession.valid) {
-    return json(401, { success: false, error: verifiedSession.error });
+  const verifiedSession = await verifyAndLoadCustomerSession(db, customerSessionToken, { touch: false });
+  if (verifiedSession.valid) {
+    await revokeCustomerSessionByToken(db, customerSessionToken);
   }
 
-  const { data: customer, error } = await db
-    .from('customers')
-    .select('id, full_name, email, phone, reward_points, phone_verified, email_verified, created_at, is_active')
-    .eq('id', verifiedSession.session.customer_id)
-    .maybeSingle();
-
-  if (error) {
-    console.error('[customer-get-profile] customer lookup failed', error);
-    return json(500, { success: false, error: 'Could not load customer profile.' });
-  }
-
-  if (!customer || customer.is_active === false) {
-    return json(404, { success: false, error: 'Customer account is unavailable.' });
-  }
-
-  return json(200, {
-    success: true,
-    customer: {
-      id: customer.id,
-      full_name: customer.full_name,
-      email: customer.email ?? '',
-      phone: customer.phone,
-      reward_points: Number(customer.reward_points ?? 0),
-      phone_verified: Boolean(customer.phone_verified),
-      email_verified: Boolean(customer.email_verified),
-      created_at: customer.created_at,
-    },
-  });
+  return json(200, { success: true });
 });

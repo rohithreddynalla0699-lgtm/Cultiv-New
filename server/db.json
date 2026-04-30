@@ -417,7 +417,7 @@
       "name": "Siddipet Central",
       "city": "Siddipet",
       "code": "SID-CEN",
-      "pin": "240101",
+      "pin": "",
       "isActive": true,
       "createdAt": "2026-03-31T23:21:02.135Z"
     },
@@ -426,7 +426,7 @@
       "name": "Banjara Hills",
       "city": "Hyderabad",
       "code": "HYD-BAN",
-      "pin": "240202",
+      "pin": "",
       "isActive": true,
       "createdAt": "2026-03-31T23:21:02.135Z"
     }

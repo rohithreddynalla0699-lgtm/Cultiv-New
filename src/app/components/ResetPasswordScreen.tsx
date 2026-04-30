@@ -23,14 +23,17 @@ export function ResetPasswordScreen() {
 	const navigate = useNavigate();
 	const location = useLocation();
 	const stateToken = (location.state as ResetPasswordLocationState | null)?.resetToken ?? '';
+	const queryToken = new URLSearchParams(location.search).get('token') ?? '';
 	const token = useMemo(() => {
+		if (queryToken) return queryToken;
 		if (stateToken) return stateToken;
 		return sessionStorage.getItem(RESET_TOKEN_STORAGE_KEY) ?? '';
-	}, [stateToken]);
+	}, [queryToken, stateToken]);
 	const [password, setPassword] = useState('');
 	const [confirmPassword, setConfirmPassword] = useState('');
 	const [showPassword, setShowPassword] = useState(false);
 	const [message, setMessage] = useState('');
+	const [isSubmitting, setIsSubmitting] = useState(false);
 
 	useEffect(() => {
 		if (!token) return;
@@ -49,11 +52,16 @@ export function ResetPasswordScreen() {
 			return;
 		}
 
-		const result = await resetPassword(token, password);
-		setMessage(result.message);
-		if (result.success) {
-			sessionStorage.removeItem(RESET_TOKEN_STORAGE_KEY);
-			setTimeout(() => navigate('/login'), 1000);
+		setIsSubmitting(true);
+		try {
+			const result = await resetPassword(token, password);
+			setMessage(result.message);
+			if (result.success) {
+				sessionStorage.removeItem(RESET_TOKEN_STORAGE_KEY);
+				setTimeout(() => navigate('/login'), 1000);
+			}
+		} finally {
+			setIsSubmitting(false);
 		}
 	};
 
@@ -98,11 +106,12 @@ export function ResetPasswordScreen() {
 					<motion.button 
 						variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }}
 						type="submit" 
+						disabled={isSubmitting}
 						whileHover={{ scale: 1.02 }}
 						whileTap={{ scale: 0.98 }}
-						className="w-full rounded-full bg-primary py-3.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-92"
+						className="w-full rounded-full bg-primary py-3.5 text-sm font-medium text-primary-foreground transition-opacity hover:opacity-92 disabled:cursor-not-allowed disabled:opacity-60"
 					>
-						Update Password
+						{isSubmitting ? 'Updating…' : 'Update Password'}
 					</motion.button>
 					<AnimatePresence>
 						{message ? (

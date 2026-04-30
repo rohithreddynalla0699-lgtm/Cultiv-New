@@ -1,6 +1,14 @@
 import { chromium } from 'playwright';
 
-const ADMIN_OWNER_PIN = process.env.ADMIN_OWNER_PIN ?? '240620';
+const requireEnv = (name) => {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+};
+
+const ADMIN_OWNER_PIN = requireEnv('ADMIN_OWNER_PIN');
 
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1366, height: 900 } });

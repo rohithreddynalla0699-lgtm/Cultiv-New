@@ -11,7 +11,16 @@
 import { chromium } from 'playwright';
 
 const baseUrl = process.env.BASE_URL ?? 'http://127.0.0.1:4174';
-const ADMIN_OWNER_PIN = process.env.ADMIN_OWNER_PIN ?? '240620';
+const requireEnv = (name) => {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+};
+
+const ADMIN_OWNER_PIN = requireEnv('ADMIN_OWNER_PIN');
+const TEST_NEW_STORE_PIN = String(Date.now() % 1_000_000).padStart(6, '0');
 
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
@@ -58,7 +67,7 @@ results.storeFormOpens = await page.getByTestId('store-form-name').isVisible();
 await page.getByTestId('store-form-name').fill('QA Smoke Outlet');
 await page.getByTestId('store-form-city').fill('Testville');
 await page.getByTestId('store-form-code').fill('QSM-01');
-await page.getByTestId('store-form-pin').fill('444444');
+await page.getByTestId('store-form-pin').fill(TEST_NEW_STORE_PIN);
 await page.getByTestId('store-form-submit').click();
 await page.waitForTimeout(400);
 results.storeAdded = (await page.locator('text=QA Smoke Outlet').count()) > 0;

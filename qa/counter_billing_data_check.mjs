@@ -2,7 +2,11 @@ import { chromium } from 'playwright';
 
 const baseUrl = process.env.CULTIV_BASE_URL ?? 'http://127.0.0.1:5173';
 const STORE_ID = 'store-siddipet';
-const STORE_PIN = process.env.STORE_PIN_SIDDIPET ?? '111111';
+const STORE_PIN = process.env.STORE_PIN_SIDDIPET?.trim();
+
+if (!STORE_PIN) {
+  throw new Error('Missing required environment variable: STORE_PIN_SIDDIPET');
+}
 
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });

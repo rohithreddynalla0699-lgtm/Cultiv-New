@@ -1,4 +1,4 @@
-import type { InternalPosCheckoutResponse, InternalPosPaymentRecord } from '../lib/internalOpsApi';
+import type { InternalPosCheckoutItem, InternalPosCheckoutResponse, InternalPosPaymentRecord } from '../lib/internalOpsApi';
 import type { CreateCounterWalkInOrderInput, Order } from '../types/platform';
 import type {
   PosCreateOrderResult,
@@ -33,9 +33,18 @@ interface PosAtomicCheckoutPayload {
   paymentReference?: string;
   subtotal: number;
   taxAmount: number;
+  tipPercentage: number;
   tipAmount: number;
   total: number;
-  items: PosOrderPayload['items'];
+  items: InternalPosCheckoutItem[];
+}
+
+interface CanonicalSelectionSnapshotRow {
+  option_item_id: string | null;
+  group_id_snapshot: string;
+  group_name_snapshot: string;
+  option_name: string;
+  price_modifier: number;
 }
 
 interface SendReceiptPayload {
@@ -52,6 +61,28 @@ const normalizePaymentMethod = (method: unknown): PosOrderPayload['paymentMethod
   }
   throw new Error('Select a valid payment method.');
 };
+
+const toSnapshotGroupId = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'selection';
+
+const buildCanonicalSelectionSnapshots = (
+  selections: PosOrderPayload['items'][number]['selections'],
+): CanonicalSelectionSnapshotRow[] => (
+  selections.flatMap((selection) => {
+    const groupId = selection.groupIdSnapshot?.trim() || toSnapshotGroupId(selection.section);
+    return selection.choices.map((choice, index) => ({
+      option_item_id: selection.optionItemIds?.[index] ?? null,
+      group_id_snapshot: groupId,
+      group_name_snapshot: selection.section,
+      option_name: choice,
+      price_modifier: 0,
+    }));
+  })
+);
 
 const mapToCounterOrderInput = (payload: PosOrderPayload): CreateCounterWalkInOrderInput => {
   const paymentMethod = normalizePaymentMethod(payload.paymentMethod);
@@ -119,9 +150,13 @@ export const posService = {
       paymentReference: payload.paymentReference,
       subtotal,
       taxAmount,
+      tipPercentage: payload.tipPercentage,
       tipAmount,
       total,
-      items: payload.items,
+      items: payload.items.map((item) => ({
+        ...item,
+        selections: buildCanonicalSelectionSnapshots(item.selections),
+      })),
     });
 
     const createdAt = checkout.order.createdAt ?? new Date().toISOString();

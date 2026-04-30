@@ -1,11 +1,19 @@
 import { chromium } from 'playwright';
 
 const baseUrl = process.env.BASE_URL ?? 'http://127.0.0.1:4174';
-const ADMIN_OWNER_PIN = process.env.ADMIN_OWNER_PIN ?? '240620';
+const requireEnv = (name) => {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+};
+
+const ADMIN_OWNER_PIN = requireEnv('ADMIN_OWNER_PIN');
 const STORE_PIN_BY_ID = {
-  'store-siddipet': process.env.STORE_PIN_SIDDIPET ?? '111111',
-  'store-hyderabad': process.env.STORE_PIN_HYDERABAD ?? '222222',
-  'store-warangal': process.env.STORE_PIN_WARANGAL ?? '333333',
+  'store-siddipet': requireEnv('STORE_PIN_SIDDIPET'),
+  'store-hyderabad': requireEnv('STORE_PIN_HYDERABAD'),
+  'store-warangal': requireEnv('STORE_PIN_WARANGAL'),
 };
 
 const browser = await chromium.launch({ headless: true });

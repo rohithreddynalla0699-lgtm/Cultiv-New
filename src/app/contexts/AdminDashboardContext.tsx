@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ADMIN_STORE_ACCESS_PIN_BY_ID, DEFAULT_ORDER_STORE_ID } from '../constants/admin';
-import { CUSTOMER_STORE_METADATA, loadStores, type StoreLocatorStore } from '../data/storeLocator';
+import { DEFAULT_ORDER_STORE_ID } from '../constants/admin';
+import { loadStores, type StoreLocatorStore } from '../data/storeLocator';
 import { inventoryService } from '../services/inventoryService';
 import { loginInternal } from '../lib/internalOpsApi';
 import type {
@@ -90,119 +90,6 @@ const daysAgo = (days: number, hour = 9, minute = 0) => {
 const nowIso = () => new Date().toISOString();
 
 const isSixDigitPin = (value: string) => /^\d{6}$/.test(value.trim());
-
-const LEGACY_INTERNAL_STORE_PINS_BY_ID: Record<string, string[]> = {
-  'store-siddipet': ['240101', '502103'],
-  'store-hyderabad': ['240202', '500034'],
-  'store-warangal': ['240303', '506002'],
-};
-
-const seedStores: StoreRecord[] = CUSTOMER_STORE_METADATA.map((store) => ({
-  id: store.id,
-  name: store.name,
-  city: store.city,
-  code: store.code,
-  pin: ADMIN_STORE_ACCESS_PIN_BY_ID[store.id] ?? '000000',
-  isActive: store.isActive,
-  createdAt: store.id === 'store-siddipet'
-    ? daysAgo(210)
-    : store.id === 'store-hyderabad'
-      ? daysAgo(135)
-      : daysAgo(48),
-}));
-
-const seedEmployees: EmployeeRecord[] = [
-  {
-    id: 'emp-1',
-    name: 'Riya Sharma',
-    role: 'manager',
-    storeId: 'store-siddipet',
-    pin: '510101',
-    phone: '9876500011',
-    isActive: true,
-    createdAt: daysAgo(180),
-    status: 'on_shift',
-    shifts: [
-      {
-        id: 'shift-1',
-        employeeId: 'emp-1',
-        storeId: 'store-siddipet',
-        loginAt: daysAgo(0, 9, 2),
-        totalHoursWorked: 0,
-      },
-      {
-        id: 'shift-1b',
-        employeeId: 'emp-1',
-        storeId: 'store-siddipet',
-        loginAt: daysAgo(1, 9, 0),
-        logoutAt: daysAgo(1, 17, 6),
-        totalHoursWorked: 8.1,
-      },
-    ],
-  },
-  {
-    id: 'emp-2',
-    name: 'Aman Verma',
-    role: 'kitchen',
-    storeId: 'store-siddipet',
-    pin: '510102',
-    phone: '9876500012',
-    isActive: true,
-    createdAt: daysAgo(122),
-    status: 'on_shift',
-    shifts: [
-      {
-        id: 'shift-2',
-        employeeId: 'emp-2',
-        storeId: 'store-siddipet',
-        loginAt: daysAgo(0, 10, 15),
-        totalHoursWorked: 0,
-      },
-    ],
-  },
-  {
-    id: 'emp-3',
-    name: 'Neha Patel',
-    role: 'counter',
-    storeId: 'store-hyderabad',
-    pin: '510103',
-    phone: '9876500013',
-    isActive: true,
-    createdAt: daysAgo(95),
-    status: 'off_shift',
-    shifts: [
-      {
-        id: 'shift-3',
-        employeeId: 'emp-3',
-        storeId: 'store-hyderabad',
-        loginAt: daysAgo(2, 9, 0),
-        logoutAt: daysAgo(2, 17, 0),
-        totalHoursWorked: 8,
-      },
-    ],
-  },
-  {
-    id: 'emp-4',
-    name: 'Sana Khan',
-    role: 'kitchen',
-    storeId: 'store-hyderabad',
-    pin: '510104',
-    phone: '9876500014',
-    isActive: false,
-    createdAt: daysAgo(70),
-    status: 'off_shift',
-    shifts: [
-      {
-        id: 'shift-4',
-        employeeId: 'emp-4',
-        storeId: 'store-hyderabad',
-        loginAt: daysAgo(5, 11, 0),
-        logoutAt: daysAgo(5, 16, 30),
-        totalHoursWorked: 5.5,
-      },
-    ],
-  },
-];
 
 const getInventoryStatus = (quantity: number, threshold: number): InventoryStatus => {
   if (quantity <= 0) return 'out_of_stock';
@@ -429,31 +316,21 @@ const normalizeSession = (session: InternalAccessSession | null, stores: StoreRe
 };
 
 const normalizeStores = (stores: StoreRecord[]) => stores.map((store) => {
-  const seedStore = seedStores.find((s) => s.id === store.id);
   const currentPin = typeof store.pin === 'string' ? store.pin.trim() : '';
-  const canonicalPin = seedStore?.pin ?? '000000';
-  const shouldRestoreCanonicalPin = Boolean(
-    seedStore
-      && (
-        !isSixDigitPin(currentPin)
-        || LEGACY_INTERNAL_STORE_PINS_BY_ID[store.id]?.includes(currentPin)
-      ),
-  );
 
   return {
     ...store,
     city: store.city.trim(),
     code: normalizeStoreCode(store.code),
-    pin: shouldRestoreCanonicalPin ? canonicalPin : currentPin,
+    pin: isSixDigitPin(currentPin) ? currentPin : '',
   };
 });
 
 const normalizeEmployees = (employees: EmployeeRecord[]) => employees.map((employee) => {
   const storeId = employee.storeId ?? DEFAULT_ORDER_STORE_ID;
-  const seedEmployee = seedEmployees.find((entry) => entry.id === employee.id);
   const normalizedPin = isSixDigitPin(employee.pin ?? '')
     ? employee.pin.trim()
-    : seedEmployee?.pin ?? '510999';
+    : '';
   return {
     ...employee,
     role: normalizeRole(employee.role),

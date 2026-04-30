@@ -4,6 +4,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.43.0";
 // @ts-ignore: Deno remote imports
 import { compare } from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
+import { createCustomerSession, extractClientIp } from "../_shared/customer-session.ts";
 
 declare const Deno: any;
 
@@ -13,6 +14,11 @@ const normalizePhone = (phone: string): string => {
 };
 
 const normalizeEmail = (email: string): string => email.toLowerCase().trim();
+
+const LOGIN_FAILURE_MESSAGE = "Invalid email, phone, or password.";
+const LOGIN_LOCKED_MESSAGE = "Too many failed login attempts. Please wait and try again.";
+const LOCK_THRESHOLD = 5;
+const LOCK_WINDOW_MINUTES = 15;
 
 interface LoginRequest {
   identifier?: string; // email or phone
@@ -31,6 +37,7 @@ const jsonResponse = (body: Record<string, unknown>, status = 200): Response =>
     headers: {
       ...corsHeaders,
       "Content-Type": "application/json",
+      "Cache-Control": "no-store",
     },
   });
 
@@ -47,6 +54,19 @@ const base64ToBytes = (value: string): Uint8Array => {
 
 const toArrayBuffer = (bytes: Uint8Array): ArrayBuffer =>
   bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+
+const bytesToBase64Url = (bytes: Uint8Array): string => {
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+};
+
+const sha256Base64Url = async (value: string): Promise<string> => {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return bytesToBase64Url(new Uint8Array(digest));
+};
 
 const constantTimeEqual = (left: Uint8Array, right: Uint8Array): boolean => {
   if (left.length !== right.length) {
@@ -113,49 +133,81 @@ interface LoginResponse {
   };
 }
 
-const toBase64Url = (value: string | Uint8Array): string => {
-  const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
+const buildNormalizedIdentifier = (identifier: string) => {
+  const normalizedPhone = normalizePhone(identifier);
+  if (normalizedPhone.length === 10) {
+    return normalizedPhone;
   }
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  return normalizeEmail(identifier);
 };
 
-const createCustomerSessionToken = async (
-  customer: { id: string; email: string; phone: string },
-  signingSecret: string,
-): Promise<{ token: string; expiresAtIso: string }> => {
-  const nowSeconds = Math.floor(Date.now() / 1000);
-  const expirySeconds = nowSeconds + (60 * 60 * 24 * 7);
-  const payload = {
-    customer_id: customer.id,
-    email: customer.email,
-    phone: customer.phone,
-    iat: nowSeconds,
-    exp: expirySeconds,
-    iss: "cultiv-customer-auth",
-  };
+const loadAttemptState = async (db: ReturnType<typeof createClient>, attemptKey: string) => {
+  const { data } = await db
+    .from("customer_auth_attempts")
+    .select("failure_count, locked_until, last_failed_at")
+    .eq("attempt_key", attemptKey)
+    .maybeSingle();
 
-  const payloadBase64 = toBase64Url(JSON.stringify(payload));
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(signingSecret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
+  return data ?? null;
+};
+
+const getNextFailureState = (existing: { failure_count?: number | null; locked_until?: string | null; last_failed_at?: string | null } | null) => {
+  const now = Date.now();
+  const shouldResetWindow = Boolean(
+    existing?.last_failed_at
+      && now - new Date(existing.last_failed_at).getTime() > LOCK_WINDOW_MINUTES * 60 * 1000
   );
-  const signatureBuffer = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(payloadBase64),
+  const lockExpired = Boolean(
+    existing?.locked_until
+      && new Date(existing.locked_until).getTime() <= now
   );
-  const signatureBase64 = toBase64Url(new Uint8Array(signatureBuffer));
+  const baselineCount = (!existing || shouldResetWindow || lockExpired)
+    ? 0
+    : Number(existing.failure_count ?? 0);
+  const nextFailureCount = baselineCount + 1;
+  const lockedUntil = nextFailureCount >= LOCK_THRESHOLD
+    ? new Date(now + LOCK_WINDOW_MINUTES * 60 * 1000).toISOString()
+    : null;
 
   return {
-    token: `${payloadBase64}.${signatureBase64}`,
-    expiresAtIso: new Date(expirySeconds * 1000).toISOString(),
+    nextFailureCount,
+    lockedUntil,
+    startsNewWindow: !existing || shouldResetWindow || lockExpired,
   };
+};
+
+const registerFailedAttempt = async (
+  db: ReturnType<typeof createClient>,
+  attemptKey: string,
+  attemptScope: "login_ip" | "login_identifier",
+) => {
+  const existing = await loadAttemptState(db, attemptKey);
+  const { nextFailureCount, lockedUntil, startsNewWindow } = getNextFailureState(existing);
+  const nowIso = new Date().toISOString();
+
+  await db
+    .from("customer_auth_attempts")
+    .upsert({
+      attempt_key: attemptKey,
+      attempt_scope: attemptScope,
+      failure_count: nextFailureCount,
+      first_failed_at: startsNewWindow ? nowIso : undefined,
+      last_failed_at: nowIso,
+      locked_until: lockedUntil,
+      updated_at: nowIso,
+    });
+
+  return { nextFailureCount, lockedUntil };
+};
+
+const clearFailedAttempts = async (db: ReturnType<typeof createClient>, attemptKeys: string[]) => {
+  const uniqueAttemptKeys = Array.from(new Set(attemptKeys.filter(Boolean)));
+  if (uniqueAttemptKeys.length === 0) return;
+
+  await db
+    .from("customer_auth_attempts")
+    .delete()
+    .in("attempt_key", uniqueAttemptKeys);
 };
 
 serve(async (req: any) => {
@@ -191,19 +243,42 @@ serve(async (req: any) => {
     // Create service-role client
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL") || "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || ""
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "",
+      {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+        },
+      }
     );
+
+    const clientIp = extractClientIp(req) ?? "unknown";
+    const normalizedIdentifier = buildNormalizedIdentifier(identifier);
+    const identifierHash = await sha256Base64Url(normalizedIdentifier);
+    const ipAttemptKey = `customer_login_ip:${clientIp}`;
+    const identifierAttemptKey = `customer_login_identifier:${identifierHash}`;
+
+    const [ipAttemptState, identifierAttemptState] = await Promise.all([
+      loadAttemptState(supabase, ipAttemptKey),
+      loadAttemptState(supabase, identifierAttemptKey),
+    ]);
+
+    const isLocked = [ipAttemptState, identifierAttemptState].some(
+      (attemptState) => attemptState?.locked_until && new Date(attemptState.locked_until).getTime() > Date.now(),
+    );
+
+    if (isLocked) {
+      return jsonResponse({
+        success: false,
+        message: LOGIN_LOCKED_MESSAGE,
+      }, 429);
+    }
 
     // Try to find customer by phone or email
     let customer = null;
-    let findError = null;
 
     // First try as phone
     const normalizedPhone = normalizePhone(identifier);
-    const normalizedIdentifier = normalizedPhone.length === 10
-      ? normalizedPhone
-      : normalizeEmail(identifier);
-
 
     if (normalizedPhone.length === 10) {
       const { data, error } = await supabase
@@ -214,7 +289,6 @@ serve(async (req: any) => {
 
       if (error) {
         console.error("[customer-login] phone lookup error:", error);
-        findError = error;
       } else if (data) {
         customer = data;
       }
@@ -231,7 +305,6 @@ serve(async (req: any) => {
 
       if (error) {
         console.error("[customer-login] email lookup error:", error);
-        findError = error;
       } else if (data) {
         customer = data;
       }
@@ -240,9 +313,13 @@ serve(async (req: any) => {
 
     // Customer not found
     if (!customer) {
+      await Promise.all([
+        registerFailedAttempt(supabase, ipAttemptKey, "login_ip"),
+        registerFailedAttempt(supabase, identifierAttemptKey, "login_identifier"),
+      ]);
       return jsonResponse({
         success: false,
-        message: "Invalid email, phone, or password.",
+        message: LOGIN_FAILURE_MESSAGE,
       }, 401);
     }
 
@@ -254,30 +331,28 @@ serve(async (req: any) => {
 
 
     if (!passwordMatches) {
+      await Promise.all([
+        registerFailedAttempt(supabase, ipAttemptKey, "login_ip"),
+        registerFailedAttempt(supabase, identifierAttemptKey, "login_identifier"),
+      ]);
       return jsonResponse({
         success: false,
-        message: "Invalid email, phone, or password.",
+        message: LOGIN_FAILURE_MESSAGE,
       }, 401);
     }
 
-    // Success - return customer profile
-    const signingSecret = Deno.env.get("CUSTOMER_SESSION_SIGNING_SECRET") || "";
-    if (!signingSecret) {
-      console.error("[customer-login] CUSTOMER_SESSION_SIGNING_SECRET is missing");
+    await clearFailedAttempts(supabase, [ipAttemptKey, identifierAttemptKey]);
+
+    let customerSession;
+    try {
+      customerSession = await createCustomerSession(supabase, customer.id, req);
+    } catch (sessionError) {
+      console.error("[customer-login] customer session create failed", sessionError);
       return jsonResponse({
         success: false,
-        message: "Customer session configuration is missing. Please contact support.",
+        message: "Could not start your customer session right now. Please try again.",
       }, 500);
     }
-
-    const customerSession = await createCustomerSessionToken(
-      {
-        id: customer.id,
-        email: customer.email,
-        phone: customer.phone,
-      },
-      signingSecret,
-    );
 
     const response: LoginResponse = {
       success: true,

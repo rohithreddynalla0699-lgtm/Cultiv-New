@@ -2,7 +2,15 @@ import { chromium } from 'playwright';
 import { writeFileSync } from 'node:fs';
 
 const base = 'http://127.0.0.1:5173';
-const ADMIN_OWNER_PIN = process.env.ADMIN_OWNER_PIN ?? '240620';
+const requireEnv = (name) => {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`Missing required environment variable: ${name}`);
+  }
+  return value;
+};
+
+const ADMIN_OWNER_PIN = requireEnv('ADMIN_OWNER_PIN');
 const result = {
   login: {},
   orders: {},

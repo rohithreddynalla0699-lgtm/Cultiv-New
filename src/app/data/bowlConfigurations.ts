@@ -136,8 +136,8 @@ export const BREAKFAST_PRESETS: Record<string, PresetConfig> = Object.fromEntrie
       categoryName: 'Breakfast Bowls',
       mode: 'breakfast',
       defaultSelections: {
-        fruits: item.defaultFruitIds,
-        crunch: item.hasGranolaByDefault ? ['granola'] : [],
+        fruits: [],
+        crunch: [],
         'add-ons': [],
       },
     } satisfies PresetConfig,
@@ -170,9 +170,10 @@ type MenuShape = {
 type BreakfastMetaShape = Record<string, {
   itemId: string;
   title: string;
+  family: string;
   basePrice: number;
   defaultFruitIds: string[];
-  hasGranolaByDefault: boolean;
+  fruitMode: 'fixed' | 'selectable';
 }>;
 
 export function syncPresetCatalogFromMenu(
@@ -214,8 +215,8 @@ export function syncPresetCatalogFromMenu(
       categoryName: 'Breakfast Bowls',
       mode: 'breakfast',
       defaultSelections: {
-        fruits: [...item.defaultFruitIds],
-        crunch: item.hasGranolaByDefault ? ['granola'] : [],
+        fruits: [],
+        crunch: [],
         'add-ons': [],
       },
     };

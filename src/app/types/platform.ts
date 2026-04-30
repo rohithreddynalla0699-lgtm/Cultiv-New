@@ -59,8 +59,10 @@ export interface User {
 }
 
 export interface OrderItemSelection {
-	section: string;
-	choices: string[];
+		section: string;
+		choices: string[];
+		groupIdSnapshot?: string;
+		optionItemIds?: string[];
 }
 
 export interface OrderItem {

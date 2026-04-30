@@ -2,7 +2,11 @@ import { chromium } from 'playwright';
 
 const baseUrl = process.env.CULTIV_BASE_URL ?? 'http://127.0.0.1:5173';
 const STORE_ID = 'store-siddipet';
-const STORE_PIN = process.env.STORE_PIN_SIDDIPET ?? '111111';
+const STORE_PIN = process.env.STORE_PIN_SIDDIPET?.trim();
+
+if (!STORE_PIN) {
+  throw new Error('Missing required environment variable: STORE_PIN_SIDDIPET');
+}
 
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
@@ -36,19 +40,17 @@ log.categoriesVisible = (await page.getByRole('button', { name: /Signature/ }).c
   && (await page.getByRole('button', { name: /Breakfast/ }).count()) > 0
   && (await page.getByRole('button', { name: /Drinks/ }).count()) > 0;
 
+await page.getByTestId('counter-category-breakfast-bowls').click();
+await page.getByRole('heading', { name: 'Banana Chia Yogurt Bowl' }).waitFor({ timeout: 5000 });
 await page.getByRole('button', { name: 'Customize' }).first().click();
-for (let step = 0; step < 8; step += 1) {
-  const nextButton = page.getByRole('button', { name: 'Next' });
-  if (await nextButton.count() === 0 || !(await nextButton.isVisible())) {
-    break;
-  }
-  await nextButton.click();
-}
+await page.getByRole('button', { name: 'Next' }).click();
+await page.getByRole('button', { name: 'Next' }).click();
 await page.getByRole('button', { name: 'Add to Cart' }).click();
 await page.locator('text=added to cart').first().waitFor({ timeout: 5000 });
-log.customizedItemAdded = (await page.locator('text=Everyday').count()) > 0;
+log.customizedItemAdded = (await page.locator('text=Banana Chia Yogurt Bowl').count()) > 0;
 
 await page.getByTestId('counter-category-drinks-juices').click();
+await page.getByRole('heading', { name: 'Water Bottle' }).waitFor({ timeout: 5000 });
 await page.getByRole('button', { name: 'Add' }).first().click();
 
 await page.getByPlaceholder('10-digit phone').fill('9876543210');

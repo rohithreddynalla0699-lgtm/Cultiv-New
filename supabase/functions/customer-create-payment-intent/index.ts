@@ -2,6 +2,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno remote imports
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.43.0";
+import { canonicalizeOrderPricing } from "../_shared/canonical-pricing.ts";
+import { verifyAndLoadCustomerSession } from "../_shared/customer-session.ts";
 
 declare const Deno: any;
 
@@ -33,20 +35,12 @@ interface CreatePaymentIntentRequest {
   items?: Array<Record<string, unknown>>;
 }
 
-type CheckoutGateway = "razorpay";
+type CheckoutGateway = "razorpay" | "mock";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-interface CustomerSessionPayload {
-  customer_id: string;
-  email: string;
-  phone: string;
-  iat: number;
-  exp: number;
-  iss: string;
-}
-
 const DEBUG_LOGS = Deno.env.get("CHECKOUT_DEBUG_LOGS") === "true";
+const NON_PRODUCTION_ENV_VALUES = new Set(["development", "dev", "staging", "stage", "test", "local"]);
 
 const logStage = (stage: string, details?: Record<string, unknown>) => {
   if (!DEBUG_LOGS) {
@@ -105,77 +99,18 @@ const createSafeReceipt = (idempotencyKey: string): string => {
   return receipt.slice(0, 40);
 };
 
-const toBase64Url = (value: string | Uint8Array): string => {
-  const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
+const getRuntimeEnvironment = (): string => (
+  Deno.env.get("APP_ENV")
+  || Deno.env.get("ENVIRONMENT")
+  || Deno.env.get("NODE_ENV")
+  || Deno.env.get("VERCEL_ENV")
+  || "development"
+).trim().toLowerCase();
+
+const ensureMockProviderAllowed = () => {
+  if (getRuntimeEnvironment() === "production" || !NON_PRODUCTION_ENV_VALUES.has(getRuntimeEnvironment())) {
+    throw new Error("Mock payment provider is not allowed in production.");
   }
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-};
-
-const fromBase64Url = (value: string): Uint8Array => {
-  const padded = value.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((value.length + 3) % 4);
-  const decoded = atob(padded);
-  const bytes = new Uint8Array(decoded.length);
-  for (let index = 0; index < decoded.length; index += 1) {
-    bytes[index] = decoded.charCodeAt(index);
-  }
-  return bytes;
-};
-
-const constantTimeEqual = (left: string, right: string): boolean => {
-  const leftBytes = new TextEncoder().encode(left);
-  const rightBytes = new TextEncoder().encode(right);
-  if (leftBytes.length !== rightBytes.length) {
-    return false;
-  }
-
-  let diff = 0;
-  for (let index = 0; index < leftBytes.length; index += 1) {
-    diff |= leftBytes[index] ^ rightBytes[index];
-  }
-  return diff === 0;
-};
-
-const verifyCustomerSessionToken = async (
-  token: string,
-  signingSecret: string,
-): Promise<CustomerSessionPayload | null> => {
-  const [payloadPart, signaturePart] = token.split(".");
-  if (!payloadPart || !signaturePart) {
-    return null;
-  }
-
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(signingSecret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const signatureBuffer = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(payloadPart),
-  );
-  const expectedSignature = toBase64Url(new Uint8Array(signatureBuffer));
-
-  if (!constantTimeEqual(expectedSignature, signaturePart)) {
-    return null;
-  }
-
-  const payloadText = new TextDecoder().decode(fromBase64Url(payloadPart));
-  const payload = JSON.parse(payloadText) as Partial<CustomerSessionPayload>;
-  if (!payload?.customer_id || !payload?.exp || payload?.iss !== "cultiv-customer-auth") {
-    return null;
-  }
-
-  if (Math.floor(Date.now() / 1000) >= payload.exp) {
-    return null;
-  }
-
-  return payload as CustomerSessionPayload;
 };
 
 const createRazorpayOrder = async (
@@ -237,12 +172,25 @@ const createRazorpayOrder = async (
   };
 };
 
+const createMockGatewayOrder = (amountPaise: number, receipt: string): { orderId: string; currency: string; amountPaise: number } => {
+  ensureMockProviderAllowed();
+  return {
+    orderId: `mock_order_${receipt.slice(-8)}_${crypto.randomUUID().replace(/-/g, "").slice(0, 10)}`,
+    currency: "INR",
+    amountPaise,
+  };
+};
+
 const resolveCheckoutGateway = (): CheckoutGateway => {
   const configured = (Deno.env.get("PAYMENT_PROVIDER") || "").trim().toLowerCase();
-  if (configured !== "razorpay") {
-    throw new Error("Online payment gateway is not configured.");
+  if (configured === "razorpay") {
+    return "razorpay";
   }
-  return "razorpay";
+  if (configured === "mock") {
+    ensureMockProviderAllowed();
+    return "mock";
+  }
+  throw new Error("PAYMENT_PROVIDER must be set to razorpay or mock.");
 };
 
 serve(async (req: any) => {
@@ -265,11 +213,11 @@ serve(async (req: any) => {
           return "unconfigured";
         }
       })(),
+      runtimeEnvironment: getRuntimeEnvironment(),
       hasSupabaseUrl: Boolean(Deno.env.get("SUPABASE_URL")),
       hasServiceRoleKey: Boolean(Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")),
       hasRazorpayKeyId: Boolean(Deno.env.get("RAZORPAY_KEY_ID")),
       hasRazorpayKeySecret: Boolean(Deno.env.get("RAZORPAY_KEY_SECRET")),
-      hasCustomerSessionSigningSecret: Boolean(Deno.env.get("CUSTOMER_SESSION_SIGNING_SECRET")),
     });
 
     if (req.method !== "POST") {
@@ -290,21 +238,20 @@ serve(async (req: any) => {
       return errorResponse(401, "customer_session_missing", "Customer session is required for checkout.");
     }
 
-    const customerSessionSigningSecret = Deno.env.get("CUSTOMER_SESSION_SIGNING_SECRET") || "";
-    if (!customerSessionSigningSecret) {
-      return errorResponse(500, "customer_session_invalid", "Customer session configuration is missing on server.");
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL") || "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "",
+    );
+
+    const verifiedSession = await verifyAndLoadCustomerSession(supabase, customerSessionToken);
+    if (!verifiedSession.valid) {
+      return errorResponse(401, "customer_session_invalid", verifiedSession.error);
     }
 
-    const verifiedSession = await verifyCustomerSessionToken(customerSessionToken, customerSessionSigningSecret);
-    if (!verifiedSession) {
-      return errorResponse(401, "customer_session_invalid", "Customer session token is invalid or expired.");
-    }
-
-    const resolvedCustomerIdFromSession = verifiedSession.customer_id;
+    const resolvedCustomerIdFromSession = verifiedSession.session.customer_id;
     logStage("customer_session_verified", {
       customerIdResolved: Boolean(resolvedCustomerIdFromSession),
       customerIdPrefix: resolvedCustomerIdFromSession.slice(0, 8),
-      issuedBy: verifiedSession.iss,
     });
 
     if (!idempotencyKey) {
@@ -324,14 +271,6 @@ serve(async (req: any) => {
     if (paymentMethod !== "upi" && paymentMethod !== "card") {
       return errorResponse(400, "invalid_payload", "Only UPI and Card are allowed for website checkout.", {
         paymentMethod,
-      });
-    }
-
-    const amount = Number(order.total_amount ?? 0);
-    logStage("validated_amount", { amount });
-    if (!Number.isFinite(amount) || amount <= 0) {
-      return errorResponse(400, "invalid_payload", "Invalid payable amount.", {
-        amount,
       });
     }
 
@@ -355,11 +294,6 @@ serve(async (req: any) => {
     const storeIdRaw = String(order.store_id).trim();
     let resolvedStoreId = storeIdRaw;
     let storeIdSource: "uuid" | "slug-city" | "invalid" = "uuid";
-
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL") || "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "",
-    );
 
     if (!UUID_PATTERN.test(storeIdRaw)) {
       const citySlug = storeIdRaw.startsWith("store-") ? storeIdRaw.slice("store-".length).trim().toLowerCase() : "";
@@ -454,6 +388,29 @@ serve(async (req: any) => {
       return errorResponse(403, "unauthorized_customer_checkout", "Customer account is inactive for checkout.");
     }
 
+    let canonicalPricing;
+    try {
+      canonicalPricing = await canonicalizeOrderPricing(supabase, {
+        items,
+        requestedSubtotal: order.subtotal_amount,
+        requestedDiscount: order.discount_amount,
+        requestedTaxAmount: order.tax_amount,
+        requestedTipAmount: order.tip_amount,
+        requestedTipPercentage: order.tip_percentage,
+        requestedTotal: order.total_amount,
+      });
+    } catch (error) {
+      return errorResponse(400, "invalid_payload", error instanceof Error ? error.message : "Invalid checkout totals.");
+    }
+
+    const amount = canonicalPricing.total;
+    logStage("validated_amount", { amount });
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return errorResponse(400, "invalid_payload", "Invalid payable amount.", {
+        amount,
+      });
+    }
+
     const ordersDependencyProbe = await supabase
       .from("orders")
       .select("payment_status, paid_at, payment_reference, payment_gateway")
@@ -471,7 +428,7 @@ serve(async (req: any) => {
     });
     const { data: existing, error: existingError } = await supabase
       .from("customer_payments")
-      .select("payment_id, status, order_id, gateway, gateway_order_id")
+      .select("payment_id, status, order_id, gateway, gateway_order_id, amount")
       .eq("idempotency_key", idempotencyKey)
       .maybeSingle();
 
@@ -489,7 +446,7 @@ serve(async (req: any) => {
     }
 
     if (existing?.payment_id) {
-      if (existing.gateway !== 'razorpay') {
+      if (existing.gateway !== 'razorpay' && existing.gateway !== 'mock') {
         return errorResponse(503, "payment_gateway_unavailable", "Online payment gateway is not configured.");
       }
 
@@ -510,13 +467,13 @@ serve(async (req: any) => {
         gateway: existing.gateway,
         gatewayOrderId: existing.gateway_order_id,
         gatewayKeyId: existing.gateway === "razorpay" ? razorpayKeyId : undefined,
-        amount,
-        amountPaise: toPaiseAmount(order.total_amount ?? amount),
+        amount: Number(existing.amount ?? amount),
+        amountPaise: toPaiseAmount(existing.amount ?? amount),
         currency: "INR",
       }, 200);
     }
 
-    const amountPaise = toPaiseAmount(order.total_amount ?? amount);
+    const amountPaise = toPaiseAmount(amount);
     if (!Number.isFinite(amountPaise) || amountPaise <= 0) {
       return errorResponse(400, "invalid_payload", "Amount is invalid after currency conversion.", {
         amount,
@@ -529,18 +486,27 @@ serve(async (req: any) => {
       customer_id: customerId,
       user_id: null,
       store_id: resolvedStoreId,
+      subtotal_amount: canonicalPricing.subtotal,
+      discount_amount: canonicalPricing.discount,
+      tax_amount: canonicalPricing.taxAmount,
+      tip_amount: canonicalPricing.tipAmount,
+      tip_percentage: canonicalPricing.tipPercentage,
+      total_amount: canonicalPricing.total,
     };
 
     const receipt = createSafeReceipt(idempotencyKey);
     let gatewayOrder: { orderId: string; currency: string; amountPaise: number };
 
     try {
-      gatewayOrder = await createRazorpayOrder(razorpayKeyId, razorpayKeySecret, amountPaise, receipt);
+      gatewayOrder = checkoutGateway === "razorpay"
+        ? await createRazorpayOrder(razorpayKeyId, razorpayKeySecret, amountPaise, receipt)
+        : createMockGatewayOrder(amountPaise, receipt);
     } catch (error) {
-      logStage("razorpay_order_create_failed", {
+      logStage("gateway_order_create_failed", {
         message: error instanceof Error ? error.message : String(error),
+        gateway: checkoutGateway,
       });
-      return errorResponse(502, "razorpay_order_create_failed", "Could not create payment order with gateway.", {
+      return errorResponse(502, "gateway_order_create_failed", "Could not create payment order with gateway.", {
         reason: error instanceof Error ? error.message : "unknown_gateway_error",
       });
     }
@@ -567,9 +533,10 @@ serve(async (req: any) => {
         gateway_order_id: gatewayOrder.orderId,
         status: "initiated",
         order_payload: canonicalOrderPayload,
-        items_payload: items,
+        items_payload: canonicalPricing.items,
         metadata: {
           provider: checkoutGateway,
+          taxable_subtotal: canonicalPricing.taxableSubtotal,
         },
       })
       .select("payment_id")

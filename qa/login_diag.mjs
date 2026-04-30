@@ -1,5 +1,11 @@
 import { chromium } from 'playwright';
 
+const STORE_TEST_PIN = process.env.STORE_TEST_PIN?.trim();
+
+if (!STORE_TEST_PIN) {
+  throw new Error('Missing required environment variable: STORE_TEST_PIN');
+}
+
 const browser = await chromium.launch({ headless: true });
 const page = await browser.newPage();
 await page.goto('http://127.0.0.1:5173/operations', { waitUntil: 'domcontentloaded' });
@@ -7,7 +13,7 @@ await page.evaluate(() => localStorage.clear());
 await page.reload({ waitUntil: 'domcontentloaded' });
 
 await page.getByTestId('mode-store').click();
-await page.getByTestId('store-pin-input').fill('345678');
+await page.getByTestId('store-pin-input').fill(STORE_TEST_PIN);
 await page.getByTestId('store-login-button').click();
 await page.waitForTimeout(1500);
 

@@ -301,10 +301,21 @@ export interface InternalPosCheckoutItem {
   category: string;
   quantity: number;
   price: number;
-  selections: Array<{
-    section: string;
-    choices: string[];
-  }>;
+  selections: Array<
+    | {
+      section: string;
+      choices: string[];
+      groupIdSnapshot?: string;
+      optionItemIds?: string[];
+    }
+    | {
+      option_item_id?: string | null;
+      group_id_snapshot?: string;
+      group_name_snapshot?: string;
+      option_name?: string;
+      price_modifier?: number;
+    }
+  >;
 }
 
 export interface InternalPosCheckoutOrder {
@@ -821,6 +832,7 @@ export async function createInternalPosOrder(params: {
   paymentReference?: string;
   subtotal: number;
   taxAmount: number;
+  tipPercentage: number;
   tipAmount: number;
   total: number;
   items: InternalPosCheckoutItem[];

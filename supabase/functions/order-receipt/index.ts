@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { verifyAndLoadCustomerSession } from '../_shared/customer-session.ts';
 
 type RoleKey = 'owner' | 'admin' | 'store';
 type ScopeType = 'global' | 'store' | 'owner' | 'admin';
@@ -74,69 +75,6 @@ const logError = (event: string, details?: Record<string, unknown>) => {
   console.error(`[order-receipt] ${event}`, details ?? {});
 };
 
-const fromBase64Url = (value: string): Uint8Array => {
-  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
-  const padding = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4));
-  const binary = atob(`${normalized}${padding}`);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return bytes;
-};
-
-const constantTimeEqual = (left: Uint8Array, right: Uint8Array): boolean => {
-  if (left.length !== right.length) return false;
-  let diff = 0;
-  for (let index = 0; index < left.length; index += 1) {
-    diff |= left[index] ^ right[index];
-  }
-  return diff === 0;
-};
-
-const verifyCustomerSessionToken = async (token: string, signingSecret: string) => {
-  const parts = token.split('.');
-  if (parts.length !== 2) return null;
-
-  const [payloadBase64, signatureBase64] = parts;
-
-  try {
-    const key = await crypto.subtle.importKey(
-      'raw',
-      new TextEncoder().encode(signingSecret),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign'],
-    );
-
-    const signatureBuffer = await crypto.subtle.sign(
-      'HMAC',
-      key,
-      new TextEncoder().encode(payloadBase64),
-    );
-
-    const expectedSignature = new Uint8Array(signatureBuffer);
-    const providedSignature = fromBase64Url(signatureBase64);
-
-    if (!constantTimeEqual(expectedSignature, providedSignature)) {
-      return null;
-    }
-
-    const payloadJson = new TextDecoder().decode(fromBase64Url(payloadBase64));
-    const payload = JSON.parse(payloadJson) as { customer_id?: string; exp?: number; iss?: string };
-
-    if (!payload.customer_id || payload.iss !== 'cultiv-customer-auth') {
-      return null;
-    }
-    if (!payload.exp || payload.exp * 1000 <= Date.now()) {
-      return null;
-    }
-    return payload;
-  } catch {
-    return null;
-  }
-};
-
 const verifyAndLoadInternalSession = async (
   db: ReturnType<typeof createClient>,
   token: string,
@@ -178,8 +116,6 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-    const customerSessionSigningSecret = Deno.env.get('CUSTOMER_SESSION_SIGNING_SECRET') || '';
-
     if (!supabaseUrl || !serviceRoleKey) {
       logError('server_misconfigured', {
         hasSupabaseUrl: Boolean(supabaseUrl),
@@ -249,20 +185,16 @@ Deno.serve(async (req) => {
         scopeStoreId: internalScopeStoreId,
       });
     } else {
-      if (!customerSessionSigningSecret) {
-        log('server_misconfigured_missing_customer_secret', { orderId });
-      return json(500, { error: 'Server is not configured for customer receipt access.' });
-    }
-
-      const customerSession = await verifyCustomerSessionToken(customerSessionToken, customerSessionSigningSecret);
-      if (!customerSession) {
+      const customerSession = await verifyAndLoadCustomerSession(db, customerSessionToken);
+      if (!customerSession.valid) {
         log('customer_auth_failed', {
           orderId,
           customerSessionTokenPreview: redactToken(customerSessionToken),
+          error: customerSession.error,
         });
-        return json(401, { error: 'Customer session token is invalid or expired.' });
+        return json(401, { error: customerSession.error });
       }
-      allowedCustomerId = customerSession.customer_id ?? null;
+      allowedCustomerId = customerSession.session.customer_id ?? null;
       authContext = 'customer';
       log('customer_auth_succeeded', { orderId, allowedCustomerId });
     }

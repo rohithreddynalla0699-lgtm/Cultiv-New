@@ -12,9 +12,8 @@ import {
   BREAKFAST_CUSTOMIZE_STEPS,
   BREAKFAST_SECTION_ITEM_IDS,
   getAllowedOptionGroupIdsForItem,
-  getBreakfastFamilyFromItemId,
+  getBreakfastCustomizationPolicy,
   MENU_CATEGORIES,
-  resolveBreakfastPriceFromFruitSelections,
   type BuilderStep,
   type FoodItem,
 } from '../data/menuData';
@@ -127,11 +126,17 @@ const CATEGORY_PRIORITY = [
 ] as const;
 
 const CATEGORY_INDEX = Object.fromEntries(MENU_CATEGORIES.map((category) => [category.slug, category]));
-const CUSTOMER_ONLINE_CHECKOUT_ENABLED = false;
+const env = import.meta as unknown as { env?: Record<string, string | undefined> };
+const CUSTOMER_ONLINE_CHECKOUT_ENABLED = import.meta.env.VITE_CUSTOMER_ONLINE_CHECKOUT_ENABLED === 'true';
 const ONLINE_CHECKOUT_DISABLED_MESSAGE = 'Online checkout is not live yet. Please place your order at the store.';
+const MOCK_PAYMENT_OUTCOME = (env.env?.VITE_MOCK_PAYMENT_OUTCOME || 'succeeded').trim().toLowerCase();
 const STEP_BY_ID = Object.fromEntries(
   [...BOWL_BUILDER_STEPS, ...BREAKFAST_CUSTOMIZE_STEPS].map((step) => [step.id, step]),
 );
+
+function requiresBreakfastCustomization(itemId: string) {
+  return getBreakfastCustomizationPolicy(itemId)?.fruitMode === 'selectable';
+}
 
 interface MenuSection {
   id: string;
@@ -665,7 +670,8 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
     const allowedGroupIds = getAllowedOptionGroupIdsForItem(customizing.itemId);
 
     if (customizing.mode === 'breakfast') {
-      const breakfastSteps = BREAKFAST_CUSTOMIZE_STEPS;
+      const policy = getBreakfastCustomizationPolicy(customizing.itemId);
+      const breakfastSteps = BREAKFAST_CUSTOMIZE_STEPS.filter((step) => policy?.editableGroupIds.includes(step.id) ?? true);
       if (!allowedGroupIds || allowedGroupIds.length === 0) {
         return breakfastSteps;
       }
@@ -720,18 +726,6 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
       }
     }
 
-    if (customizing.mode === 'breakfast') {
-      const family = getBreakfastFamilyFromItemId(customizing.itemId);
-      if (family) {
-        const pricing = resolveBreakfastPriceFromFruitSelections(family, customizing.selections.fruits ?? []);
-        return {
-          title: customizing.title,
-          basePrice: pricing.basePrice,
-          breakfastPower: pricing.isPower,
-        };
-      }
-    }
-
     return {
       title: customizing.title,
       basePrice: customizing.basePrice,
@@ -742,6 +736,11 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
     + customizeIngredients.reduce((sum, ingredient) => sum + ingredient.price, 0);
 
   const addToCart = (item: FoodItem) => {
+    if (requiresBreakfastCustomization(item.id)) {
+      openCustomize(item);
+      return;
+    }
+
     const preset = PRESETS_BY_ITEM_ID[item.id];
     if (preset) {
       const selections = mapSelectionsToLabels(preset.defaultSelections);
@@ -1132,9 +1131,53 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
     });
   };
 
+  const runMockCheckout = async (intent: CheckoutPaymentIntent): Promise<PaymentLaunchResult> => {
+    if (!intent.gatewayOrderId) {
+      return {
+        outcome: 'failed',
+        message: 'Mock payment provider did not return an order id. Please retry.',
+      };
+    }
+
+    await new Promise((resolve) => window.setTimeout(resolve, 350));
+
+    if (MOCK_PAYMENT_OUTCOME === 'failed') {
+      return {
+        outcome: 'failed',
+        message: 'Mock payment failed.',
+        payload: {
+          gatewayOrderId: intent.gatewayOrderId,
+          gatewayPaymentId: `mock_payment_${intent.paymentId.slice(0, 12)}`,
+        },
+      };
+    }
+
+    if (MOCK_PAYMENT_OUTCOME === 'cancelled') {
+      return {
+        outcome: 'cancelled',
+        message: 'Mock payment was cancelled.',
+        payload: {
+          gatewayOrderId: intent.gatewayOrderId,
+        },
+      };
+    }
+
+    return {
+      outcome: 'succeeded',
+      payload: {
+        gatewayOrderId: intent.gatewayOrderId,
+        gatewayPaymentId: `mock_payment_${intent.paymentId.slice(0, 12)}`,
+      },
+    };
+  };
+
   const launchCheckoutPayment = async (intent: CheckoutPaymentIntent, orderInput: PlaceOrderInput): Promise<PaymentLaunchResult> => {
     void orderInput;
     const provider = resolveCheckoutPaymentProvider(intent.gateway);
+    if (provider === 'mock') {
+      return runMockCheckout(intent);
+    }
+
     if (provider !== 'razorpay') {
       throw new Error('Online payment gateway is not configured yet. Please use in-store payment for now.');
     }
@@ -1436,13 +1479,17 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
                   <div className="mb-5 rounded-2xl border border-primary/12 bg-white p-4">
                     <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-primary/65">Customization</p>
                     <h2 className="mt-2 text-2xl font-semibold">{customizeResolved?.title ?? customizing.title}</h2>
-                    {customizing.mode === 'breakfast' && customizeResolved?.breakfastPower ? (
-                      <p className="mt-1.5 inline-flex rounded-full bg-primary/12 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">
-                        Power Bowl
-                      </p>
-                    ) : null}
                     <p className="mt-1 text-sm text-foreground/62">Step {customizing.stepIndex + 1} of {customizeSteps.length}</p>
                     {customizing.servesLabel ? <p className="mt-1 text-xs text-foreground/54">{customizing.servesLabel}</p> : null}
+                    {customizing.mode === 'breakfast' && getBreakfastCustomizationPolicy(customizing.itemId)?.fruitMode === 'fixed' ? (
+                      <p className="mt-1 text-xs font-medium text-foreground/56">
+                        Includes {getBreakfastCustomizationPolicy(customizing.itemId)?.fixedFruitIds.map((fruitId) =>
+                          BREAKFAST_CUSTOMIZE_STEPS
+                            .find((step) => step.id === 'fruits')
+                            ?.ingredients.find((ingredient) => ingredient.id === fruitId)?.name ?? fruitId,
+                        ).join(', ')}.
+                      </p>
+                    ) : null}
                   </div>
 
                   {customizeStep ? (

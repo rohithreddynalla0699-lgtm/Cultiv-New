@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { verifyAndLoadCustomerSession } from '../_shared/customer-session.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -19,86 +20,6 @@ const json = (status: number, payload: Record<string, unknown>) =>
 
 const normalizePhone = (value: string | null | undefined) => String(value ?? '').replace(/\D/g, '').slice(-10);
 const normalizeEmail = (value: string | null | undefined) => String(value ?? '').trim().toLowerCase();
-
-const fromBase64Url = (value: string): Uint8Array => {
-  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
-  const padding = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4));
-  const binary = atob(`${normalized}${padding}`);
-  const bytes = new Uint8Array(binary.length);
-
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-
-  return bytes;
-};
-
-const constantTimeEqual = (left: Uint8Array, right: Uint8Array): boolean => {
-  if (left.length !== right.length) {
-    return false;
-  }
-
-  let diff = 0;
-  for (let index = 0; index < left.length; index += 1) {
-    diff |= left[index] ^ right[index];
-  }
-
-  return diff === 0;
-};
-
-const verifyCustomerSessionToken = async (token: string, signingSecret: string) => {
-  const parts = token.split('.');
-  if (parts.length !== 2) {
-    return null;
-  }
-
-  const [payloadBase64, signatureBase64] = parts;
-
-  try {
-    const key = await crypto.subtle.importKey(
-      'raw',
-      new TextEncoder().encode(signingSecret),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign'],
-    );
-
-    const signatureBuffer = await crypto.subtle.sign(
-      'HMAC',
-      key,
-      new TextEncoder().encode(payloadBase64),
-    );
-
-    const expectedSignature = new Uint8Array(signatureBuffer);
-    const providedSignature = fromBase64Url(signatureBase64);
-
-    if (!constantTimeEqual(expectedSignature, providedSignature)) {
-      return null;
-    }
-
-    const payloadJson = new TextDecoder().decode(fromBase64Url(payloadBase64));
-    const payload = JSON.parse(payloadJson) as {
-      customer_id?: string;
-      exp?: number;
-      iss?: string;
-      email?: string;
-      phone?: string;
-    };
-
-    if (!payload.customer_id || payload.iss !== 'cultiv-customer-auth') {
-      return null;
-    }
-
-    if (!payload.exp || payload.exp * 1000 <= Date.now()) {
-      return null;
-    }
-
-    return payload;
-  } catch (error) {
-    console.error('[customer-claim-orders] token verification failed', error);
-    return null;
-  }
-};
 
 const loadEligibleGuestOrders = async (
   db: ReturnType<typeof createClient>,
@@ -160,9 +81,7 @@ Deno.serve(async (req) => {
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  const customerSessionSigningSecret = Deno.env.get('CUSTOMER_SESSION_SIGNING_SECRET') || '';
-
-  if (!supabaseUrl || !serviceRoleKey || !customerSessionSigningSecret) {
+  if (!supabaseUrl || !serviceRoleKey) {
     return json(500, { success: false, error: 'Server is not configured.' });
   }
 
@@ -180,19 +99,19 @@ Deno.serve(async (req) => {
     return json(400, { success: false, error: 'customerSessionToken is required.' });
   }
 
-  const verifiedSession = await verifyCustomerSessionToken(customerSessionToken, customerSessionSigningSecret);
-  if (!verifiedSession?.customer_id) {
-    return json(401, { success: false, error: 'Customer session token is invalid or expired.' });
-  }
-
   const db = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
+  const verifiedSession = await verifyAndLoadCustomerSession(db, customerSessionToken);
+  if (!verifiedSession.valid) {
+    return json(401, { success: false, error: verifiedSession.error });
+  }
+
   const { data: customer, error: customerError } = await db
     .from('customers')
     .select('id, full_name, email, phone, is_active')
-    .eq('id', verifiedSession.customer_id)
+    .eq('id', verifiedSession.session.customer_id)
     .maybeSingle();
 
   if (customerError) {
@@ -204,8 +123,8 @@ Deno.serve(async (req) => {
     return json(401, { success: false, error: 'Customer account is unavailable.' });
   }
 
-  const normalizedPhone = normalizePhone(customer.phone ?? verifiedSession.phone);
-  const normalizedEmail = normalizeEmail(customer.email ?? verifiedSession.email);
+  const normalizedPhone = normalizePhone(customer.phone);
+  const normalizedEmail = normalizeEmail(customer.email);
 
   if (!normalizedPhone && !normalizedEmail) {
     return json(400, { success: false, error: 'Customer account does not have a verified claimable contact value.' });
