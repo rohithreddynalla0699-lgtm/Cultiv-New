@@ -26,7 +26,27 @@ const INTERNAL_PAYMENTS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1
 const INTERNAL_CREATE_POS_ORDER_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-create-pos-order`;
 const INTERNAL_REPORTS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-reports`;
 const INTERNAL_UPDATE_CREDENTIALS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-update-credentials`;
-const INTERNAL_MANAGE_OPERATIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-manage-operations`;
+
+const INTERNAL_LOGOUT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-logout`;
+
+export async function internalLogout(internalSessionToken: string): Promise<{ success: boolean }> {
+  try {
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+    await fetch(INTERNAL_LOGOUT_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: anonKey,
+        'x-internal-session-token': internalSessionToken,
+      },
+    });
+    // Always returns { success: true }
+    return { success: true };
+  } catch {
+    // Always return success for idempotency
+    return { success: true };
+  }
+}
 
 export interface InternalLoginResponse {
   userId: string;

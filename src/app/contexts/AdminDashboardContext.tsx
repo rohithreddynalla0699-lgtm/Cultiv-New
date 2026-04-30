@@ -537,11 +537,21 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     return { success: true, message: `${store.name} workspace is ready.` };
   };
 
-  const logoutInternalAccess = () => {
-    localStorage.removeItem(STORAGE_KEYS.session);
-    writeStorage(STORAGE_KEYS.activeStoreScope, 'all');
-    setSession(null);
-    setStoredScope('all');
+  const logoutInternalAccess = async () => {
+    try {
+      const sessionToken = session?.internalSessionToken;
+      if (sessionToken) {
+        // Call backend logout, but always clear local state regardless of result
+        await import('../lib/internalOpsApi').then(({ internalLogout }) => internalLogout(sessionToken));
+      }
+    } catch {
+      // Ignore errors, always clear local state
+    } finally {
+      localStorage.removeItem(STORAGE_KEYS.session);
+      writeStorage(STORAGE_KEYS.activeStoreScope, 'all');
+      setSession(null);
+      setStoredScope('all');
+    }
   };
 
   const permissions = useMemo<AdminPermissions>(() => {
