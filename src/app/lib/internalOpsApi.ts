@@ -364,6 +364,16 @@ export interface InternalPosCheckoutResponse {
   payment: InternalPosPaymentRecord;
 }
 
+export type InternalPosCheckoutErrorCode =
+  | 'INVALID_SESSION'
+  | 'MISSING_PERMISSION'
+  | 'STORE_SCOPE_DENIED'
+  | 'INVALID_PAYLOAD'
+  | 'PRICING_MISMATCH'
+  | 'ORDER_CREATION_FAILED'
+  | 'PAYMENT_RECORD_FAILED'
+  | 'UNKNOWN_ERROR';
+
 export interface InternalReportsSummary {
   totalRevenue: number;
   todayRevenue: number;
@@ -971,10 +981,10 @@ export async function createInternalPosOrder(params: {
   tipAmount: number;
   total: number;
   items: InternalPosCheckoutItem[];
-}): Promise<{ data: InternalPosCheckoutResponse | null; error: string | null }> {
+}): Promise<{ data: InternalPosCheckoutResponse | null; error: string | null; errorCode: InternalPosCheckoutErrorCode | null }> {
   const paymentMethod = normalizeInternalPosPaymentMethod(params.paymentMethod);
   if (!paymentMethod) {
-    return { data: null, error: 'paymentMethod must be cash, upi, or card.' };
+    return { data: null, error: 'paymentMethod must be cash, upi, or card.', errorCode: 'INVALID_PAYLOAD' };
   }
 
   const payload = {
@@ -982,11 +992,46 @@ export async function createInternalPosOrder(params: {
     paymentMethod,
   };
 
-  return postInternal<InternalPosCheckoutResponse>(
-    INTERNAL_CREATE_POS_ORDER_URL,
-    payload,
-    'Could not complete POS checkout.'
-  );
+  try {
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+    const response = await fetch(INTERNAL_CREATE_POS_ORDER_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const rawPayload = (await response.json()) as Record<string, unknown>;
+
+    if (!response.ok) {
+      const message = typeof rawPayload.error === 'string' ? rawPayload.error : 'Could not complete POS checkout.';
+      const errorCode = typeof rawPayload.code === 'string'
+        ? rawPayload.code as InternalPosCheckoutErrorCode
+        : 'UNKNOWN_ERROR';
+
+      return {
+        data: null,
+        error: message,
+        errorCode,
+      };
+    }
+
+    return {
+      data: rawPayload as unknown as InternalPosCheckoutResponse,
+      error: null,
+      errorCode: null,
+    };
+  } catch {
+    return {
+      data: null,
+      error: 'Network error. Please try again.',
+      errorCode: 'UNKNOWN_ERROR',
+    };
+  }
 }
 
 export async function listInternalStoreCredentialTargets(params: {

@@ -54,6 +54,7 @@ export function OrderDetailScreen() {
 
   const { data: receiptData, isLoading: receiptLoading, error: receiptError } = useReceiptData(order as never, {
     authMode: 'customer',
+    orderId,
   });
 
   const getStoreName = (storeId?: string) => {
@@ -63,15 +64,18 @@ export function OrderDetailScreen() {
   };
 
   const statusLabel = useMemo(() => {
+    if (!order && receiptData?.meta.orderStatus) {
+      return String(receiptData.meta.orderStatus).replace(/_/g, ' ');
+    }
     if (!order) return '';
     return (
       order.statusTimeline?.find((event) => event.status === order.status)?.label ??
       order.status ??
       ''
     );
-  }, [order]);
+  }, [order, receiptData?.meta.orderStatus]);
 
-  const isCancelled = order?.status === 'cancelled';
+  const isCancelled = order?.status === 'cancelled' || receiptData?.meta.orderStatus === 'cancelled';
 
   const statusBadgeClass = useMemo(() => {
     switch (order?.status) {
@@ -91,8 +95,35 @@ export function OrderDetailScreen() {
 
   const sourceLabel = order?.sourceChannel ?? order?.source ?? 'Online';
 
+  const displayCreatedAt = order?.createdAt ?? receiptData?.meta.createdAt ?? '';
+  const displayOrderNumber = receiptData?.meta.orderNumber || (orderId ? orderId.slice(-6) : '—');
+  const displayItems = order
+    ? (order.items ?? []).map((item) => ({
+        key: item.id ?? item.title ?? 'item',
+        title: item.title ?? 'Item',
+        price: Number(item.price ?? 0),
+        quantity: Number(item.quantity ?? 1),
+        modifiers: item.modifiers ?? [],
+      }))
+    : (receiptData?.items ?? []).map((item) => ({
+        key: item.id,
+        title: item.title,
+        price: item.price,
+        quantity: item.quantity,
+        modifiers: item.selections.flatMap((selection) =>
+          selection.choices.map((choice) => ({ label: `${selection.section}: ${choice}` })),
+        ),
+      }));
+
+  const displaySubtotal = Number(order?.subtotal ?? receiptData?.totals.subtotal ?? 0);
+  const displayTax = Number(order?.taxAmount ?? receiptData?.totals.tax ?? 0);
+  const displayTotal = Number(order?.total ?? receiptData?.totals.total ?? 0);
+  const displayCustomer = order?.fullName ?? receiptData?.meta.customerName ?? '—';
+  const displayStore = order?.storeId ? getStoreName(order.storeId) : (receiptData?.business?.storeName ?? 'CULTIV Store');
+  const displayPaymentMethod = order?.paymentMethod ?? receiptData?.meta.paymentMethod ?? '—';
+
   if (!user) return <Navigate to="/" replace />;
-  if (!order) return <Navigate to="/orders" replace />;
+  if (!orderId) return <Navigate to="/orders" replace />;
 
   return (
     <PageReveal className="min-h-screen bg-[radial-gradient(circle_at_top_left,rgba(132,153,106,0.07),transparent_30%),linear-gradient(180deg,#f8f7f3_0%,#f4f3ed_54%,#f8f7f3_100%)] pb-16 pt-28">
@@ -123,14 +154,14 @@ export function OrderDetailScreen() {
                 <div>
                   <div className="mb-1.5 flex flex-wrap items-center gap-3">
                     <h2 className="text-[1.7rem] font-semibold tracking-[-0.035em] text-[#1f2719]">
-                      Order #{getDisplayOrderNumber(order as never)}
+                      Order #{displayOrderNumber}
                     </h2>
                     <span className={`rounded-full px-3 py-1 text-[11px] font-semibold ${statusBadgeClass}`}>
                       {statusLabel}
                     </span>
                   </div>
                   <div className="text-[13px] text-[#6f7866]">
-                    {order.createdAt ? new Date(order.createdAt).toLocaleString() : '—'}
+                    {displayCreatedAt ? new Date(displayCreatedAt).toLocaleString() : '—'}
                   </div>
                 </div>
               </div>
@@ -152,15 +183,13 @@ export function OrderDetailScreen() {
               </h3>
 
               <div className="space-y-3">
-                {(order.items ?? []).map((item, index) => (
+                {displayItems.map((item, index) => (
                   <div
-                    key={item.id ?? `${item.title ?? 'item'}-${index}`}
+                    key={item.key ?? `${item.title ?? 'item'}-${index}`}
                     className="rounded-2xl border border-[#e1e5d8] bg-[#fcfcf8] p-4"
                   >
                     <div className="flex items-center justify-between gap-4">
-                      <span className="text-[15px] font-semibold text-[#1f2719]">
-                        {item.title ?? 'Item'}
-                      </span>
+                      <span className="text-[15px] font-semibold text-[#1f2719]">{item.title ?? 'Item'}</span>
                       <span className="text-[16px] font-semibold text-[#1f2719]">
                         ₹{item.price ?? 0}
                       </span>
@@ -197,17 +226,17 @@ export function OrderDetailScreen() {
 
                 <div className="mb-2 flex justify-between text-[13px] text-[#34402b]">
                   <span className="text-[#6f7866]">Subtotal</span>
-                  <span className="font-medium">₹{order.subtotal ?? 0}</span>
+                  <span className="font-medium">₹{displaySubtotal}</span>
                 </div>
 
                 <div className="mb-2 flex justify-between text-[13px] text-[#34402b]">
                   <span className="text-[#6f7866]">GST</span>
-                  <span className="font-medium">₹{order.taxAmount ?? 0}</span>
+                  <span className="font-medium">₹{displayTax}</span>
                 </div>
 
                 <div className="mt-4 flex justify-between border-t border-[#e1e5d8] pt-4 text-[18px] font-semibold text-[#1f2719]">
                   <span>Total</span>
-                  <span>₹{order.total ?? 0}</span>
+                  <span>₹{displayTotal}</span>
                 </div>
               </div>
 
@@ -219,14 +248,14 @@ export function OrderDetailScreen() {
                 <div className="mb-3 flex justify-between gap-4 text-[13px]">
                   <span className="text-[#6f7866]">Customer</span>
                   <span className="text-right font-medium text-[#25301f]">
-                    {order.fullName ?? '—'}
+                    {displayCustomer}
                   </span>
                 </div>
 
                 <div className="mb-3 flex justify-between gap-4 text-[13px]">
                   <span className="text-[#6f7866]">Store</span>
                   <span className="text-right font-medium text-[#25301f]">
-                    {getStoreName(order.storeId)}
+                    {displayStore}
                   </span>
                 </div>
 
@@ -240,7 +269,7 @@ export function OrderDetailScreen() {
                 <div className="flex justify-between gap-4 text-[13px]">
                   <span className="text-[#6f7866]">Payment</span>
                   <span className="text-right font-medium uppercase text-[#25301f]">
-                    {order.paymentMethod ?? '—'}
+                    {displayPaymentMethod}
                   </span>
                 </div>
               </div>

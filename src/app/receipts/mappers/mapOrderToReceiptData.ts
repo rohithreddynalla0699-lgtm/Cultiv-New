@@ -20,9 +20,12 @@ export function mapOrderToReceiptData(order: Order): ReceiptData {
     title: item.title,
     quantity: Number(item.quantity),
     price: Number(item.price),
+    lineTotal: Number((item.price * item.quantity).toFixed(2)),
     selections: (item.selections || []).map((sel) => ({
       section: sel.section,
-      choices: sel.choices,
+      choices: Array.isArray((sel as any).choices)
+        ? (sel as any).choices
+        : ((sel as any).choice ? [String((sel as any).choice)] : []),
     })),
   }));
 

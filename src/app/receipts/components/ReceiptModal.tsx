@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { X } from 'lucide-react';
 import type { ReceiptData } from '../types/receipt';
 import { Receipt } from './Receipt';
@@ -7,6 +8,7 @@ interface ReceiptModalProps {
   onClose: () => void;
   data: ReceiptData | null;
   onPrint?: () => void;
+  footerContent?: ReactNode;
 }
 
 export function ReceiptModal({
@@ -14,6 +16,7 @@ export function ReceiptModal({
   onClose,
   data,
   onPrint,
+  footerContent,
 }: ReceiptModalProps) {
   if (!open || !data) return null;
 
@@ -37,15 +40,17 @@ export function ReceiptModal({
               </div>
 
               <div className="shrink-0 border-t border-[#EEF2E8] px-3 py-3">
-                <div className="flex justify-center">
-                  <button
-                    type="button"
-                    onClick={onPrint}
-                    className="inline-flex h-[34px] items-center justify-center rounded-full border border-primary/20 px-4 text-[10px] font-semibold text-primary transition-colors hover:bg-primary/5"
-                  >
-                    Print Receipt
-                  </button>
-                </div>
+                {footerContent ?? (
+                  <div className="flex justify-center">
+                    <button
+                      type="button"
+                      onClick={onPrint}
+                      className="inline-flex h-[34px] items-center justify-center rounded-full border border-primary/20 px-4 text-[10px] font-semibold text-primary transition-colors hover:bg-primary/5"
+                    >
+                      Print Receipt
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>

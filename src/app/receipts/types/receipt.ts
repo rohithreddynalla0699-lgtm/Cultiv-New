@@ -10,6 +10,7 @@ export interface ReceiptLineItem {
   title: string;
   quantity: number;
   price: number;
+  lineTotal?: number;
   selections: ReceiptLineSelection[];
 }
 
@@ -25,6 +26,8 @@ export interface ReceiptMeta {
   orderNumber: string;
   orderId: string;
   createdAt: string;
+  orderStatus?: string | null;
+  storeId?: string | null;
   paymentMethod?: string;
   paymentStatus?: string | null;
   paymentReference?: string;

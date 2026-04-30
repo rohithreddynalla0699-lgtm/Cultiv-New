@@ -45,6 +45,29 @@ import {
   normalizePosPhone,
 } from './counter-billing/posCheckout';
 
+const ORDERS_UPDATED_EVENT = 'cultiv:orders-updated';
+const ORDERS_UPDATED_STORAGE_KEY = 'cultiv_orders_updated_at';
+
+function getPosCheckoutErrorMessage(errorCode: string | null, message: string | null) {
+  switch (errorCode) {
+    case 'INVALID_SESSION':
+      return 'Session expired. Please log in again.';
+    case 'MISSING_PERMISSION':
+      return 'You do not have permission to complete POS orders.';
+    case 'STORE_SCOPE_DENIED':
+      return 'This store session cannot complete checkout for the selected store.';
+    case 'PRICING_MISMATCH':
+      return 'Order total changed. Please review cart and try again.';
+    case 'ORDER_CREATION_FAILED':
+    case 'PAYMENT_RECORD_FAILED':
+      return 'Could not save order. Please try again or call manager.';
+    case 'INVALID_PAYLOAD':
+      return message || 'Please review the order details and try again.';
+    default:
+      return message || 'Could not save order. Please try again or call manager.';
+  }
+}
+
 type SupportedCategorySlug =
   | 'signature-bowls'
   | 'breakfast-bowls'
@@ -854,13 +877,21 @@ export function CounterBillingScreen() {
         },
         {
           createPosOrder: async (payload) => {
-            const { data, error } = await createInternalPosOrder({
+            const { data, error, errorCode } = await createInternalPosOrder({
               internalSessionToken: session.internalSessionToken,
               ...payload,
             });
 
             if (error || !data) {
-              throw new Error(error ?? 'POS checkout could not be completed.');
+              if (import.meta.env.DEV) {
+                console.error('[CounterBillingScreen] POS checkout failed', {
+                  errorCode,
+                  error,
+                  payload,
+                });
+              }
+
+              throw new Error(getPosCheckoutErrorMessage(errorCode, error));
             }
 
             return data;
@@ -874,9 +905,16 @@ export function CounterBillingScreen() {
       setCartLines([]);
       setSelectedTipOption('none');
       setCustomTipInput('');
+      window.dispatchEvent(new CustomEvent(ORDERS_UPDATED_EVENT, {
+        detail: {
+          source: 'pos',
+          orderId: createResult.order.id,
+        },
+      }));
+      localStorage.setItem(ORDERS_UPDATED_STORAGE_KEY, new Date().toISOString());
       setMessage({
         tone: 'success',
-        text: `Payment captured for order #${createdOrder.orderNumber}.`,
+        text: `POS order #${createdOrder.orderNumber} was completed successfully.`,
       });
     } catch (error) {
       dispatch({
@@ -949,17 +987,33 @@ export function CounterBillingScreen() {
         checkoutState.receiptDeliveryOption === 'text' ||
         checkoutState.receiptDeliveryOption === 'all'
       ) {
-        await posService.sendReceipt({
+        const deliveryResult = await posService.sendReceipt({
           orderId: checkoutState.createdOrder.orderId,
           option: checkoutState.receiptDeliveryOption,
           phone: checkoutState.customer.phone || undefined,
           email: checkoutState.customer.email.trim() || undefined,
+          authMode: 'internal',
+          internalSessionToken: session?.internalSessionToken ?? null,
         });
+
+        if (!deliveryResult.success && checkoutState.receiptDeliveryOption !== 'all') {
+          throw new Error(getReceiptDeliveryMessage(checkoutState.receiptDeliveryOption, deliveryResult, false));
+        }
+
+        dispatch({
+          type: 'receipt_succeeded',
+          message: getReceiptDeliveryMessage(
+            checkoutState.receiptDeliveryOption,
+            deliveryResult,
+            checkoutState.receiptDeliveryOption === 'all',
+          ),
+        });
+        return;
       }
 
       dispatch({
         type: 'receipt_succeeded',
-        message: getReceiptSuccessMessage(checkoutState.receiptDeliveryOption),
+        message: getReceiptDeliveryMessage(checkoutState.receiptDeliveryOption, null, false),
       });
     } catch (error) {
       dispatch({
@@ -1220,8 +1274,55 @@ function NoticeBanner({
 }
 
 function getReceiptSuccessMessage(option: PosReceiptDeliveryOption) {
-  if (option === 'all') return 'Receipt printed. Digital delivery is not enabled yet.';
-  if (option === 'email') return 'Digital receipt delivery is not enabled yet.';
-  if (option === 'text') return 'Digital receipt delivery is not enabled yet.';
+  if (option === 'all') return 'Receipt printed and digital delivery was attempted.';
+  if (option === 'email') return 'Email receipt sent.';
+  if (option === 'text') return 'Text receipt sent.';
   return 'Print dialog opened. You can print again if needed.';
+}
+
+function getReceiptDeliveryMessage(
+  option: PosReceiptDeliveryOption,
+  deliveryResult: {
+    success: boolean;
+    partial: boolean;
+    code: string;
+    deliveredMethods: string[];
+    failedMethods: string[];
+    message: string;
+  } | null,
+  printedLocally: boolean,
+) {
+  if (!deliveryResult) {
+    return getReceiptSuccessMessage(option);
+  }
+
+  if (option === 'all') {
+    if (!deliveryResult.success) {
+      if (deliveryResult.code === 'DIGITAL_RECEIPT_PROVIDER_NOT_CONFIGURED') {
+        return 'Receipt printed. Digital receipt delivery is not configured yet. Please print the receipt.';
+      }
+      return printedLocally
+        ? 'Receipt printed. Digital delivery could not be completed right now.'
+        : deliveryResult.message;
+    }
+
+    if (deliveryResult.partial) {
+      return printedLocally
+        ? 'Receipt printed. Some digital receipt methods could not be completed.'
+        : 'Some digital receipt methods could not be completed.';
+    }
+
+    return printedLocally
+      ? 'Receipt printed and digital receipt delivery completed.'
+      : 'Digital receipt delivery completed.';
+  }
+
+  if (!deliveryResult.success) {
+    if (deliveryResult.code === 'DIGITAL_RECEIPT_PROVIDER_NOT_CONFIGURED') {
+      return 'Digital receipt delivery is not configured yet. Please print the receipt.';
+    }
+    return deliveryResult.message || 'Receipt could not be sent. Payment is safe. Try again.';
+  }
+
+  return option === 'email' ? 'Email receipt sent.' : 'Text receipt sent.';
 }

@@ -1,26 +1,11 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { verifyAndLoadCustomerSession } from '../_shared/customer-session.ts';
-
-type RoleKey = 'owner' | 'admin' | 'store';
-type ScopeType = 'global' | 'store' | 'owner' | 'admin';
+import { loadAuthorizedReceipt } from '../_shared/receipt-data.ts';
 
 interface OrderReceiptRequest {
   orderId?: string;
   customerSessionToken?: string;
   internalSessionToken?: string;
-}
-
-interface InternalAccessSessionRow {
-  id: string;
-  session_token: string;
-  internal_user_id: string;
-  role_key: RoleKey;
-  scope_type: ScopeType;
-  scope_store_id: string | null;
-  expires_at: string;
-  revoked_at: string | null;
-  last_seen_at: string;
 }
 
 const DEBUG_LOGS = Deno.env.get('RECEIPT_DEBUG_LOGS') === 'true';
@@ -73,28 +58,6 @@ const log = (event: string, details?: Record<string, unknown>) => {
 
 const logError = (event: string, details?: Record<string, unknown>) => {
   console.error(`[order-receipt] ${event}`, details ?? {});
-};
-
-const verifyAndLoadInternalSession = async (
-  db: ReturnType<typeof createClient>,
-  token: string,
-): Promise<{ valid: true; session: InternalAccessSessionRow } | { valid: false; error: string }> => {
-  const { data, error } = await db
-    .from('internal_access_sessions')
-    .select('id, session_token, internal_user_id, role_key, scope_type, scope_store_id, expires_at, revoked_at, last_seen_at')
-    .eq('session_token', token)
-    .single();
-
-  if (error || !data) {
-    return { valid: false, error: 'Internal session not found.' };
-  }
-  if (data.revoked_at !== null) {
-    return { valid: false, error: 'Internal session has been revoked.' };
-  }
-  if (new Date(data.expires_at) <= new Date()) {
-    return { valid: false, error: 'Internal session has expired.' };
-  }
-  return { valid: true, session: data as InternalAccessSessionRow };
 };
 
 Deno.serve(async (req) => {
@@ -159,204 +122,37 @@ Deno.serve(async (req) => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    let allowedCustomerId: string | null = null;
-    let internalScopeStoreId: string | null = null;
-    let authContext: 'customer' | 'internal' = internalSessionToken ? 'internal' : 'customer';
-
-    if (internalSessionToken) {
-      const verifiedInternalSession = await verifyAndLoadInternalSession(db, internalSessionToken);
-      if (!verifiedInternalSession.valid) {
-        log('internal_auth_failed', {
-          orderId,
-          internalSessionTokenPreview: redactToken(internalSessionToken),
-          error: verifiedInternalSession.error,
-        });
-        return json(401, { error: verifiedInternalSession.error });
+    let receiptData;
+    let authContext: 'customer' | 'internal';
+    try {
+      const result = await loadAuthorizedReceipt({
+        db,
+        orderId,
+        customerSessionToken,
+        internalSessionToken,
+      });
+      receiptData = result.receipt;
+      authContext = result.authContext;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not load order receipt.';
+      if (/expired|revoked|not found|required/i.test(message) && /session/i.test(message)) {
+        return json(401, { error: message });
       }
-      internalScopeStoreId = verifiedInternalSession.session.scope_type === 'store'
-        ? verifiedInternalSession.session.scope_store_id
-        : null;
-      authContext = 'internal';
-      log('internal_auth_succeeded', {
-        orderId,
-        internalUserId: verifiedInternalSession.session.internal_user_id,
-        roleKey: verifiedInternalSession.session.role_key,
-        scopeType: verifiedInternalSession.session.scope_type,
-        scopeStoreId: internalScopeStoreId,
-      });
-    } else {
-      const customerSession = await verifyAndLoadCustomerSession(db, customerSessionToken);
-      if (!customerSession.valid) {
-        log('customer_auth_failed', {
-          orderId,
-          customerSessionTokenPreview: redactToken(customerSessionToken),
-          error: customerSession.error,
-        });
-        return json(401, { error: customerSession.error });
+      if (/does not belong|scope does not allow/i.test(message)) {
+        return json(403, { error: message });
       }
-      allowedCustomerId = customerSession.session.customer_id ?? null;
-      authContext = 'customer';
-      log('customer_auth_succeeded', { orderId, allowedCustomerId });
+      if (/Order not found/i.test(message)) {
+        return json(404, { error: message });
+      }
+      return json(500, { error: message });
     }
-
-    const { data: orderRow, error: orderError } = await db
-      .from('orders')
-      .select(`
-        order_id,
-        order_number,
-        order_status,
-        store_id,
-        customer_id,
-        customer_name,
-        customer_phone,
-        customer_email,
-        payment_method,
-        subtotal_amount,
-        discount_amount,
-        tax_amount,
-        tip_amount,
-        total_amount,
-        created_at,
-        order_items (
-          order_item_id,
-          item_name,
-          unit_price,
-          quantity,
-          order_item_selections (
-            group_name_snapshot,
-            option_name
-          )
-        )
-      `)
-      .eq('order_id', orderId)
-      .maybeSingle();
-
-    if (orderError) {
-      logError('order_query_failed', { orderId, authContext, error: serializeError(orderError) });
-      return json(500, { error: 'Could not load order receipt.' });
-    }
-    if (!orderRow) {
-      log('order_not_found', { orderId, authContext });
-      return json(404, { error: 'Order not found.' });
-    }
-    if (allowedCustomerId && orderRow.customer_id !== allowedCustomerId) {
-      log('customer_forbidden_for_order', {
-        orderId,
-        allowedCustomerId,
-        orderCustomerId: orderRow.customer_id,
-      });
-      return json(403, { error: 'This order does not belong to the signed-in customer.' });
-    }
-    if (internalScopeStoreId && orderRow.store_id !== internalScopeStoreId) {
-      log('internal_scope_forbidden_for_order', {
-        orderId,
-        internalScopeStoreId,
-        orderStoreId: orderRow.store_id,
-      });
-      return json(403, { error: 'Store scope does not allow viewing this receipt.' });
-    }
-
-    const { data: storeRow, error: storeError } = await db
-      .from('stores')
-      .select(`
-        id,
-        name,
-        code,
-        phone,
-        email,
-        address_line_1,
-        address_line_2,
-        city,
-        state,
-        postal_code,
-        country,
-        legal_name,
-        gstin
-      `)
-      .eq('id', orderRow.store_id)
-      .maybeSingle();
-
-    if (storeError) {
-      logError('store_query_failed', {
-        orderId,
-        orderStoreId: orderRow.store_id,
-        error: serializeError(storeError),
-      });
-      return json(500, { error: 'Could not load receipt store details.' });
-    }
-
-    const { data: paymentRow, error: paymentError } = await db
-      .from('order_payments')
-      .select('payment_method, status, reference, recorded_at')
-      .eq('order_id', orderId)
-      .maybeSingle();
-
-    if (paymentError) {
-      logError('payment_query_failed', { orderId, error: serializeError(paymentError) });
-      return json(500, { error: 'Could not load receipt payment details.' });
-    }
-
-    const receiptData = {
-      meta: {
-        orderNumber: orderRow.order_number || orderRow.order_id,
-        orderId: orderRow.order_id,
-        createdAt: orderRow.created_at,
-        paymentMethod: paymentRow?.payment_method ?? orderRow.payment_method ?? undefined,
-        paymentStatus: paymentRow?.status ?? null,
-        customerName: orderRow.customer_name ?? undefined,
-        customerPhone: orderRow.customer_phone ?? undefined,
-        customerEmail: orderRow.customer_email ?? undefined,
-        paymentReference: paymentRow?.reference ?? undefined,
-      },
-      items: (orderRow.order_items ?? []).map((item: any) => {
-        const groupedSelections = (item.order_item_selections ?? []).reduce((acc: Record<string, string[]>, selection: any) => {
-          const section = selection.group_name_snapshot || 'Selections';
-          acc[section] = acc[section] ?? [];
-          acc[section].push(selection.option_name);
-          return acc;
-        }, {});
-
-        return {
-          id: item.order_item_id,
-          title: item.item_name,
-          quantity: Number(item.quantity ?? 0),
-          price: Number(item.unit_price ?? 0),
-          selections: Object.entries(groupedSelections).map(([section, choices]) => ({
-            section,
-            choices,
-          })),
-        };
-      }),
-      totals: {
-        subtotal: Number(orderRow.subtotal_amount ?? 0),
-        discount: Number(orderRow.discount_amount ?? 0),
-        tax: Number(orderRow.tax_amount ?? 0),
-        tip: Number(orderRow.tip_amount ?? 0),
-        total: Number(orderRow.total_amount ?? 0),
-      },
-      business: {
-        brandName: 'CULTIV',
-        storeName: storeRow?.name ?? 'CULTIV',
-        legalName: storeRow?.legal_name ?? '',
-        addressLine1: storeRow?.address_line_1 ?? '',
-        addressLine2: storeRow?.address_line_2 ?? '',
-        city: storeRow?.city ?? '',
-        state: storeRow?.state ?? '',
-        postalCode: storeRow?.postal_code ?? '',
-        country: storeRow?.country ?? 'India',
-        phone: storeRow?.phone ?? '',
-        email: storeRow?.email ?? '',
-        gstin: storeRow?.gstin ?? '',
-        code: storeRow?.code ?? '',
-      },
-    };
 
     log('receipt_loaded_successfully', {
       orderId,
       authContext,
-      storeId: orderRow.store_id,
-      customerId: orderRow.customer_id,
-      hasPayment: Boolean(paymentRow),
+      storeId: receiptData.meta.storeId ?? null,
+      customerIdentifier: receiptData.meta.customerEmail ?? receiptData.meta.customerPhone ?? null,
+      hasPayment: Boolean(receiptData.meta.paymentMethod),
       itemCount: receiptData.items.length,
     });
 

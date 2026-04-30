@@ -7,6 +7,7 @@ interface OrdersKanbanProps {
   canCancelOrder: boolean;
   mutatingOrderIds: Set<string>;
   onPrimaryAction: (order: OrdersBoardOrder) => void;
+  onOpenReceipt: (order: OrdersBoardOrder) => void;
   onOpenNotes: (order: OrdersBoardOrder) => void;
   onCancelOrder: (order: OrdersBoardOrder) => void;
 }
@@ -24,6 +25,7 @@ export function OrdersKanban({
   canCancelOrder,
   mutatingOrderIds,
   onPrimaryAction,
+  onOpenReceipt,
   onOpenNotes,
   onCancelOrder,
 }: OrdersKanbanProps) {
@@ -39,6 +41,7 @@ export function OrdersKanban({
           canCancelOrder={canCancelOrder}
           mutatingOrderIds={mutatingOrderIds}
           onPrimaryAction={onPrimaryAction}
+          onOpenReceipt={onOpenReceipt}
           onOpenNotes={onOpenNotes}
           onCancelOrder={onCancelOrder}
         />

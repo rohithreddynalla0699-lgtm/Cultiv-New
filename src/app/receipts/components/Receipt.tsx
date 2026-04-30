@@ -163,7 +163,7 @@ export function Receipt({
                 </div>
 
                 <div className="text-right text-[11px] font-semibold text-[#1D2939]">
-                  {formatCurrency(item.price * item.quantity)}
+                  {formatCurrency(item.lineTotal ?? (item.price * item.quantity))}
                 </div>
               </div>
             ))}

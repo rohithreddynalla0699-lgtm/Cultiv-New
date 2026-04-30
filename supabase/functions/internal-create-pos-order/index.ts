@@ -52,6 +52,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
 };
 
+const DEV_LOGS = Deno.env.get('APP_ENV') !== 'production';
+
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const json = (status: number, payload: Record<string, unknown>) =>
@@ -63,6 +65,14 @@ const json = (status: number, payload: Record<string, unknown>) =>
       'Cache-Control': 'no-store',
     },
   });
+
+const errorResponse = (status: number, code: string, error: string, debug?: Record<string, unknown>) => {
+  if (DEV_LOGS && debug) {
+    console.error('[internal-create-pos-order]', { status, code, error, ...debug });
+  }
+
+  return json(status, { success: false, code, error });
+};
 
 const isValidUuid = (value: unknown): value is string =>
   typeof value === 'string' && uuidPattern.test(value.trim());
@@ -146,6 +156,101 @@ const validateItems = (items: unknown): items is InternalPosOrderItem[] => {
   });
 };
 
+const awardPosLoyaltyFallback = async (
+  db: ReturnType<typeof createClient>,
+  input: {
+    orderId: string;
+    customerId: string | null;
+  },
+) => {
+  if (!input.customerId) {
+    return { awarded: false, reason: 'no_customer' } as const;
+  }
+
+  const { data: existingEarn, error: existingEarnError } = await db
+    .from('loyalty_points_ledger')
+    .select('order_id')
+    .eq('order_id', input.orderId)
+    .eq('entry_type', 'earn')
+    .limit(1);
+
+  if (existingEarnError) {
+    throw new Error('Could not verify existing POS loyalty award.');
+  }
+
+  if (Array.isArray(existingEarn) && existingEarn.length > 0) {
+    await db.rpc('sync_customer_reward_points', {
+      p_customer_id: input.customerId,
+    });
+    return { awarded: false, reason: 'already_awarded' } as const;
+  }
+
+  const { data: orderRow, error: orderError } = await db
+    .from('orders')
+    .select('order_id, customer_id, total_amount, order_status')
+    .eq('order_id', input.orderId)
+    .maybeSingle();
+
+  if (orderError || !orderRow) {
+    throw new Error('Could not load completed POS order for loyalty award.');
+  }
+
+  if (orderRow.customer_id !== input.customerId || orderRow.order_status !== 'completed') {
+    return { awarded: false, reason: 'not_eligible' } as const;
+  }
+
+  const { data: rewardSettings } = await db
+    .from('reward_program_settings')
+    .select('earn_rate_rupees_per_point, points_expiry_days')
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  const earnRate = Math.max(Number(rewardSettings?.earn_rate_rupees_per_point ?? 10), 1);
+  const expiryDays = Math.max(Number(rewardSettings?.points_expiry_days ?? 90), 1);
+  const points = Math.floor(Number(orderRow.total_amount ?? 0) / earnRate);
+
+  if (points <= 0) {
+    await db.rpc('sync_customer_reward_points', {
+      p_customer_id: input.customerId,
+    });
+    return { awarded: false, reason: 'below_threshold' } as const;
+  }
+
+  const nowIso = new Date().toISOString();
+  const expiresAtIso = new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const { error: insertError } = await db
+    .from('loyalty_points_ledger')
+    .insert({
+      user_id: input.customerId,
+      order_id: input.orderId,
+      entry_type: 'earn',
+      points,
+      points_remaining: points,
+      earned_at: nowIso,
+      expires_at: expiresAtIso,
+      metadata: {
+        source: 'pos_counter_completion_fallback',
+        earn_rate_rupees_per_point: earnRate,
+        points_expiry_days: expiryDays,
+        total_amount: Number(orderRow.total_amount ?? 0),
+      },
+      created_at: nowIso,
+      updated_at: nowIso,
+    });
+
+  if (insertError && insertError.code !== '23505') {
+    throw new Error(insertError.message || 'Could not insert POS loyalty award.');
+  }
+
+  await db.rpc('sync_customer_reward_points', {
+    p_customer_id: input.customerId,
+  });
+
+  return { awarded: !insertError, reason: insertError ? 'already_awarded' : 'awarded' } as const;
+};
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -153,21 +258,21 @@ Deno.serve(async (req) => {
 
   try {
     if (req.method !== 'POST') {
-      return json(405, { error: 'Method not allowed.' });
+      return errorResponse(405, 'INVALID_PAYLOAD', 'Method not allowed.');
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
     if (!supabaseUrl || !serviceRoleKey) {
-      return json(500, { error: 'Server is not configured for POS checkout.' });
+      return errorResponse(500, 'UNKNOWN_ERROR', 'Server is not configured for POS checkout.');
     }
 
     let body: InternalCreatePosOrderRequest;
     try {
       body = await req.json();
     } catch {
-      return json(400, { error: 'Invalid JSON body.' });
+      return errorResponse(400, 'INVALID_PAYLOAD', 'Invalid JSON body.');
     }
 
     const internalSessionToken = (body.internalSessionToken ?? '').trim();
@@ -182,25 +287,25 @@ Deno.serve(async (req) => {
     const total = roundMoney(body.total);
 
     if (!internalSessionToken) {
-      return json(400, { error: 'internalSessionToken is required.' });
+      return errorResponse(400, 'INVALID_PAYLOAD', 'internalSessionToken is required.');
     }
     if (!isValidUuid(storeId)) {
-      return json(400, { error: 'storeId must be a valid store UUID.' });
+      return errorResponse(400, 'INVALID_PAYLOAD', 'storeId must be a valid store UUID.');
     }
     if (customerId && !isValidUuid(customerId)) {
-      return json(400, { error: 'customerId must be a valid customer UUID.' });
+      return errorResponse(400, 'INVALID_PAYLOAD', 'customerId must be a valid customer UUID.');
     }
     if (paymentMethod !== 'cash' && paymentMethod !== 'upi' && paymentMethod !== 'card') {
-      return json(400, { error: 'paymentMethod must be cash, upi, or card.' });
+      return errorResponse(400, 'INVALID_PAYLOAD', 'paymentMethod must be cash, upi, or card.');
     }
     if (![subtotal, taxAmount, tipAmount, tipPercentage, total].every((amount) => Number.isFinite(amount) && amount >= 0)) {
-      return json(400, { error: 'subtotal, taxAmount, tipAmount, and total must be non-negative numbers.' });
+      return errorResponse(400, 'INVALID_PAYLOAD', 'subtotal, taxAmount, tipAmount, and total must be non-negative numbers.');
     }
     if (total <= 0) {
-      return json(400, { error: 'total must be greater than zero.' });
+      return errorResponse(400, 'INVALID_PAYLOAD', 'total must be greater than zero.');
     }
     if (!validateItems(body.items)) {
-      return json(400, { error: 'POS order must include valid items.' });
+      return errorResponse(400, 'INVALID_PAYLOAD', 'POS order must include valid items.');
     }
 
     const db = createClient(supabaseUrl, serviceRoleKey, {
@@ -209,20 +314,20 @@ Deno.serve(async (req) => {
 
     const verifiedSession = await verifyAndLoadSession(db, internalSessionToken);
     if (!verifiedSession.valid) {
-      return json(401, { error: verifiedSession.error });
+      return errorResponse(401, 'INVALID_SESSION', verifiedSession.error);
     }
 
     const permissionsResult = await loadPermissionKeys(db, verifiedSession.session.internal_user_id);
     if (permissionsResult.error) {
-      return json(500, { error: permissionsResult.error });
+      return errorResponse(500, 'UNKNOWN_ERROR', permissionsResult.error);
     }
 
     if (!permissionsResult.permissionKeys.includes('can_access_pos')) {
-      return json(403, { error: 'You do not have permission to create POS orders.' });
+      return errorResponse(403, 'MISSING_PERMISSION', 'You do not have permission to create POS orders.');
     }
 
     if (verifiedSession.session.scope_type === 'store' && verifiedSession.session.scope_store_id !== storeId) {
-      return json(403, { error: 'Store scope does not allow checkout for this store.' });
+      return errorResponse(403, 'STORE_SCOPE_DENIED', 'Store scope does not allow checkout for this store.');
     }
 
     let canonicalPricing;
@@ -244,7 +349,11 @@ Deno.serve(async (req) => {
         requestedDiscount: 0,
       });
     } catch (error) {
-      return json(400, { error: error instanceof Error ? error.message : 'Invalid POS pricing payload.' });
+      return errorResponse(
+        400,
+        'PRICING_MISMATCH',
+        error instanceof Error ? error.message : 'Invalid POS pricing payload.',
+      );
     }
 
     const { data: rpcResult, error: rpcError } = await db.rpc('create_internal_pos_order_with_payment', {
@@ -271,7 +380,35 @@ Deno.serve(async (req) => {
     });
 
     if (rpcError || !rpcResult) {
-      return json(500, { error: rpcError?.message ?? 'Could not complete POS checkout.' });
+      const safeMessage = rpcError?.message ?? 'Could not complete POS checkout.';
+      const lowerMessage = safeMessage.toLowerCase();
+      const code = lowerMessage.includes('payment')
+        ? 'PAYMENT_RECORD_FAILED'
+        : 'ORDER_CREATION_FAILED';
+
+      return errorResponse(500, code, safeMessage, { rpcError, storeId, customerId });
+    }
+
+    if (customerId && rpcResult.orderId) {
+      const { error: loyaltyAwardError } = await db.rpc('award_loyalty_for_completed_order', {
+        p_order_id: rpcResult.orderId,
+        p_award_source: 'pos_counter_completion_edge',
+      });
+
+      if (loyaltyAwardError) {
+        if (DEV_LOGS) {
+          console.error('[internal-create-pos-order] award_loyalty_for_completed_order failed, attempting fallback', {
+            orderId: rpcResult.orderId,
+            customerId,
+            loyaltyAwardError,
+          });
+        }
+
+        await awardPosLoyaltyFallback(db, {
+          orderId: rpcResult.orderId,
+          customerId,
+        });
+      }
     }
 
     return json(200, {
@@ -304,6 +441,8 @@ Deno.serve(async (req) => {
       },
     });
   } catch (error) {
-    return json(500, { error: 'Could not complete POS checkout.' });
+    return errorResponse(500, 'UNKNOWN_ERROR', 'Could not complete POS checkout.', {
+      error: error instanceof Error ? error.message : String(error),
+    });
   }
 });

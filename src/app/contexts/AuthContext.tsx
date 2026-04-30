@@ -13,7 +13,6 @@ import type {
   OrderStatus,
   PlaceOrderInput,
   CustomerCheckoutPaymentMethod,
-  CreateCounterWalkInOrderInput,
   SignupInput,
   User,
   WalkInLinkInput,
@@ -82,7 +81,6 @@ interface AuthContextType {
   placeOrder: (input: PlaceOrderInput) => Promise<Order>;
   createCheckoutPaymentIntent: (input: PlaceOrderInput) => Promise<CheckoutPaymentIntent>;
   confirmCheckoutPayment: (input: ConfirmCheckoutPaymentInput) => Promise<CheckoutPaymentResult>;
-  createCounterWalkInOrder: (input: CreateCounterWalkInOrderInput) => Promise<Order>;
   lookupPosCustomerByPhone: (phone: string) => Promise<PosCustomerLookupResult | null>;
   linkWalkInOrder: (input: WalkInLinkInput) => Promise<AuthActionResult>;
   redeemReward: (offerId: string) => Promise<AuthActionResult>;
@@ -1622,11 +1620,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     throw new Error('Direct order placement is disabled. Use Pay & Place Order for prepaid checkout.');
   };
 
-  const createCounterWalkInOrder = async (input: CreateCounterWalkInOrderInput): Promise<Order> => {
-    void input;
-    throw new Error('Direct counter order creation is disabled. Use the secure POS checkout flow.');
-  };
-
   const lookupPosCustomerByPhone = async (_phone: string): Promise<PosCustomerLookupResult | null> => {
     throw new Error('POS customer lookup now requires the internal customer directory service.');
   };
@@ -1819,7 +1812,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     placeOrder,
     createCheckoutPaymentIntent,
     confirmCheckoutPayment,
-    createCounterWalkInOrder,
     lookupPosCustomerByPhone,
     linkWalkInOrder,
     redeemReward,

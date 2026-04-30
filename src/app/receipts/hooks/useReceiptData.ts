@@ -15,6 +15,7 @@ type ReceiptAuthMode = 'customer' | 'internal';
 
 interface UseReceiptDataOptions {
   authMode?: ReceiptAuthMode;
+  orderId?: string;
 }
 
 export function useReceiptData(order: Order | undefined, options?: UseReceiptDataOptions): ReceiptState {
@@ -48,20 +49,23 @@ export function useReceiptData(order: Order | undefined, options?: UseReceiptDat
   }, []);
 
   useEffect(() => {
-    if (!order?.id) {
-      setState({ data: null, isLoading: false, error: null });
+    const resolvedOrderId = options?.orderId ?? order?.id ?? null;
+    const fallbackData = order ? mapOrderToReceiptData(order) : null;
+
+    if (!resolvedOrderId) {
+      setState({ data: fallbackData, isLoading: false, error: null });
       return;
     }
 
     let active = true;
     setState({
-      data: mapOrderToReceiptData(order),
+      data: fallbackData,
       isLoading: true,
       error: null,
     });
 
     void fetchOrderReceipt({
-      orderId: order.id,
+      orderId: resolvedOrderId,
       customerSessionToken: authMode === 'customer' ? customerSessionToken : null,
       internalSessionToken: authMode === 'internal' ? internalSessionToken : null,
     })
@@ -76,7 +80,7 @@ export function useReceiptData(order: Order | undefined, options?: UseReceiptDat
       .catch((error) => {
         if (!active) return;
         setState({
-          data: null,
+          data: fallbackData,
           isLoading: false,
           error: error instanceof Error ? error.message : 'Could not load receipt.',
         });
@@ -85,7 +89,7 @@ export function useReceiptData(order: Order | undefined, options?: UseReceiptDat
     return () => {
       active = false;
     };
-  }, [authMode, customerSessionToken, internalSessionToken, order]);
+  }, [authMode, customerSessionToken, internalSessionToken, options?.orderId, order]);
 
   return state;
 }

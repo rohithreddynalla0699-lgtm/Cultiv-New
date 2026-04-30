@@ -22,6 +22,8 @@ export interface BackendReceiptData {
     orderNumber: string;
     orderId: string;
     createdAt: string;
+    orderStatus?: string | null;
+    storeId?: string | null;
     paymentMethod?: string;
     paymentStatus?: string | null;
     customerName?: string;
@@ -34,6 +36,7 @@ export interface BackendReceiptData {
     title: string;
     quantity: number;
     price: number;
+    lineTotal?: number;
     selections: Array<{
       section: string;
       choices: string[];
@@ -47,6 +50,27 @@ export interface BackendReceiptData {
     total: number;
   };
   business: ReceiptBusinessMeta;
+}
+
+export type ReceiptDeliveryMethod = 'print' | 'email' | 'text' | 'all';
+
+export interface ReceiptDeliveryResult {
+  method: 'email' | 'text';
+  success: boolean;
+  recipient: string | null;
+  provider: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+}
+
+export interface SendOrderReceiptResponse {
+  success: boolean;
+  partial: boolean;
+  code: string;
+  results: ReceiptDeliveryResult[];
+  deliveredMethods: string[];
+  failedMethods: string[];
+  message: string;
 }
 
 export async function fetchOrderReceipt(params: {
@@ -67,4 +91,39 @@ export async function fetchOrderReceipt(params: {
   }
 
   return data.receipt as BackendReceiptData;
+}
+
+export async function sendOrderReceipt(params: {
+  orderId: string;
+  deliveryMethod: ReceiptDeliveryMethod;
+  customerSessionToken?: string | null;
+  internalSessionToken?: string | null;
+  email?: string;
+  phone?: string;
+}): Promise<SendOrderReceiptResponse> {
+  const { data, error } = await supabase.functions.invoke('send-order-receipt', {
+    body: {
+      orderId: params.orderId,
+      deliveryMethod: params.deliveryMethod,
+      customerSessionToken: params.customerSessionToken ?? undefined,
+      internalSessionToken: params.internalSessionToken ?? undefined,
+      email: params.email ?? undefined,
+      phone: params.phone ?? undefined,
+    },
+  });
+
+  if (error && !data) {
+    throw new Error(error.message || 'Could not deliver receipt.');
+  }
+
+  const payload = (data ?? {}) as Partial<SendOrderReceiptResponse> & { error?: string };
+  return {
+    success: Boolean(payload.success),
+    partial: Boolean(payload.partial),
+    code: String(payload.code ?? 'UNKNOWN_ERROR'),
+    results: Array.isArray(payload.results) ? payload.results : [],
+    deliveredMethods: Array.isArray(payload.deliveredMethods) ? payload.deliveredMethods : [],
+    failedMethods: Array.isArray(payload.failedMethods) ? payload.failedMethods : [],
+    message: String(payload.message ?? payload.error ?? 'Could not deliver receipt.'),
+  };
 }

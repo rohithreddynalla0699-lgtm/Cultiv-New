@@ -6,6 +6,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useAdminDashboard } from '../../contexts/AdminDashboardContext';
 import { useStoreSession } from '../../hooks/useStoreSession';
 import { ordersService } from '../../services/ordersService';
+import { sendOrderReceipt } from '../../services/receiptService';
 import {
   listInternalOrders,
   type InternalOrdersListFilters,
@@ -16,12 +17,17 @@ import { OrdersBoardHeader } from './orders-board/OrdersBoardHeader';
 import { OrdersKanban } from './orders-board/OrdersKanban';
 import CancelOrderDialog from './orders-board/CancelOrderDialog';
 import { OrderNotesDrawer } from './orders-board/OrderNotesDrawer';
+import { ReceiptModal } from '../../receipts/components/ReceiptModal';
+import { useReceiptData } from '../../receipts/hooks/useReceiptData';
+import { printReceiptElement } from '../../receipts/utils/printReceiptElement';
+import { getReceiptContactErrors, getReceiptContactRequirements } from './counter-billing/posCheckout';
 
 import type {
   OrdersBoardDateFilter,
   OrdersBoardOrder,
   OrdersBoardOrderTypeFilter,
 } from '../../types/ordersBoard';
+import type { PosReceiptDeliveryOption } from '../../types/pos';
 
 type OptimisticOrderStatus =
   | 'preparing'
@@ -31,6 +37,8 @@ type OptimisticOrderStatus =
 
 type OrdersServiceInput = Parameters<typeof ordersService.getOrders>[0];
 type BaseOrder = OrdersServiceInput['orders'][number];
+const ORDERS_UPDATED_EVENT = 'cultiv:orders-updated';
+const ORDERS_UPDATED_STORAGE_KEY = 'cultiv_orders_updated_at';
 
 function startOfDayIso(date: Date) {
   const next = new Date(date);
@@ -186,6 +194,13 @@ export function OrdersBoardScreen() {
     tone: 'success' | 'error' | 'info';
     text: string;
   } | null>(null);
+  const [selectedOrderForReceipt, setSelectedOrderForReceipt] = useState<BaseOrder | null>(null);
+  const [receiptDeliveryOption, setReceiptDeliveryOption] = useState<PosReceiptDeliveryOption>('print');
+  const [receiptPhone, setReceiptPhone] = useState('');
+  const [receiptEmail, setReceiptEmail] = useState('');
+  const [isSendingReceipt, setIsSendingReceipt] = useState(false);
+  const [receiptActionError, setReceiptActionError] = useState<string | null>(null);
+  const [receiptActionSuccess, setReceiptActionSuccess] = useState<string | null>(null);
   const [selectedOrderForNotes, setSelectedOrderForNotes] = useState<OrdersBoardOrder | null>(null);
   const [selectedOrderForCancel, setSelectedOrderForCancel] = useState<OrdersBoardOrder | null>(null);
   const [isSavingNote, setIsSavingNote] = useState(false);
@@ -256,6 +271,25 @@ export function OrdersBoardScreen() {
   }, [loadOrders, refreshTick]);
 
   useEffect(() => {
+    const handleOrdersUpdated = () => {
+      void loadOrders();
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.storageArea !== window.localStorage) return;
+      if (event.key !== ORDERS_UPDATED_STORAGE_KEY) return;
+      void loadOrders();
+    };
+
+    window.addEventListener(ORDERS_UPDATED_EVENT, handleOrdersUpdated);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener(ORDERS_UPDATED_EVENT, handleOrdersUpdated);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [loadOrders]);
+
+  useEffect(() => {
     const onActivity = () => {
       void touchActivity();
     };
@@ -299,9 +333,99 @@ export function OrdersBoardScreen() {
     return ordersService.getPermissions({ hasPermission, hasAnyPermission });
   }, [hasAnyPermission, hasPermission]);
 
+  const { data: selectedReceiptData } = useReceiptData(selectedOrderForReceipt as any, {
+    authMode: 'internal',
+    orderId: selectedOrderForReceipt?.id,
+  });
+
+  const receiptContactErrors = getReceiptContactErrors(receiptDeliveryOption, {
+    phone: receiptPhone,
+    email: receiptEmail,
+  });
+
   if (!hasPermission('can_access_orders')) {
     return <Navigate to={isStoreScoped() ? '/store/shift' : '/operations'} replace />;
   }
+
+  const openReceiptForOrder = (order: OrdersBoardOrder) => {
+    const fullOrder = mergedOrders.find((candidate) => candidate.id === order.id) ?? null;
+    setSelectedOrderForReceipt(fullOrder ?? null);
+    setReceiptDeliveryOption('print');
+    setReceiptPhone(fullOrder?.phone ?? '');
+    setReceiptEmail(fullOrder?.email ?? '');
+    setReceiptActionError(null);
+    setReceiptActionSuccess(null);
+  };
+
+  const closeReceiptModal = () => {
+    setSelectedOrderForReceipt(null);
+    setReceiptActionError(null);
+    setReceiptActionSuccess(null);
+    setReceiptDeliveryOption('print');
+  };
+
+  const handleSendReceipt = async () => {
+    if (!selectedOrderForReceipt || !session?.internalSessionToken || isSendingReceipt) return;
+    if (receiptContactErrors.phone || receiptContactErrors.email) {
+      setReceiptActionError(receiptContactErrors.phone || receiptContactErrors.email || 'Receipt details are incomplete.');
+      setReceiptActionSuccess(null);
+      return;
+    }
+
+    setIsSendingReceipt(true);
+    setReceiptActionError(null);
+    setReceiptActionSuccess(null);
+
+    const printedLocally = receiptDeliveryOption === 'print' || receiptDeliveryOption === 'all';
+
+    try {
+      if (printedLocally) {
+        printReceiptElement();
+      }
+
+      if (receiptDeliveryOption === 'email' || receiptDeliveryOption === 'text' || receiptDeliveryOption === 'all') {
+        const result = await sendOrderReceipt({
+          orderId: selectedOrderForReceipt.id,
+          deliveryMethod: receiptDeliveryOption,
+          internalSessionToken: session.internalSessionToken,
+          email: receiptEmail.trim() || undefined,
+          phone: receiptPhone || undefined,
+        });
+
+        if (!result.success && receiptDeliveryOption !== 'all') {
+          setReceiptActionError(result.code === 'DIGITAL_RECEIPT_PROVIDER_NOT_CONFIGURED'
+            ? 'Digital receipt delivery is not configured yet. Please print the receipt.'
+            : result.message);
+          return;
+        }
+
+        if (!result.success && receiptDeliveryOption === 'all') {
+          setReceiptActionSuccess('Receipt printed. Digital receipt delivery is not configured yet. Please print the receipt.');
+          return;
+        }
+
+        if (result.partial) {
+          setReceiptActionSuccess(printedLocally
+            ? 'Receipt printed. Some digital receipt methods could not be completed.'
+            : 'Some digital receipt methods could not be completed.');
+          return;
+        }
+
+        setReceiptActionSuccess(printedLocally
+          ? 'Receipt printed and digital receipt delivery completed.'
+          : receiptDeliveryOption === 'email'
+            ? 'Email receipt sent.'
+            : 'Text receipt sent.');
+        return;
+      }
+
+      setReceiptActionSuccess('Print dialog opened. You can print again if needed.');
+    } catch (error) {
+      setReceiptActionError(error instanceof Error ? error.message : 'Receipt could not be sent right now.');
+    } finally {
+      setIsSendingReceipt(false);
+    }
+  };
 
   const withMutationGuard = async (orderId: string, work: () => Promise<void>) => {
     if (mutatingOrderIds.has(orderId)) return;
@@ -490,6 +614,7 @@ export function OrdersBoardScreen() {
           onPrimaryAction={(order) => {
             void handlePrimaryAction(order);
           }}
+          onOpenReceipt={openReceiptForOrder}
           onOpenNotes={setSelectedOrderForNotes}
           onCancelOrder={setSelectedOrderForCancel}
         />
@@ -502,6 +627,90 @@ export function OrdersBoardScreen() {
         isSaving={isSavingNote}
         onClose={() => setSelectedOrderForNotes(null)}
         onSave={handleSaveNote}
+      />
+
+      <ReceiptModal
+        open={Boolean(selectedOrderForReceipt)}
+        onClose={closeReceiptModal}
+        data={selectedReceiptData ?? null}
+        onPrint={printReceiptElement}
+        footerContent={selectedOrderForReceipt ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              {(['print', 'email', 'text', 'all'] as PosReceiptDeliveryOption[]).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => {
+                    setReceiptDeliveryOption(option);
+                    setReceiptActionError(null);
+                    setReceiptActionSuccess(null);
+                  }}
+                  className={[
+                    'rounded-full border px-3 py-2 text-[11px] font-semibold transition',
+                    receiptDeliveryOption === option
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-primary/20 bg-white text-primary hover:bg-primary/5',
+                  ].join(' ')}
+                >
+                  {option === 'all' ? 'All 3' : option[0].toUpperCase() + option.slice(1)}
+                </button>
+              ))}
+            </div>
+
+            {(getReceiptContactRequirements(receiptDeliveryOption).needsPhone || getReceiptContactRequirements(receiptDeliveryOption).needsEmail) ? (
+              <div className="grid gap-2 sm:grid-cols-2">
+                {getReceiptContactRequirements(receiptDeliveryOption).needsPhone ? (
+                  <div>
+                    <input
+                      type="tel"
+                      value={receiptPhone}
+                      onChange={(event) => setReceiptPhone(event.target.value)}
+                      placeholder="Phone number"
+                      className="min-h-[38px] w-full rounded-2xl border border-[#D9E2CD] bg-white px-3 text-[12px] text-[#1F2719] outline-none transition focus:border-primary/40"
+                    />
+                    {receiptContactErrors.phone ? <p className="mt-1 text-[11px] font-medium text-[#B42318]">{receiptContactErrors.phone}</p> : null}
+                  </div>
+                ) : null}
+                {getReceiptContactRequirements(receiptDeliveryOption).needsEmail ? (
+                  <div>
+                    <input
+                      type="email"
+                      value={receiptEmail}
+                      onChange={(event) => setReceiptEmail(event.target.value)}
+                      placeholder="Email address"
+                      className="min-h-[38px] w-full rounded-2xl border border-[#D9E2CD] bg-white px-3 text-[12px] text-[#1F2719] outline-none transition focus:border-primary/40"
+                    />
+                    {receiptContactErrors.email ? <p className="mt-1 text-[11px] font-medium text-[#B42318]">{receiptContactErrors.email}</p> : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            {receiptActionError ? (
+              <div className="rounded-2xl border border-[#F2D6D6] bg-[#FEF3F2] px-3 py-2 text-[11px] font-medium text-[#B42318]">
+                {receiptActionError}
+              </div>
+            ) : null}
+
+            {receiptActionSuccess ? (
+              <div className="rounded-2xl border border-[#D0E9D7] bg-[#ECFDF3] px-3 py-2 text-[11px] font-medium text-[#027A48]">
+                {receiptActionSuccess}
+              </div>
+            ) : null}
+
+            <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={() => { void handleSendReceipt(); }}
+                disabled={isSendingReceipt || Boolean(receiptContactErrors.phone) || Boolean(receiptContactErrors.email)}
+                className="inline-flex min-h-[36px] items-center justify-center rounded-full border border-primary/20 px-4 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/5 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                {isSendingReceipt ? 'Sending...' : 'Send Receipt'}
+              </button>
+            </div>
+          </div>
+        ) : undefined}
       />
 
       {selectedOrderForCancel && (

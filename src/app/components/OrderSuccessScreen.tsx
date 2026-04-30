@@ -30,13 +30,12 @@ export function OrderSuccessScreen() {
 
   const order = getOrderById(orderId);
 
-  if (!order) {
-    return <Navigate to="/" replace />;
-  }
-
   const { data: receiptData, isLoading: receiptLoading, error: receiptError } = useReceiptData(order, {
     authMode: 'customer',
+    orderId,
   });
+
+  const displayOrderNumber = receiptData?.meta.orderNumber || (order ? getDisplayOrderNumber(order) : orderId.slice(-6));
 
   return (
     <PageReveal className="min-h-screen bg-[radial-gradient(circle_at_10%_15%,rgba(45,80,22,0.15),transparent_32%),radial-gradient(circle_at_90%_8%,rgba(126,153,108,0.16),transparent_28%),linear-gradient(160deg,#F1F4EC_0%,#F8F7F2_52%,#EEF3E8_100%)] pt-24 pb-16 sm:pt-28">
@@ -61,7 +60,7 @@ export function OrderSuccessScreen() {
           <p className="mt-1 text-sm text-foreground/55 sm:text-base">
             Order{' '}
             <span className="font-semibold text-primary">
-              #{getDisplayOrderNumber(order)}
+              #{displayOrderNumber}
             </span>
           </p>
         </motion.div>
@@ -134,9 +133,9 @@ export function OrderSuccessScreen() {
                 </Link>
               </div>
 
-              {order.email ? (
+              {order?.email ? (
                 <div className="mt-4 text-center text-xs text-foreground/55 sm:text-sm">
-                  Confirmation email sent to{' '}
+                  Receipt email available for{' '}
                   <span className="font-medium text-foreground/70">
                     {order.email}
                   </span>

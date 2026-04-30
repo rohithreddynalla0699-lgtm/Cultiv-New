@@ -1,4 +1,4 @@
-import { MessageSquareMore } from 'lucide-react';
+import { MessageSquareMore, ReceiptText } from 'lucide-react';
 import { OrderActionButton } from './OrderActionButton';
 import type { OrdersBoardOrder } from '../../../types/ordersBoard';
 import { formatCurrency } from '../../../receipts/utils/formatCurrency';
@@ -9,6 +9,7 @@ interface OrderCardProps {
   canCancelOrder: boolean;
   isMutating: boolean;
   onPrimaryAction: () => void;
+  onOpenReceipt: () => void;
   onOpenNotes: () => void;
   onCancelOrder: () => void;
   primaryActionLabel?: string | null;
@@ -24,6 +25,7 @@ export function OrderCard({
   canCancelOrder,
   isMutating,
   onPrimaryAction,
+  onOpenReceipt,
   onOpenNotes,
   onCancelOrder,
   primaryActionLabel,
@@ -78,7 +80,7 @@ export function OrderCard({
         <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusBadgeClass}`}>{statusBadgeLabel}</span>
       </div>
 
-      <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
+      <div className="mt-3 grid grid-cols-[1fr_auto_auto] gap-2">
         {primaryActionLabel ? (
           <OrderActionButton
             label={primaryActionLabel}
@@ -89,6 +91,16 @@ export function OrderCard({
         ) : (
           <div className="rounded-lg border border-border px-3 py-2 text-center text-xs font-medium text-foreground/55">No action</div>
         )}
+
+        <button
+          type="button"
+          onClick={onOpenReceipt}
+          disabled={isMutating}
+          className="inline-flex items-center justify-center rounded-lg border border-border px-2.5 text-foreground/70 transition-all duration-200 hover:-translate-y-0.5 hover:bg-background/70 hover:text-foreground disabled:opacity-45"
+          aria-label="Open receipt"
+        >
+          <ReceiptText className="h-4 w-4" />
+        </button>
 
         <button
           type="button"

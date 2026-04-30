@@ -11,6 +11,7 @@ interface OrdersColumnProps {
   canCancelOrder: boolean;
   mutatingOrderIds: Set<string>;
   onPrimaryAction: (order: OrdersBoardOrder) => void;
+  onOpenReceipt: (order: OrdersBoardOrder) => void;
   onOpenNotes: (order: OrdersBoardOrder) => void;
   onCancelOrder: (order: OrdersBoardOrder) => void;
 }
@@ -31,6 +32,7 @@ export function OrdersColumn({
   canCancelOrder,
   mutatingOrderIds,
   onPrimaryAction,
+  onOpenReceipt,
   onOpenNotes,
   onCancelOrder,
 }: OrdersColumnProps) {
@@ -60,6 +62,7 @@ export function OrdersColumn({
               isMutating={mutatingOrderIds.has(order.id)}
               primaryActionLabel={ordersService.getPrimaryActionLabel(order.boardStatus)}
               onPrimaryAction={() => onPrimaryAction(order)}
+              onOpenReceipt={() => onOpenReceipt(order)}
               onOpenNotes={() => onOpenNotes(order)}
               onCancelOrder={() => onCancelOrder(order)}
             />

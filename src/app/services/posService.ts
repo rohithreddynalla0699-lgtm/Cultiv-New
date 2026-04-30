@@ -1,5 +1,5 @@
 import type { InternalPosCheckoutItem, InternalPosCheckoutResponse, InternalPosPaymentRecord } from '../lib/internalOpsApi';
-import type { CreateCounterWalkInOrderInput, Order } from '../types/platform';
+import type { Order } from '../types/platform';
 import type {
   PosCreateOrderResult,
   PosCreatedOrder,
@@ -10,10 +10,7 @@ import type {
 } from '../types/pos';
 import { POS_TAX_RATE } from '../constants/business';
 import { getDisplayOrderNumber } from '../utils/orderDisplay';
-
-interface CreateOrderDeps {
-  createCounterWalkInOrder: (input: CreateCounterWalkInOrderInput) => Promise<Order>;
-}
+import { sendOrderReceipt, type SendOrderReceiptResponse } from './receiptService';
 
 interface RecordPaymentDeps {
   recordManualPayment: (payload: PosPaymentPayload) => Promise<InternalPosPaymentRecord>;
@@ -52,6 +49,9 @@ interface SendReceiptPayload {
   orderId: string;
   phone?: string;
   email?: string;
+  authMode?: 'customer' | 'internal';
+  customerSessionToken?: string | null;
+  internalSessionToken?: string | null;
 }
 
 const normalizePaymentMethod = (method: unknown): PosOrderPayload['paymentMethod'] => {
@@ -84,55 +84,7 @@ const buildCanonicalSelectionSnapshots = (
   })
 );
 
-const mapToCounterOrderInput = (payload: PosOrderPayload): CreateCounterWalkInOrderInput => {
-  const paymentMethod = normalizePaymentMethod(payload.paymentMethod);
-
-  return {
-    storeId: payload.storeId,
-    fullName: payload.customerName,
-    phone: payload.customerPhone?.trim() || undefined,
-    email: payload.customerEmail?.trim() || undefined,
-    linkedCustomerId: payload.linkedCustomerId,
-    paymentMethod,
-    tipPercentage: payload.tipPercentage,
-    tipAmount: payload.tipAmount,
-    orderChannel: payload.orderChannel,
-    placedBy: payload.placedBy,
-    items: payload.items.map((item) => ({
-      category: item.category,
-      title: item.title,
-      selections: item.selections,
-      quantity: item.quantity,
-      price: item.price,
-    })),
-  };
-};
-
 export const posService = {
-  async createOrder(payload: PosOrderPayload, deps: CreateOrderDeps): Promise<PosCreateOrderResult> {
-    const paymentMethod = normalizePaymentMethod(payload.paymentMethod);
-    const createdOrder = await deps.createCounterWalkInOrder(mapToCounterOrderInput(payload));
-    const subtotal = payload.items.reduce((sum, item) => sum + item.quantity * item.price, 0);
-    const taxAmount = Math.round(subtotal * POS_TAX_RATE * 100) / 100;
-    const total = subtotal + taxAmount + payload.tipAmount;
-
-    const receipt: PosReceipt = {
-      orderId: createdOrder.id,
-      orderChannel: payload.orderChannel,
-      customerName: payload.customerName?.trim() || 'Walk-in Guest',
-      customerPhone: payload.customerPhone,
-      customerEmail: payload.customerEmail?.trim() || undefined,
-      paymentMethod,
-      subtotal,
-      taxAmount,
-      tipAmount: payload.tipAmount,
-      total,
-      createdAt: createdOrder.createdAt ?? new Date().toISOString(),
-    };
-
-    return { order: createdOrder, receipt };
-  },
-
   async checkoutOrder(payload: PosOrderPayload, deps: CheckoutOrderDeps): Promise<PosCreateOrderResult> {
     const paymentMethod = normalizePaymentMethod(payload.paymentMethod);
     const subtotal = Number(payload.items.reduce((sum, item) => sum + item.quantity * item.price, 0).toFixed(2));
@@ -223,11 +175,15 @@ export const posService = {
     return _deps.recordManualPayment(_payload);
   },
 
-  async sendReceipt(payload: SendReceiptPayload) {
-    if (payload.option === 'print') {
-      return { success: true };
-    }
-    throw new Error('Digital receipt delivery is not enabled yet. Use print receipt for now.');
+  async sendReceipt(payload: SendReceiptPayload): Promise<SendOrderReceiptResponse> {
+    return sendOrderReceipt({
+      orderId: payload.orderId,
+      deliveryMethod: payload.option,
+      email: payload.email,
+      phone: payload.phone,
+      customerSessionToken: payload.authMode === 'customer' ? payload.customerSessionToken ?? null : null,
+      internalSessionToken: payload.authMode === 'internal' ? payload.internalSessionToken ?? null : null,
+    });
   },
 
   mapCreatedOrder(input: {
