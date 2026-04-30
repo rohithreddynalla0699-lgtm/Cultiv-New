@@ -126,6 +126,11 @@ export interface Offer {
 	autoApply?: boolean;
 }
 
+export interface SelectedRewardEntitlementInput {
+	entitlementId: string;
+	rewardCode: string;
+}
+
 export interface PointsBatch {
 	points: number;
 	earnedAt: number;
@@ -176,6 +181,7 @@ export interface PlaceOrderInput {
 	tipPercentage?: number;
 	tipAmount?: number;
 	usedRewardIds?: string[];
+	selectedRewardEntitlements?: SelectedRewardEntitlementInput[];
 	total: number;
 	fullName: string;
 	phone: string;

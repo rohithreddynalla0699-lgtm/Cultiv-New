@@ -2,6 +2,13 @@
 
 const EXPIRING_SOON_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 
+const unwrapJoinedReward = (value: any) => {
+  if (Array.isArray(value)) {
+    return value[0] ?? null;
+  }
+  return value ?? null;
+};
+
 const toOfferValue = (reward: any) => {
   if (reward.reward_type === 'free_item') {
     return `Free ${String(reward.free_item_title ?? '').replace(/^Complimentary\s+/i, '').toLowerCase()}`;
@@ -44,23 +51,26 @@ const mapRewardCatalogRow = (reward: any) => ({
   value: toOfferValue(reward),
 });
 
-const mapEntitlementRow = (entitlement: any) => ({
-  entitlementId: entitlement.id,
-  rewardId: entitlement.reward_catalog?.id ?? entitlement.reward_id,
-  rewardCode: entitlement.reward_catalog?.reward_code ?? null,
-  title: entitlement.reward_catalog?.title ?? '',
-  rewardType: entitlement.reward_catalog?.reward_type ?? '',
-  pointCost: Number(entitlement.reward_catalog?.point_cost ?? 0),
-  discountAmount: entitlement.reward_catalog?.discount_amount === null ? null : Number(entitlement.reward_catalog?.discount_amount),
-  freeItemTitle: entitlement.reward_catalog?.free_item_title ?? null,
-  freeItemCategory: entitlement.reward_catalog?.free_item_category ?? null,
-  freeItemFoodValue: entitlement.reward_catalog?.free_item_food_value === null ? null : Number(entitlement.reward_catalog?.free_item_food_value),
-  status: entitlement.status,
-  redeemedAt: entitlement.redeemed_at,
-  expiresAt: entitlement.expires_at,
-  usedAt: entitlement.used_at,
-  orderId: entitlement.order_id,
-});
+const mapEntitlementRow = (entitlement: any) => {
+  const reward = unwrapJoinedReward(entitlement.reward_catalog);
+  return {
+    entitlementId: entitlement.id,
+    rewardId: reward?.id ?? entitlement.reward_id,
+    rewardCode: reward?.reward_code ?? null,
+    title: reward?.title ?? '',
+    rewardType: reward?.reward_type ?? '',
+    pointCost: Number(reward?.point_cost ?? 0),
+    discountAmount: reward?.discount_amount === null ? null : Number(reward?.discount_amount),
+    freeItemTitle: reward?.free_item_title ?? null,
+    freeItemCategory: reward?.free_item_category ?? null,
+    freeItemFoodValue: reward?.free_item_food_value === null ? null : Number(reward?.free_item_food_value),
+    status: entitlement.status,
+    redeemedAt: entitlement.redeemed_at,
+    expiresAt: entitlement.expires_at,
+    usedAt: entitlement.used_at,
+    orderId: entitlement.order_id,
+  };
+};
 
 const mapSettingsRow = (settings: any) => ({
   id: settings.id,

@@ -1,37 +1,10 @@
-select o.order_number, o.source_channel, o.payment_method,
-       oi.menu_item_id, oi.item_name, oi.unit_price, oi.quantity, oi.line_total
-from orders o
-join order_items oi on oi.order_id = o.order_id
-order by o.created_at desc
-limit 10;
+select status, order_id, metadata
+from customer_payments
+order by created_at desc
+limit 3;
 
 
-
-| order_number     | source_channel | payment_method | menu_item_id            | item_name               | unit_price | quantity | line_total |
-| ---------------- | -------------- | -------------- | ----------------------- | ----------------------- | ---------- | -------- | ---------- |
-| CULTIV2604300002 | online         | upi            | banana-chia-yogurt-bowl | Banana Chia Yogurt Bowl | 189.00     | 1        | 189.00     |
-| CULTIV2604300001 | walk_in        | upi            | banana-chia-yogurt-bowl | Banana Chia Yogurt Bowl | 189.00     | 1        | 189.00     |
-
-
-----
-
-select o.order_number, oi.item_name, ois.group_id_snapshot,
-       ois.option_name, ois.price_modifier
-from orders o
-join order_items oi on oi.order_id = o.order_id
-left join order_item_selections ois on ois.order_item_id = oi.order_item_id
-order by o.created_at desc
-limit 50;
-
-
-| order_number     | item_name               | group_id_snapshot | option_name   | price_modifier |
-| ---------------- | ----------------------- | ----------------- | ------------- | -------------- |
-| CULTIV2604300002 | Banana Chia Yogurt Bowl | crunch            | Granola       | 0.00           |
-| CULTIV2604300002 | Banana Chia Yogurt Bowl | add-ons           | Extra Fruit   | 30.00          |
-| CULTIV2604300002 | Banana Chia Yogurt Bowl | add-ons           | Extra Granola | 20.00          |
-| CULTIV2604300002 | Banana Chia Yogurt Bowl | add-ons           | Honey         | 20.00          |
-| CULTIV2604300001 | Banana Chia Yogurt Bowl | add-ons           | Extra Granola | 20.00          |
-| CULTIV2604300001 | Banana Chia Yogurt Bowl | add-ons           | Honey         | 20.00          |
-| CULTIV2604300001 | Banana Chia Yogurt Bowl | add-ons           | Extra Fruit   | 30.00          |
-
-
+| status    | order_id                             | metadata                                                                                                                                                                                                                                                            |
+| --------- | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| succeeded | cf21aca9-94a6-4549-9b86-e8e035351888 | {"provider":"mock","taxable_subtotal":169,"reward_discount_amount":0,"selected_reward_entitlements":[{"reward_id":"953b7bc6-91fc-4cf0-a0d8-ca7c2fa876df","reward_code":"water","reward_type":"free_item","entitlement_id":"527c405c-f901-4be9-98d8-12e51eb7dbb1"}]} |
+| succeeded | 315133f1-2b3d-47be-b631-22ee80289d85 | {"provider":"mock","taxable_subtotal":1134,"reward_discount_amount":0,"selected_reward_entitlements":[]}                                                                                                                                                            |

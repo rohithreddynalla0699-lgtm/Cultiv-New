@@ -40,9 +40,9 @@ import {
 import { AuthPromptBeforeCheckout } from './AuthPromptBeforeCheckout';
 import { OrderReviewModal } from './OrderReviewModal';
 import { useAuth } from '../contexts/AuthContext';
-import { DISCOUNT_REWARD_VALUES, FREE_ITEM_REWARD_DETAILS } from '../config/rewardsCatalog';
+import { DISCOUNT_REWARD_VALUES, FREE_ITEM_REWARD_DETAILS, normalizeRewardId } from '../config/rewardsCatalog';
 import type { OrderPageLocationState } from '../types/navigation';
-import type { CustomerCheckoutPaymentMethod, PlaceOrderInput } from '../types/platform';
+import type { CustomerCheckoutPaymentMethod, PlaceOrderInput, SelectedRewardEntitlementInput } from '../types/platform';
 import { resolveCheckoutPaymentProvider, type CheckoutPaymentIntent } from '../services/checkoutPaymentProvider';
 import { getSelectedStore, loadSelectedStoreId, loadStores, requestOpenStoreSelector, subscribeSelectedStore, type StoreLocatorStore } from '../data/storeLocator';
 import {
@@ -360,7 +360,7 @@ const ensureRazorpayScript = async () => {
 export function OrderPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, createCheckoutPaymentIntent, confirmCheckoutPayment, loyaltyProfile, offers } = useAuth();
+  const { user, createCheckoutPaymentIntent, confirmCheckoutPayment, loyaltySummary, offers } = useAuth();
   const locationState = (location.state as OrderPageLocationState | null) ?? null;
 
   const [activeCategorySlug, setActiveCategorySlug] = useState<string>(DEFAULT_ACTIVE_ORDER_CATEGORY_SLUG);
@@ -595,16 +595,28 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
 
   const cartCount = cartLines.reduce((sum, line) => sum + line.quantity, 0);
   const cartTotal = cartLines.reduce((sum, line) => sum + line.quantity * line.unitPrice, 0);
+  const availableRewardEntitlementByCode = useMemo(
+    () => new Map(
+      (loyaltySummary?.availableEntitlements ?? [])
+        .filter((entry) => entry.status === 'available' && entry.rewardCode)
+        .map((entry) => [normalizeRewardId(entry.rewardCode), entry]),
+    ),
+    [loyaltySummary?.availableEntitlements],
+  );
   const availableCheckoutRewards = useMemo(() => {
-    if (!user || !loyaltyProfile) return [];
+    if (!user) return [];
 
-    const availableRewardIds = new Set(loyaltyProfile.availableRewards);
+    const availableRewardCodes = new Set(availableRewardEntitlementByCode.keys());
     return offers
-      .filter((offer) => availableRewardIds.has(offer.id))
+      .filter((offer) => availableRewardCodes.has(normalizeRewardId(offer.id)))
       .sort((a, b) => (a.pointCost ?? 0) - (b.pointCost ?? 0));
-  }, [loyaltyProfile, offers, user]);
+  }, [availableRewardEntitlementByCode, offers, user]);
+  const normalizedSelectedRewardIds = useMemo(
+    () => selectedRewardIds.map((rewardId) => normalizeRewardId(rewardId)),
+    [selectedRewardIds],
+  );
 
-  const selectedDiscountRewardId = selectedRewardIds.find((rewardId) => Number.isFinite(DISCOUNT_REWARD_VALUES[rewardId]));
+  const selectedDiscountRewardId = normalizedSelectedRewardIds.find((rewardId) => Number.isFinite(DISCOUNT_REWARD_VALUES[rewardId]));
   const rewardDiscount = selectedDiscountRewardId ? DISCOUNT_REWARD_VALUES[selectedDiscountRewardId] : 0;
   const taxableSubtotal = Math.max(0, cartTotal - rewardDiscount);
   const gstAmount = Math.round(taxableSubtotal * POS_TAX_RATE * 100) / 100;
@@ -616,7 +628,7 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
     : Math.round(taxableSubtotal * (tipPercentage / 100) * 100) / 100;
   const payableTotal = Math.round((taxableSubtotal + gstAmount + tipAmount) * 100) / 100;
 
-  const selectedFreeRewardItems = selectedRewardIds
+  const selectedFreeRewardItems = normalizedSelectedRewardIds
     .filter((rewardId) => !Number.isFinite(DISCOUNT_REWARD_VALUES[rewardId]))
     .map((rewardId, index) => {
       const details = FREE_ITEM_REWARD_DETAILS[rewardId];
@@ -634,13 +646,26 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
       };
     })
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
+  const selectedRewardEntitlements: SelectedRewardEntitlementInput[] = normalizedSelectedRewardIds
+    .map((rewardId) => {
+      const entitlement = availableRewardEntitlementByCode.get(rewardId);
+      if (!entitlement?.entitlementId || !entitlement.rewardCode) {
+        return null;
+      }
+      return {
+        entitlementId: entitlement.entitlementId,
+        rewardCode: entitlement.rewardCode,
+      };
+    })
+    .filter((entry): entry is SelectedRewardEntitlementInput => Boolean(entry));
 
   const getRewardValidationMessage = (rewardIds: string[]) => {
-    if (rewardIds.length === 0) return '';
+    const normalizedRewardIds = rewardIds.map((rewardId) => normalizeRewardId(rewardId));
+    if (normalizedRewardIds.length === 0) return '';
     if (cartTotal < REWARD_MIN_ORDER_SUBTOTAL) return `Minimum order of ₹${REWARD_MIN_ORDER_SUBTOTAL} is required to use rewards.`;
     if (cartCount <= 0 || cartTotal <= 0) return 'Rewards apply only to food items.';
 
-    const discountRewards = rewardIds.filter((rewardId) => Number.isFinite(DISCOUNT_REWARD_VALUES[rewardId]));
+    const discountRewards = normalizedRewardIds.filter((rewardId) => Number.isFinite(DISCOUNT_REWARD_VALUES[rewardId]));
     if (discountRewards.length > 1) {
       return 'Only one discount reward can be used per order.';
     }
@@ -654,7 +679,7 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
       return 'Discount reward cannot exceed 30% of order total.';
     }
 
-    const freeItemValue = rewardIds
+    const freeItemValue = normalizedRewardIds
       .filter((rewardId) => !Number.isFinite(DISCOUNT_REWARD_VALUES[rewardId]))
       .reduce((sum, rewardId) => sum + (FREE_ITEM_REWARD_DETAILS[rewardId]?.foodValue ?? 0), 0);
 
@@ -1007,10 +1032,6 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
       next.cart = 'Add at least one item before placing order.';
     }
 
-    if (selectedRewardIds.some((rewardId) => !availableCheckoutRewards.some((offer) => offer.id === rewardId))) {
-      next.reward = 'One or more selected rewards are no longer available. Please reselect.';
-    }
-
     const rewardValidationMessage = getRewardValidationMessage(selectedRewardIds);
     if (rewardValidationMessage) {
       next.reward = rewardValidationMessage;
@@ -1214,6 +1235,7 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
         tipPercentage,
         tipAmount,
         usedRewardIds: selectedRewardIds,
+        selectedRewardEntitlements,
         total: payableTotal,
         paymentMethod: selectedPaymentMethod,
         fullName: customer.fullName.trim(),

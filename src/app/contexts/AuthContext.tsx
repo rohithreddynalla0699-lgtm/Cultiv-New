@@ -457,11 +457,13 @@ const isWalkInOrder = order.orderType === 'walk_in' || sourceChannel === 'walk_i
 
 const invokeCreateCheckoutPaymentIntent = async (
   order: Order,
+  orderInput: PlaceOrderInput,
   idempotencyKey: string,
   customerSessionToken: string,
 ): Promise<CheckoutPaymentIntent> => {
   const payload = {
     ...buildSupabaseOrderPayload(order),
+    selectedRewardEntitlements: orderInput.selectedRewardEntitlements ?? [],
     idempotencyKey,
     customerSessionToken,
   };
@@ -1441,7 +1443,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const linkedCustomerId = currentUserId ?? customerAccount?.id ?? undefined;
     const resolvedCustomerId = customerAccount?.id ?? linkedCustomerId ?? null;
-    const usedRewardIds = [...new Set(input.usedRewardIds ?? [])];
+    const usedRewardIds = [...new Set((input.usedRewardIds ?? []).map((rewardId) => normalizeRewardId(String(rewardId))))];
+    const selectedRewardEntitlements = (input.selectedRewardEntitlements ?? []).map((entry) => ({
+      entitlementId: String(entry.entitlementId ?? '').trim(),
+      rewardCode: normalizeRewardId(String(entry.rewardCode ?? '').trim()),
+    })).filter((entry) => entry.entitlementId && entry.rewardCode);
     const requestedDiscount = Math.max(0, input.rewardDiscount ?? 0);
     const foodSubtotal = input.items
       .filter((item) => item.category !== 'Rewards')
@@ -1457,11 +1463,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       const profile = purgeExpiredPoints(loyaltyProfiles[linkedCustomerId] ?? createEmptyLoyaltyProfile(linkedCustomerId));
-
-      const allRewardsAvailable = usedRewardIds.every((rewardId) => profile.availableRewards.includes(rewardId));
-      if (!allRewardsAvailable) {
-        throw new Error('One or more selected rewards are no longer available.');
-      }
+      const entitlementCodes = [...new Set(selectedRewardEntitlements.map((entry) => entry.rewardCode))];
+      const allRewardsAvailable = entitlementCodes.every((rewardId) => profile.availableRewards.includes(rewardId));
+      void allRewardsAvailable;
 
       const discountRewardsUsed = usedRewardIds.filter((rewardId) => Number.isFinite(DISCOUNT_REWARD_VALUES[rewardId]));
       if (discountRewardsUsed.length > 1) {
@@ -1560,7 +1564,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
     }
   };
-    const createCheckoutPaymentIntent = async (input: PlaceOrderInput): Promise<CheckoutPaymentIntent> => {
+  const createCheckoutPaymentIntent = async (input: PlaceOrderInput): Promise<CheckoutPaymentIntent> => {
     const { order } = prepareCheckoutOrder(input);
     const idempotencyKey = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
       ? crypto.randomUUID()
@@ -1571,7 +1575,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
 
     try {
-      return await invokeCreateCheckoutPaymentIntent(order, idempotencyKey, customerSessionToken);
+      return await invokeCreateCheckoutPaymentIntent(order, input, idempotencyKey, customerSessionToken);
     } catch (error) {
       setSupabaseReadDegraded(true);
       throw (error instanceof Error ? error : new Error('Could not start payment. Please try again.'));

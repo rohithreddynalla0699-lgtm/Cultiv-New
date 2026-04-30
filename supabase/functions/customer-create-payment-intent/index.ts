@@ -4,6 +4,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.43.0";
 import { canonicalizeOrderPricing } from "../_shared/canonical-pricing.ts";
 import { verifyAndLoadCustomerSession } from "../_shared/customer-session.ts";
+import { resolveCheckoutRewards } from "../_shared/reward-checkout.ts";
 
 declare const Deno: any;
 
@@ -25,6 +26,10 @@ const jsonResponse = (body: Record<string, unknown>, status = 200): Response =>
 interface CreatePaymentIntentRequest {
   idempotencyKey?: string;
   customerSessionToken?: string;
+  selectedRewardEntitlements?: Array<{
+    entitlementId?: string;
+    rewardCode?: string;
+  }>;
   order?: {
     customer_id?: string | null;
     user_id?: string | null;
@@ -227,6 +232,7 @@ serve(async (req: any) => {
     const body = (await req.json()) as CreatePaymentIntentRequest;
     const idempotencyKey = body.idempotencyKey?.trim();
     const customerSessionToken = body.customerSessionToken?.trim();
+    const selectedRewardEntitlements = Array.isArray(body.selectedRewardEntitlements) ? body.selectedRewardEntitlements : [];
     const order = body.order;
     const items = Array.isArray(body.items) ? body.items : [];
 
@@ -388,12 +394,52 @@ serve(async (req: any) => {
       return errorResponse(403, "unauthorized_customer_checkout", "Customer account is inactive for checkout.");
     }
 
+    const nonRewardItems = items.filter((line) => {
+      const menuItemId = String(line?.menu_item_id ?? line?.itemId ?? '').trim();
+      return menuItemId.length > 0;
+    });
+    const rewardItemsFromClient = items.filter((line) => {
+      const menuItemId = String(line?.menu_item_id ?? line?.itemId ?? '').trim();
+      return menuItemId.length === 0;
+    });
+
+    let preRewardPricing;
+    try {
+      preRewardPricing = await canonicalizeOrderPricing(supabase, {
+        items: nonRewardItems,
+        requestedSubtotal: order.subtotal_amount,
+        requestedDiscount: 0,
+        requestedTaxAmount: undefined,
+        requestedTipAmount: undefined,
+        requestedTipPercentage: order.tip_percentage,
+        requestedTotal: undefined,
+      });
+    } catch (error) {
+      return errorResponse(400, "invalid_payload", error instanceof Error ? error.message : "Invalid checkout items.");
+    }
+
+    let resolvedCheckoutRewards;
+    try {
+      resolvedCheckoutRewards = await resolveCheckoutRewards(
+        supabase,
+        customerId,
+        selectedRewardEntitlements,
+        Number(preRewardPricing.subtotal ?? 0),
+      );
+    } catch (error) {
+      return errorResponse(400, "invalid_reward_selection", error instanceof Error ? error.message : "Invalid reward selection.");
+    }
+
+    if (rewardItemsFromClient.length !== resolvedCheckoutRewards.canonicalRewardLines.length) {
+      return errorResponse(400, "invalid_reward_selection", "Selected rewards no longer match the checkout payload. Please reselect.");
+    }
+
     let canonicalPricing;
     try {
       canonicalPricing = await canonicalizeOrderPricing(supabase, {
-        items,
+        items: [...nonRewardItems, ...resolvedCheckoutRewards.canonicalRewardLines],
         requestedSubtotal: order.subtotal_amount,
-        requestedDiscount: order.discount_amount,
+        requestedDiscount: resolvedCheckoutRewards.discountAmount,
         requestedTaxAmount: order.tax_amount,
         requestedTipAmount: order.tip_amount,
         requestedTipPercentage: order.tip_percentage,
@@ -492,6 +538,12 @@ serve(async (req: any) => {
       tip_amount: canonicalPricing.tipAmount,
       tip_percentage: canonicalPricing.tipPercentage,
       total_amount: canonicalPricing.total,
+      selected_reward_entitlements: resolvedCheckoutRewards.resolvedRewards.map((reward) => ({
+        entitlement_id: reward.entitlementId,
+        reward_id: reward.rewardId,
+        reward_code: reward.rewardCode,
+        reward_type: reward.rewardType,
+      })),
     };
 
     const receipt = createSafeReceipt(idempotencyKey);
@@ -537,6 +589,13 @@ serve(async (req: any) => {
         metadata: {
           provider: checkoutGateway,
           taxable_subtotal: canonicalPricing.taxableSubtotal,
+          selected_reward_entitlements: resolvedCheckoutRewards.resolvedRewards.map((reward) => ({
+            entitlement_id: reward.entitlementId,
+            reward_id: reward.rewardId,
+            reward_code: reward.rewardCode,
+            reward_type: reward.rewardType,
+          })),
+          reward_discount_amount: resolvedCheckoutRewards.discountAmount,
         },
       })
       .select("payment_id")
