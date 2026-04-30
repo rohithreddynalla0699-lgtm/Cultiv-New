@@ -1,0 +1,490 @@
+// @ts-nocheck
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+type RoleKey = 'owner' | 'admin' | 'store';
+type ScopeType = 'global' | 'store' | 'owner' | 'admin';
+type RewardsAction =
+  | 'dashboard'
+  | 'upsert_reward'
+  | 'set_reward_active'
+  | 'update_program_settings';
+
+interface InternalRewardsRequest {
+  internalSessionToken?: string;
+  action?: RewardsAction;
+  rewardId?: string;
+  rewardCode?: string;
+  title?: string;
+  description?: string | null;
+  rewardType?: 'discount' | 'free_item';
+  pointCost?: number;
+  discountAmount?: number | null;
+  freeItemTitle?: string | null;
+  freeItemCategory?: string | null;
+  freeItemFoodValue?: number | null;
+  badge?: string | null;
+  eligibilityRule?: string | null;
+  isActive?: boolean;
+  sortOrder?: number;
+  earnRateRupeesPerPoint?: number;
+  pointsExpiryDays?: number;
+  minOrderSubtotal?: number;
+  maxDiscountRatio?: number;
+  allowRewardRedemption?: boolean;
+  allowCheckoutRewardUse?: boolean;
+}
+
+interface InternalAccessSessionRow {
+  id: string;
+  session_token: string;
+  internal_user_id: string;
+  role_key: RoleKey;
+  scope_type: ScopeType;
+  scope_store_id: string | null;
+  expires_at: string;
+  revoked_at: string | null;
+  last_seen_at: string;
+}
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
+};
+
+const json = (status: number, payload: Record<string, unknown>) =>
+  new Response(JSON.stringify(payload), {
+    status,
+    headers: {
+      ...corsHeaders,
+      'Content-Type': 'application/json',
+      'Cache-Control': 'no-store',
+    },
+  });
+
+const normalizeText = (value?: string | null) => String(value ?? '').trim();
+const normalizeRewardCode = (value?: string | null) => normalizeText(value).toLowerCase().replace(/\s+/g, '-');
+const parseInteger = (value: unknown) => Number.parseInt(String(value ?? ''), 10);
+const parseNumber = (value: unknown) => Number(String(value ?? ''));
+
+const verifyAndLoadSession = async (
+  db: ReturnType<typeof createClient>,
+  token: string,
+): Promise<{ valid: true; session: InternalAccessSessionRow } | { valid: false; error: string }> => {
+  const { data, error } = await db
+    .from('internal_access_sessions')
+    .select('id, session_token, internal_user_id, role_key, scope_type, scope_store_id, expires_at, revoked_at, last_seen_at')
+    .eq('session_token', token)
+    .single();
+
+  if (error || !data) {
+    return { valid: false, error: 'Internal session not found.' };
+  }
+
+  if (data.revoked_at !== null) {
+    return { valid: false, error: 'Internal session has been revoked.' };
+  }
+
+  if (new Date(data.expires_at) <= new Date()) {
+    return { valid: false, error: 'Internal session has expired.' };
+  }
+
+  db
+    .from('internal_access_sessions')
+    .update({ last_seen_at: new Date().toISOString() })
+    .eq('session_token', token)
+    .then(() => {})
+    .catch(() => {});
+
+  return { valid: true, session: data as InternalAccessSessionRow };
+};
+
+const loadPermissionKeys = async (db: ReturnType<typeof createClient>, internalUserId: string) => {
+  const { data, error } = await db
+    .from('internal_users')
+    .select('roles!inner(role_permissions(is_allowed, permissions(permission_key)))')
+    .eq('id', internalUserId)
+    .single();
+
+  if (error || !data) {
+    return { error: 'Could not load internal user permissions.' };
+  }
+
+  const permissionKeys = ((data.roles?.role_permissions ?? []) as Array<{ is_allowed?: boolean; permissions?: { permission_key?: string | null } | null }>)
+    .filter((entry) => entry.is_allowed)
+    .map((entry) => entry.permissions?.permission_key?.trim())
+    .filter((permissionKey): permissionKey is string => Boolean(permissionKey));
+
+  return { permissionKeys: Array.from(new Set(permissionKeys)) };
+};
+
+const enforceManageRewardsPermission = async (
+  db: ReturnType<typeof createClient>,
+  session: InternalAccessSessionRow,
+) => {
+  if (session.scope_type === 'store') {
+    return { allowed: false, status: 403, error: 'Store-scoped sessions cannot manage rewards.' };
+  }
+
+  const result = await loadPermissionKeys(db, session.internal_user_id);
+  if (result.error) {
+    return { allowed: false, status: 500, error: result.error };
+  }
+
+  if (!result.permissionKeys.includes('can_manage_rewards')) {
+    return { allowed: false, status: 403, error: 'You do not have permission to manage rewards.' };
+  }
+
+  return { allowed: true };
+};
+
+const mapRewardRow = (row: any) => ({
+  id: row.id,
+  rewardCode: row.reward_code,
+  title: row.title,
+  description: row.description ?? '',
+  rewardType: row.reward_type,
+  pointCost: Number(row.point_cost ?? 0),
+  discountAmount: row.discount_amount == null ? null : Number(row.discount_amount),
+  freeItemTitle: row.free_item_title ?? null,
+  freeItemCategory: row.free_item_category ?? null,
+  freeItemFoodValue: row.free_item_food_value == null ? null : Number(row.free_item_food_value),
+  badge: row.badge ?? null,
+  eligibilityRule: row.eligibility_rule ?? 'Redeem with points anytime before expiry.',
+  isActive: Boolean(row.is_active),
+  sortOrder: Number(row.sort_order ?? 0),
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+
+const mapSettingsRow = (row: any) => ({
+  id: row.id,
+  earnRateRupeesPerPoint: Number(row.earn_rate_rupees_per_point ?? 10),
+  pointsExpiryDays: Number(row.points_expiry_days ?? 90),
+  minOrderSubtotal: Number(row.min_order_subtotal ?? 99),
+  maxDiscountRatio: Number(row.max_discount_ratio ?? 0.3),
+  allowRewardRedemption: Boolean(row.allow_reward_redemption),
+  allowCheckoutRewardUse: Boolean(row.allow_checkout_reward_use),
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+
+const loadDashboard = async (db: ReturnType<typeof createClient>) => {
+  const [catalogResult, settingsResult] = await Promise.all([
+    db
+      .from('reward_catalog')
+      .select('id, reward_code, title, description, reward_type, point_cost, discount_amount, free_item_title, free_item_category, free_item_food_value, badge, eligibility_rule, is_active, sort_order, created_at, updated_at')
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true }),
+    db
+      .from('reward_program_settings')
+      .select('id, earn_rate_rupees_per_point, points_expiry_days, min_order_subtotal, max_discount_ratio, allow_reward_redemption, allow_checkout_reward_use, created_at, updated_at')
+      .order('created_at', { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  if (catalogResult.error) {
+    return { status: 500, payload: { error: 'Could not load reward catalog.' } };
+  }
+
+  if (settingsResult.error) {
+    return { status: 500, payload: { error: 'Could not load reward program settings.' } };
+  }
+
+  return {
+    status: 200,
+    payload: {
+      success: true,
+      catalog: (catalogResult.data ?? []).map(mapRewardRow),
+      programSettings: settingsResult.data ? mapSettingsRow(settingsResult.data) : null,
+    },
+  };
+};
+
+const upsertReward = async (db: ReturnType<typeof createClient>, body: InternalRewardsRequest) => {
+  const rewardCode = normalizeRewardCode(body.rewardCode);
+  const title = normalizeText(body.title);
+  const description = normalizeText(body.description);
+  const rewardType = body.rewardType;
+  const pointCost = parseInteger(body.pointCost);
+  const sortOrder = Number.isFinite(parseInteger(body.sortOrder)) ? Math.max(0, parseInteger(body.sortOrder)) : 0;
+  const badge = normalizeText(body.badge) || null;
+  const eligibilityRule = normalizeText(body.eligibilityRule) || 'Redeem with points anytime before expiry.';
+  const isActive = body.isActive !== false;
+
+  if (!rewardCode) {
+    return { status: 400, payload: { error: 'rewardCode is required.' } };
+  }
+
+  if (!title) {
+    return { status: 400, payload: { error: 'title is required.' } };
+  }
+
+  if (rewardType !== 'discount' && rewardType !== 'free_item') {
+    return { status: 400, payload: { error: 'rewardType must be discount or free_item.' } };
+  }
+
+  if (!Number.isInteger(pointCost) || pointCost <= 0) {
+    return { status: 400, payload: { error: 'pointCost must be a whole number greater than zero.' } };
+  }
+
+  const payload: Record<string, unknown> = {
+    reward_code: rewardCode,
+    title,
+    description,
+    reward_type: rewardType,
+    point_cost: pointCost,
+    badge,
+    eligibility_rule: eligibilityRule,
+    is_active: isActive,
+    sort_order: sortOrder,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (rewardType === 'discount') {
+    const discountAmount = parseNumber(body.discountAmount);
+    if (!Number.isFinite(discountAmount) || discountAmount < 0) {
+      return { status: 400, payload: { error: 'discountAmount must be zero or greater for discount rewards.' } };
+    }
+
+    payload.discount_amount = discountAmount;
+    payload.free_item_title = null;
+    payload.free_item_category = null;
+    payload.free_item_food_value = null;
+  } else {
+    const freeItemTitle = normalizeText(body.freeItemTitle);
+    const freeItemCategory = normalizeText(body.freeItemCategory);
+    const freeItemFoodValue = parseNumber(body.freeItemFoodValue);
+
+    if (!freeItemTitle || !freeItemCategory) {
+      return { status: 400, payload: { error: 'freeItemTitle and freeItemCategory are required for free item rewards.' } };
+    }
+
+    if (!Number.isFinite(freeItemFoodValue) || freeItemFoodValue < 0) {
+      return { status: 400, payload: { error: 'freeItemFoodValue must be zero or greater for free item rewards.' } };
+    }
+
+    payload.discount_amount = null;
+    payload.free_item_title = freeItemTitle;
+    payload.free_item_category = freeItemCategory;
+    payload.free_item_food_value = freeItemFoodValue;
+  }
+
+  if (body.rewardId) {
+    const { data, error } = await db
+      .from('reward_catalog')
+      .update(payload)
+      .eq('id', body.rewardId)
+      .select('id, reward_code, title, description, reward_type, point_cost, discount_amount, free_item_title, free_item_category, free_item_food_value, badge, eligibility_rule, is_active, sort_order, created_at, updated_at')
+      .single();
+
+    if (error || !data) {
+      return { status: 500, payload: { error: error?.message ?? 'Could not update reward.' } };
+    }
+
+    return {
+      status: 200,
+      payload: {
+        success: true,
+        mode: 'updated',
+        reward: mapRewardRow(data),
+      },
+    };
+  }
+
+  const { data, error } = await db
+    .from('reward_catalog')
+    .insert(payload)
+    .select('id, reward_code, title, description, reward_type, point_cost, discount_amount, free_item_title, free_item_category, free_item_food_value, badge, eligibility_rule, is_active, sort_order, created_at, updated_at')
+    .single();
+
+  if (error || !data) {
+    return { status: 500, payload: { error: error?.message ?? 'Could not create reward.' } };
+  }
+
+  return {
+    status: 200,
+    payload: {
+      success: true,
+      mode: 'created',
+      reward: mapRewardRow(data),
+    },
+  };
+};
+
+const setRewardActive = async (db: ReturnType<typeof createClient>, body: InternalRewardsRequest) => {
+  const rewardId = normalizeText(body.rewardId);
+  if (!rewardId) {
+    return { status: 400, payload: { error: 'rewardId is required.' } };
+  }
+
+  if (typeof body.isActive !== 'boolean') {
+    return { status: 400, payload: { error: 'isActive must be a boolean.' } };
+  }
+
+  const { data, error } = await db
+    .from('reward_catalog')
+    .update({
+      is_active: body.isActive,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', rewardId)
+    .select('id, reward_code, title, description, reward_type, point_cost, discount_amount, free_item_title, free_item_category, free_item_food_value, badge, eligibility_rule, is_active, sort_order, created_at, updated_at')
+    .single();
+
+  if (error || !data) {
+    return { status: 500, payload: { error: error?.message ?? 'Could not update reward.' } };
+  }
+
+  return {
+    status: 200,
+    payload: {
+      success: true,
+      reward: mapRewardRow(data),
+    },
+  };
+};
+
+const updateProgramSettings = async (db: ReturnType<typeof createClient>, body: InternalRewardsRequest) => {
+  const earnRateRupeesPerPoint = parseInteger(body.earnRateRupeesPerPoint);
+  const pointsExpiryDays = parseInteger(body.pointsExpiryDays);
+  const minOrderSubtotal = parseNumber(body.minOrderSubtotal);
+  const maxDiscountRatio = parseNumber(body.maxDiscountRatio);
+
+  if (!Number.isInteger(earnRateRupeesPerPoint) || earnRateRupeesPerPoint <= 0) {
+    return { status: 400, payload: { error: 'earnRateRupeesPerPoint must be a whole number greater than zero.' } };
+  }
+  if (!Number.isInteger(pointsExpiryDays) || pointsExpiryDays <= 0) {
+    return { status: 400, payload: { error: 'pointsExpiryDays must be a whole number greater than zero.' } };
+  }
+  if (!Number.isFinite(minOrderSubtotal) || minOrderSubtotal < 0) {
+    return { status: 400, payload: { error: 'minOrderSubtotal must be zero or greater.' } };
+  }
+  if (!Number.isFinite(maxDiscountRatio) || maxDiscountRatio < 0 || maxDiscountRatio > 1) {
+    return { status: 400, payload: { error: 'maxDiscountRatio must be between 0 and 1.' } };
+  }
+
+  const payload = {
+    earn_rate_rupees_per_point: earnRateRupeesPerPoint,
+    points_expiry_days: pointsExpiryDays,
+    min_order_subtotal: minOrderSubtotal,
+    max_discount_ratio: maxDiscountRatio,
+    allow_reward_redemption: body.allowRewardRedemption !== false,
+    allow_checkout_reward_use: body.allowCheckoutRewardUse !== false,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data: existingSettings, error: existingSettingsError } = await db
+    .from('reward_program_settings')
+    .select('id')
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (existingSettingsError) {
+    return { status: 500, payload: { error: 'Could not load reward program settings.' } };
+  }
+
+  if (existingSettings?.id) {
+    const { data, error } = await db
+      .from('reward_program_settings')
+      .update(payload)
+      .eq('id', existingSettings.id)
+      .select('id, earn_rate_rupees_per_point, points_expiry_days, min_order_subtotal, max_discount_ratio, allow_reward_redemption, allow_checkout_reward_use, created_at, updated_at')
+      .single();
+
+    if (error || !data) {
+      return { status: 500, payload: { error: error?.message ?? 'Could not update reward program settings.' } };
+    }
+
+    return {
+      status: 200,
+      payload: {
+        success: true,
+        programSettings: mapSettingsRow(data),
+      },
+    };
+  }
+
+  const { data, error } = await db
+    .from('reward_program_settings')
+    .insert(payload)
+    .select('id, earn_rate_rupees_per_point, points_expiry_days, min_order_subtotal, max_discount_ratio, allow_reward_redemption, allow_checkout_reward_use, created_at, updated_at')
+    .single();
+
+  if (error || !data) {
+    return { status: 500, payload: { error: error?.message ?? 'Could not create reward program settings.' } };
+  }
+
+  return {
+    status: 200,
+    payload: {
+      success: true,
+      programSettings: mapSettingsRow(data),
+    },
+  };
+};
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+
+  if (req.method !== 'POST') {
+    return json(405, { error: 'Method not allowed.' });
+  }
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    return json(500, { error: 'Server is not configured for rewards management.' });
+  }
+
+  let body: InternalRewardsRequest;
+  try {
+    body = await req.json();
+  } catch {
+    return json(400, { error: 'Invalid JSON body.' });
+  }
+
+  const internalSessionToken = normalizeText(body.internalSessionToken);
+  if (!internalSessionToken) {
+    return json(400, { error: 'internalSessionToken is required.' });
+  }
+
+  const db = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const verifiedSession = await verifyAndLoadSession(db, internalSessionToken);
+  if (!verifiedSession.valid) {
+    return json(401, { error: verifiedSession.error });
+  }
+
+  const permission = await enforceManageRewardsPermission(db, verifiedSession.session);
+  if (!permission.allowed) {
+    return json(permission.status ?? 403, { error: permission.error ?? 'Not allowed.' });
+  }
+
+  switch (body.action) {
+    case 'dashboard': {
+      const result = await loadDashboard(db);
+      return json(result.status, result.payload);
+    }
+    case 'upsert_reward': {
+      const result = await upsertReward(db, body);
+      return json(result.status, result.payload);
+    }
+    case 'set_reward_active': {
+      const result = await setRewardActive(db, body);
+      return json(result.status, result.payload);
+    }
+    case 'update_program_settings': {
+      const result = await updateProgramSettings(db, body);
+      return json(result.status, result.payload);
+    }
+    default:
+      return json(400, { error: 'Unsupported rewards action.' });
+  }
+});

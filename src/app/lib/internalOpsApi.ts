@@ -25,7 +25,9 @@ const INTERNAL_CUSTOMERS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v
 const INTERNAL_PAYMENTS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-payments`;
 const INTERNAL_CREATE_POS_ORDER_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-create-pos-order`;
 const INTERNAL_REPORTS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-reports`;
+const INTERNAL_REWARDS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-rewards`;
 const INTERNAL_UPDATE_CREDENTIALS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-update-credentials`;
+const INTERNAL_MANAGE_OPERATIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-manage-operations`;
 
 const INTERNAL_LOGOUT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-logout`;
 
@@ -389,6 +391,59 @@ export interface InternalReportsSummary {
 export interface InternalReportsResponse {
   success: boolean;
   summary: InternalReportsSummary;
+}
+
+export interface InternalRewardCatalogRecord {
+  id: string;
+  rewardCode: string;
+  title: string;
+  description: string;
+  rewardType: 'discount' | 'free_item';
+  pointCost: number;
+  discountAmount: number | null;
+  freeItemTitle: string | null;
+  freeItemCategory: string | null;
+  freeItemFoodValue: number | null;
+  badge: string | null;
+  eligibilityRule: string;
+  isActive: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InternalRewardProgramSettingsRecord {
+  id: string;
+  earnRateRupeesPerPoint: number;
+  pointsExpiryDays: number;
+  minOrderSubtotal: number;
+  maxDiscountRatio: number;
+  allowRewardRedemption: boolean;
+  allowCheckoutRewardUse: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InternalRewardsDashboardResponse {
+  success: boolean;
+  catalog: InternalRewardCatalogRecord[];
+  programSettings: InternalRewardProgramSettingsRecord | null;
+}
+
+export interface InternalRewardMutationResponse {
+  success: boolean;
+  mode: 'created' | 'updated';
+  reward: InternalRewardCatalogRecord;
+}
+
+export interface InternalRewardStatusResponse {
+  success: boolean;
+  reward: InternalRewardCatalogRecord;
+}
+
+export interface InternalRewardProgramSettingsResponse {
+  success: boolean;
+  programSettings: InternalRewardProgramSettingsRecord;
 }
 
 export interface InternalStoreCredentialTarget {
@@ -990,6 +1045,68 @@ export async function deactivateManagedInternalUser(params: {
     INTERNAL_MANAGE_OPERATIONS_URL,
     { ...params, action: 'deactivate_internal_user' },
     'Could not deactivate internal user.'
+  );
+}
+
+export async function loadInternalRewardsDashboard(params: {
+  internalSessionToken: string;
+}): Promise<{ data: InternalRewardsDashboardResponse | null; error: string | null }> {
+  return postInternal<InternalRewardsDashboardResponse>(
+    INTERNAL_REWARDS_URL,
+    { ...params, action: 'dashboard' },
+    'Could not load rewards dashboard.'
+  );
+}
+
+export async function upsertInternalReward(params: {
+  internalSessionToken: string;
+  rewardId?: string;
+  rewardCode: string;
+  title: string;
+  description?: string | null;
+  rewardType: 'discount' | 'free_item';
+  pointCost: number;
+  discountAmount?: number | null;
+  freeItemTitle?: string | null;
+  freeItemCategory?: string | null;
+  freeItemFoodValue?: number | null;
+  badge?: string | null;
+  eligibilityRule?: string | null;
+  isActive?: boolean;
+  sortOrder?: number;
+}): Promise<{ data: InternalRewardMutationResponse | null; error: string | null }> {
+  return postInternal<InternalRewardMutationResponse>(
+    INTERNAL_REWARDS_URL,
+    { ...params, action: 'upsert_reward' },
+    'Could not save reward.'
+  );
+}
+
+export async function setInternalRewardActive(params: {
+  internalSessionToken: string;
+  rewardId: string;
+  isActive: boolean;
+}): Promise<{ data: InternalRewardStatusResponse | null; error: string | null }> {
+  return postInternal<InternalRewardStatusResponse>(
+    INTERNAL_REWARDS_URL,
+    { ...params, action: 'set_reward_active' },
+    'Could not update reward availability.'
+  );
+}
+
+export async function updateInternalRewardProgramSettings(params: {
+  internalSessionToken: string;
+  earnRateRupeesPerPoint: number;
+  pointsExpiryDays: number;
+  minOrderSubtotal: number;
+  maxDiscountRatio: number;
+  allowRewardRedemption: boolean;
+  allowCheckoutRewardUse: boolean;
+}): Promise<{ data: InternalRewardProgramSettingsResponse | null; error: string | null }> {
+  return postInternal<InternalRewardProgramSettingsResponse>(
+    INTERNAL_REWARDS_URL,
+    { ...params, action: 'update_program_settings' },
+    'Could not update reward program settings.'
   );
 }
 

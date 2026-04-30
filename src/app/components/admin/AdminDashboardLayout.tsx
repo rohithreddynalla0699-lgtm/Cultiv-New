@@ -1,4 +1,4 @@
-import { BarChart3, ClipboardList, LayoutDashboard, LogOut, Package2, ReceiptIndianRupee, ScrollText, Store, Users } from 'lucide-react';
+import { BarChart3, ClipboardList, Gift, LayoutDashboard, LogOut, Package2, ReceiptIndianRupee, ScrollText, Store, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { NavLink, Navigate, Outlet } from 'react-router-dom';
 import { useLocation } from 'react-router-dom';
@@ -36,6 +36,7 @@ export function AdminDashboardLayout() {
         ...(hasPermission('can_access_inventory') ? [{ to: '/operations/inventory', label: 'Inventory', icon: Package2 }] : []),
         ...(hasPermission('can_manage_employees') ? [{ to: '/operations/employees', label: 'Employees', icon: Users }] : []),
         ...(hasPermission('can_manage_menu') ? [{ to: '/operations/menu', label: 'Menu', icon: ScrollText }] : []),
+        ...(hasPermission('can_manage_rewards') ? [{ to: '/operations/rewards', label: 'Rewards', icon: Gift }] : []),
         ...(hasPermission('can_view_reports') ? [{ to: '/operations/reports', label: 'Reports', icon: BarChart3 }] : []),
         ...(hasPermission('can_manage_stores') ? [{ to: '/operations/stores', label: 'Stores', icon: Store }] : []),
       ];

@@ -82,6 +82,7 @@ values
   ('can_manage_stores', 'Manage Stores', 'Create, edit, and archive stores.', now()),
   ('can_manage_employees', 'Manage Employees', 'Create employees and manage their status.', now()),
   ('can_manage_menu', 'Manage Menu', 'Manage menu items and option groups.', now()),
+  ('can_manage_rewards', 'Manage Rewards', 'Manage rewards catalog and reward program settings.', now()),
   ('can_view_reports', 'View Reports', 'Access revenue and operations reporting.', now()),
   ('can_access_orders', 'Access Orders', 'View and update internal order board.', now()),
   ('can_access_pos', 'Access POS', 'Create in-store POS orders and manual payments.', now()),
@@ -98,6 +99,7 @@ with desired_permissions(role_key, permission_key) as (
     ('owner', 'can_manage_stores'),
     ('owner', 'can_manage_employees'),
     ('owner', 'can_manage_menu'),
+    ('owner', 'can_manage_rewards'),
     ('owner', 'can_view_reports'),
     ('owner', 'can_access_orders'),
     ('owner', 'can_access_pos'),
@@ -107,6 +109,7 @@ with desired_permissions(role_key, permission_key) as (
     ('admin', 'can_manage_stores'),
     ('admin', 'can_manage_employees'),
     ('admin', 'can_manage_menu'),
+    ('admin', 'can_manage_rewards'),
     ('admin', 'can_view_reports'),
     ('admin', 'can_access_orders'),
     ('admin', 'can_access_pos'),
@@ -136,6 +139,13 @@ on conflict (role_id, permission_id) do update
 set
   is_allowed = excluded.is_allowed,
   granted_at = now();
+
+delete from public.role_permissions rp
+using public.roles r, public.permissions p
+where rp.role_id = r.id
+  and rp.permission_id = p.id
+  and r.role_key = 'store'
+  and p.permission_key = 'can_manage_rewards';
 
 insert into public.internal_users (
   id,

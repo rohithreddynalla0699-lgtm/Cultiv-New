@@ -126,6 +126,7 @@ export interface AdminPermissions {
   canManageStores: boolean;
   canManageEmployees: boolean;
   canManageMenu: boolean;
+  canManageRewards: boolean;
   canViewReports: boolean;
   canAccessOrders: boolean;
   canAccessPos: boolean;

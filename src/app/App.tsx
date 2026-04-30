@@ -47,6 +47,7 @@ const OrdersBoardScreen = lazy(() => import('./components/admin/OrdersBoardScree
 const CounterBillingScreen = lazy(() => import('./components/admin/CounterBillingScreen').then((module) => ({ default: module.CounterBillingScreen })));
 const InventoryScreen = lazy(() => import('./components/admin/InventoryScreen').then((module) => ({ default: module.InventoryScreen })));
 const MenuManagementScreen = lazy(() => import('./components/admin/MenuManagementScreen').then((module) => ({ default: module.MenuManagementScreen })));
+const RewardsManagementScreen = lazy(() => import('./components/admin/RewardsManagementScreen').then((module) => ({ default: module.RewardsManagementScreen })));
 const ReportsScreen = lazy(() => import('./components/admin/ReportsScreen').then((module) => ({ default: module.ReportsScreen })));
 const EmployeesScreen = lazy(() => import('./components/admin/EmployeesScreen').then((module) => ({ default: module.EmployeesScreen })));
 const StoresScreen = lazy(() => import('./components/admin/StoresScreen').then((module) => ({ default: module.StoresScreen })));
@@ -257,6 +258,7 @@ function AppShell() {
               <Route path="inventory" element={<InventoryScreen />} />
               <Route path="employees" element={<EmployeesScreen />} />
               <Route path="menu" element={<MenuManagementScreen />} />
+              <Route path="rewards" element={<RewardsManagementScreen />} />
               <Route path="reports" element={<ReportsScreen />} />
               <Route path="stores" element={<StoresScreen />} />
             </Route>
