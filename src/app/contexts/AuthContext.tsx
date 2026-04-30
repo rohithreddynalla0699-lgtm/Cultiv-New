@@ -27,6 +27,7 @@ import { fetchOperationalOrdersFromSupabase, updateSupabaseOrderStatus } from '.
 import {
   DISCOUNT_REWARD_VALUES,
   FREE_ITEM_REWARD_VALUES,
+  mapBackendRewardCatalogToOffers,
   normalizeRewardId,
   OFFER_LIBRARY,
   REWARD_ID_SET,
@@ -1009,36 +1010,47 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, [customerAccount?.id, customerSessionToken]);
 
   const refreshLoyalty = useCallback(async () => {
-  if (!customerSessionToken) {
-    setLoyaltySummary(null);
-    return;
-  }
-
-  setLoyaltyLoading(true);
-  try {
-    const { data, error } = await supabase.functions.invoke('loyalty-summary', {
-  body: {
-    customerSessionToken,
-  },
-});
-
-    if (error || !data) {
-      throw new Error(error?.message || 'Failed to fetch loyalty summary');
+    if (!customerSessionToken) {
+      setLoyaltySummary(null);
+      return;
     }
 
-    setLoyaltySummary({
-  availablePoints: data.availablePoints ?? 0,
-  activeBatches: Array.isArray(data.activeBatches) ? data.activeBatches as LoyaltyBatchSummary[] : [],
-  recentActivity: Array.isArray(data.recentActivity) ? data.recentActivity : [],
-  });
-  
-  } catch (err) {
-    console.error('Failed to refresh loyalty summary', err);
-    setLoyaltySummary(null);
-  } finally {
-    setLoyaltyLoading(false);
-  }
-}, [customerSessionToken]);
+    setLoyaltyLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('loyalty-summary', {
+        body: {
+          customerSessionToken,
+        },
+      });
+
+      if (error || !data) {
+        throw new Error(error?.message || 'Failed to fetch loyalty summary');
+      }
+
+      const nextSummary: LoyaltySummary = {
+        availablePoints: Number(data.availablePoints ?? 0),
+        expiringSoonPoints: Number(data.expiringSoonPoints ?? 0),
+        activeBatches: Array.isArray(data.activeBatches) ? data.activeBatches as LoyaltyBatchSummary[] : [],
+        recentActivity: Array.isArray(data.recentActivity) ? data.recentActivity : [],
+        activeRewardCatalog: Array.isArray(data.activeRewardCatalog) ? data.activeRewardCatalog : [],
+        availableEntitlements: Array.isArray(data.availableEntitlements) ? data.availableEntitlements : [],
+        availableRewardCodes: Array.isArray(data.availableRewardCodes) ? data.availableRewardCodes : [],
+        programSettings: data.programSettings ?? null,
+      };
+
+      setLoyaltySummary(nextSummary);
+      setCustomerAccount((previous) => (
+        previous
+          ? { ...previous, reward_points: nextSummary.availablePoints }
+          : previous
+      ));
+    } catch (err) {
+      console.error('Failed to refresh loyalty summary', err);
+      setLoyaltySummary(null);
+    } finally {
+      setLoyaltyLoading(false);
+    }
+  }, [customerSessionToken]);
 
   useEffect(() => {
     let active = true;
@@ -1099,10 +1111,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     ? (loyaltyProfiles[user.id] ?? createEmptyLoyaltyProfile(user.id))
     : null;
   const loyaltyProfile = loyaltyProfileBase
-    // Legacy profile fields are still used in the UI, but live point totals should
-    // follow the DB-backed summary whenever it is available.
-    ? { ...loyaltyProfileBase, availablePoints: loyaltySummary?.availablePoints ?? 0 }
+    ? {
+      ...loyaltyProfileBase,
+      availablePoints: loyaltySummary?.availablePoints ?? loyaltyProfileBase.availablePoints,
+      expiringSoonPoints: loyaltySummary?.expiringSoonPoints ?? loyaltyProfileBase.expiringSoonPoints,
+      availableRewards: loyaltySummary?.availableRewardCodes ?? loyaltyProfileBase.availableRewards,
+    }
     : null;
+  const offers = useMemo(
+    () => (
+      loyaltySummary?.activeRewardCatalog?.length
+        ? mapBackendRewardCatalogToOffers(loyaltySummary.activeRewardCatalog)
+        : OFFER_LIBRARY
+    ),
+    [loyaltySummary?.activeRewardCatalog],
+  );
 
   useEffect(() => {
     if (!userRecord) {
@@ -1619,49 +1642,60 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return { success: false, message: 'Sign in to redeem a member benefit.' };
     }
 
-    const offer = OFFER_LIBRARY.find((entry) => entry.id === offerId);
-    const profile = loyaltyProfiles[user.id];
-    if (!offer || !profile) {
-      return { success: false, message: 'This benefit is not available right now.' };
+    if (!customerSessionToken) {
+      return { success: false, message: 'Please sign in again to continue securely.' };
     }
 
-    const now = Date.now();
-    const normalizedProfile = purgeExpiredPoints(profile, now);
-    const pointCost = offer.pointCost ?? 0;
+    const offer = offers.find((entry) => entry.id === offerId);
+    if (!offer) {
+      return { success: false, message: 'This benefit is not available right now.' };
+    }
 
     if (!offer.pointCost) {
       return { success: false, message: 'This reward cannot be redeemed with points.' };
     }
 
-    if (normalizedProfile.availableRewards.includes(offer.id)) {
-      return { success: true, message: `${offer.title} is already in your account. Use it at checkout.` };
+    try {
+      const { data, error } = await supabase.functions.invoke('customer-redeem-reward', {
+        body: {
+          customerSessionToken,
+          rewardCode: offer.id,
+        },
+      });
+
+      if (error || !data?.success) {
+        return { success: false, message: data?.error || error?.message || 'Could not redeem reward right now.' };
+      }
+
+      if (data.summary) {
+        const nextSummary: LoyaltySummary = {
+          availablePoints: Number(data.summary.availablePoints ?? 0),
+          expiringSoonPoints: Number(data.summary.expiringSoonPoints ?? 0),
+          activeBatches: Array.isArray(data.summary.activeBatches) ? data.summary.activeBatches as LoyaltyBatchSummary[] : [],
+          recentActivity: Array.isArray(data.summary.recentActivity) ? data.summary.recentActivity : [],
+          activeRewardCatalog: Array.isArray(data.summary.activeRewardCatalog) ? data.summary.activeRewardCatalog : [],
+          availableEntitlements: Array.isArray(data.summary.availableEntitlements) ? data.summary.availableEntitlements : [],
+          availableRewardCodes: Array.isArray(data.summary.availableRewardCodes) ? data.summary.availableRewardCodes : [],
+          programSettings: data.summary.programSettings ?? null,
+        };
+
+        setLoyaltySummary(nextSummary);
+        setCustomerAccount((previous) => (
+          previous
+            ? { ...previous, reward_points: nextSummary.availablePoints }
+            : previous
+        ));
+      } else {
+        await refreshLoyalty();
+      }
+
+      return { success: true, message: data.message || `${offer.title} is now saved to your CULTIV profile.` };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Could not redeem reward right now.',
+      };
     }
-
-    if (normalizedProfile.availablePoints < pointCost) {
-      return { success: false, message: 'You need more non-expired points to redeem this reward.' };
-    }
-
-    const deducted = deductPointsFIFO(normalizedProfile, pointCost, now);
-    if (!deducted) {
-      return { success: false, message: 'Unable to redeem right now. Please try again.' };
-    }
-
-    setLoyaltyProfiles((previous) => ({
-      ...previous,
-      [user.id]: {
-        ...normalizedProfile,
-        ...deducted,
-        availableRewards: [...normalizedProfile.availableRewards, offer.id],
-        pointsActivity: addActivity(normalizedProfile.pointsActivity, {
-          type: 'redeem',
-          points: pointCost,
-          date: now,
-          description: `Redeemed ${offer.title}.`,
-        }),
-      },
-    }));
-
-    return { success: true, message: `${offer.title} is now saved to your CULTIV profile.` };
   };
 
   const getOrderById = (orderId: string) => orders.find((order) => order.id === orderId);
@@ -1768,7 +1802,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     orders,
     sharedOrders,
     activeOrders,
-    offers: OFFER_LIBRARY,
+    offers,
     loyaltyProfile,
     loyaltySummary,
     loyaltyLoading,

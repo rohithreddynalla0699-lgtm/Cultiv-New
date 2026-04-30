@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { verifyAndLoadCustomerSession } from '../_shared/customer-session.ts';
+import { buildRewardSummary } from '../_shared/rewards-summary.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -59,51 +60,17 @@ Deno.serve(async (req) => {
     });
   }
 
-  const { data: batches, error } = await db
-    .from('loyalty_points_ledger')
-    .select('order_id, points, points_remaining, earned_at, expires_at, created_at')
-    .eq('user_id', verifiedSession.session.customer_id)
-    .eq('entry_type', 'earn')
-    .gt('points_remaining', 0)
-    .gt('expires_at', new Date().toISOString())
-    .order('expires_at', { ascending: true })
-    .order('earned_at', { ascending: true })
-    .order('created_at', { ascending: true });
-
-  if (error) {
+  try {
+    const summary = await buildRewardSummary(db, verifiedSession.session.customer_id);
+    return new Response(JSON.stringify(summary), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  } catch (error) {
     console.error('loyalty-summary query failed:', error);
     return new Response(JSON.stringify({ error: 'Failed to load loyalty summary' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
-
-  const availablePoints = (batches ?? []).reduce(
-    (sum, batch) => sum + Number(batch.points_remaining || 0),
-    0,
-  );
-
-  const { data: recentActivity, error: activityError } = await db
-    .from('loyalty_points_ledger')
-    .select('order_id, entry_type, points, points_remaining, earned_at, expires_at, created_at, metadata')
-    .eq('user_id', verifiedSession.session.customer_id)
-    .order('created_at', { ascending: false })
-    .limit(20);
-
-  if (activityError) {
-    console.error('loyalty-summary recent activity query failed:', activityError);
-    return new Response(JSON.stringify({ error: 'Failed to load loyalty summary' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
-
-  return new Response(JSON.stringify({
-    availablePoints,
-    activeBatches: batches ?? [],
-    recentActivity: recentActivity ?? [],
-  }), {
-    status: 200,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  });
 });

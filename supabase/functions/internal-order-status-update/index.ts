@@ -296,6 +296,14 @@ Deno.serve(async (req) => {
           }
         }
       }
+
+      const { error: syncRewardPointsError } = await db.rpc('sync_customer_reward_points', {
+        p_customer_id: completedOrder.customer_id,
+      });
+
+      if (syncRewardPointsError) {
+        console.error('Failed to sync customer reward_points cache', syncRewardPointsError);
+      }
     }
   }
 

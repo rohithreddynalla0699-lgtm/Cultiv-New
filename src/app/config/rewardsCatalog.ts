@@ -17,6 +17,24 @@ type DiscountReward = {
 
 export type RewardCatalogEntry = FreeItemReward | DiscountReward;
 
+export interface BackendRewardCatalogEntry {
+  id: string;
+  rewardCode: string;
+  title: string;
+  description: string;
+  rewardType: 'free_item' | 'discount';
+  pointCost: number;
+  discountAmount: number | null;
+  freeItemTitle: string | null;
+  freeItemCategory: string | null;
+  freeItemFoodValue: number | null;
+  badge: string;
+  eligibilityRule: string;
+  isActive: boolean;
+  sortOrder: number;
+  value: string;
+}
+
 export const REWARDS_CATALOG: RewardCatalogEntry[] = [
   { id: 'water', points: 50, type: 'free_item', item: 'Water Bottle', foodValue: 25 },
   { id: 'drink', points: 100, type: 'free_item', item: 'Drink', foodValue: 79 },
@@ -79,6 +97,26 @@ export const OFFER_LIBRARY: Offer[] = REWARDS_CATALOG.map((reward) => ({
   unlockValue: reward.points,
   autoApply: false,
 }));
+
+export const mapBackendRewardCatalogToOffers = (catalog: BackendRewardCatalogEntry[]): Offer[] => (
+  catalog
+    .filter((reward) => reward.isActive)
+    .sort((left, right) => left.sortOrder - right.sortOrder)
+    .map((reward) => ({
+      id: reward.rewardCode,
+      title: reward.title,
+      description: reward.description,
+      type: 'reward',
+      value: reward.value,
+      active: reward.isActive,
+      eligibilityRule: reward.eligibilityRule,
+      pointCost: reward.pointCost,
+      badge: reward.badge,
+      unlockType: 'points',
+      unlockValue: reward.pointCost,
+      autoApply: false,
+    }))
+);
 
 export const DISCOUNT_REWARD_VALUES: Record<string, number> = Object.fromEntries(
   REWARDS_CATALOG
