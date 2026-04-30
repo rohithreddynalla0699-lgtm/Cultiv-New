@@ -1,3 +1,24 @@
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'loyalty_points_ledger'
+      and column_name = 'loyalty_entry_id'
+  ) and not exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'loyalty_points_ledger'
+      and column_name = 'id'
+  ) then
+    alter table public.loyalty_points_ledger
+      rename column loyalty_entry_id to id;
+  end if;
+end
+$$;
+
 create table if not exists public.reward_catalog (
   id uuid primary key default gen_random_uuid(),
   reward_code text not null unique,
@@ -40,7 +61,7 @@ create table if not exists public.customer_reward_entitlements (
   id uuid primary key default gen_random_uuid(),
   customer_id uuid not null references public.customers(id) on delete cascade,
   reward_id uuid not null references public.reward_catalog(id) on delete cascade,
-  source_loyalty_entry_id uuid references public.loyalty_points_ledger(loyalty_entry_id) on delete set null,
+  source_loyalty_entry_id uuid references public.loyalty_points_ledger(id) on delete set null,
   status text not null check (status = any (array['available'::text, 'used'::text, 'expired'::text, 'revoked'::text])),
   redeemed_at timestamptz not null default now(),
   used_at timestamptz,
@@ -282,7 +303,7 @@ begin
   v_remaining_to_deduct := v_reward.point_cost;
 
   for v_batch in
-    select loyalty_entry_id, points_remaining
+    select id, points_remaining
     from public.loyalty_points_ledger
     where user_id = p_customer_id
       and entry_type = 'earn'
@@ -297,13 +318,13 @@ begin
       update public.loyalty_points_ledger
         set points_remaining = 0,
             updated_at = v_now
-      where loyalty_entry_id = v_batch.loyalty_entry_id;
+      where id = v_batch.id;
       v_remaining_to_deduct := v_remaining_to_deduct - v_batch.points_remaining;
     else
       update public.loyalty_points_ledger
         set points_remaining = points_remaining - v_remaining_to_deduct,
             updated_at = v_now
-      where loyalty_entry_id = v_batch.loyalty_entry_id;
+      where id = v_batch.id;
       v_remaining_to_deduct := 0;
     end if;
   end loop;
@@ -339,7 +360,7 @@ begin
     v_now,
     v_now
   )
-  returning loyalty_entry_id into v_redeem_entry_id;
+  returning id into v_redeem_entry_id;
 
   insert into public.customer_reward_entitlements (
     customer_id,

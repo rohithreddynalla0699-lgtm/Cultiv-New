@@ -187,7 +187,7 @@ const mapCustomerRow = (row: any) => ({
 });
 
 const mapActivityRow = (row: any) => ({
-  loyaltyEntryId: row.loyalty_entry_id,
+  loyaltyEntryId: row.id,
   orderId: row.order_id ?? null,
   entryType: row.entry_type,
   points: Number(row.points ?? 0),
@@ -494,7 +494,7 @@ const loadCustomerRewardDetail = async (db: ReturnType<typeof createClient>, cus
       .maybeSingle(),
     db
       .from('loyalty_points_ledger')
-      .select('loyalty_entry_id, order_id, entry_type, points, points_remaining, earned_at, expires_at, created_at, metadata')
+      .select('id, order_id, entry_type, points, points_remaining, earned_at, expires_at, created_at, metadata')
       .eq('user_id', customerId)
       .order('created_at', { ascending: false })
       .limit(20),

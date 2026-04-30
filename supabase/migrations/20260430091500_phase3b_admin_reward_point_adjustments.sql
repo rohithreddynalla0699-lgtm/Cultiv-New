@@ -88,7 +88,7 @@ begin
       v_now,
       v_now
     )
-    returning loyalty_entry_id into v_adjustment_entry_id;
+    returning id into v_adjustment_entry_id;
   else
     v_points_to_remove := abs(v_points_delta);
 
@@ -105,7 +105,7 @@ begin
     end if;
 
     for v_batch in
-      select loyalty_entry_id, points_remaining
+      select id, points_remaining
       from public.loyalty_points_ledger
       where user_id = p_customer_id
         and entry_type = 'earn'
@@ -120,13 +120,13 @@ begin
         update public.loyalty_points_ledger
           set points_remaining = 0,
               updated_at = v_now
-        where loyalty_entry_id = v_batch.loyalty_entry_id;
+        where id = v_batch.id;
         v_points_to_remove := v_points_to_remove - v_batch.points_remaining;
       else
         update public.loyalty_points_ledger
           set points_remaining = points_remaining - v_points_to_remove,
               updated_at = v_now
-        where loyalty_entry_id = v_batch.loyalty_entry_id;
+        where id = v_batch.id;
         v_points_to_remove := 0;
       end if;
     end loop;
@@ -164,7 +164,7 @@ begin
       v_now,
       v_now
     )
-    returning loyalty_entry_id into v_adjustment_entry_id;
+    returning id into v_adjustment_entry_id;
   end if;
 
   v_available_points := public.sync_customer_reward_points(p_customer_id);

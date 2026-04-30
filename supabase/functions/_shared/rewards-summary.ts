@@ -102,7 +102,7 @@ export const buildRewardSummary = async (db: any, customerId: string) => {
   ] = await Promise.all([
     db
       .from('loyalty_points_ledger')
-      .select('loyalty_entry_id, order_id, points, points_remaining, earned_at, expires_at, created_at')
+      .select('id, order_id, points, points_remaining, earned_at, expires_at, created_at')
       .eq('user_id', customerId)
       .eq('entry_type', 'earn')
       .gt('points_remaining', 0)
