@@ -8,6 +8,77 @@ import type { InternalReportsSummary } from '../../lib/internalOpsApi';
 const formatCurrency = (value: number) => `Rs ${Number(value ?? 0).toFixed(2)}`;
 type ReportsDatePreset = 'today' | 'yesterday' | 'this_week' | 'this_month' | 'custom';
 
+function escapeCsvCell(value: string | number | null | undefined) {
+  const normalized = String(value ?? '');
+  if (/[",\n]/.test(normalized)) {
+    return `"${normalized.replace(/"/g, '""')}"`;
+  }
+  return normalized;
+}
+
+function buildCsvContent(rows: Array<Array<string | number | null | undefined>>) {
+  return rows.map((row) => row.map(escapeCsvCell).join(',')).join('\n');
+}
+
+function downloadCsvFile(filename: string, rows: Array<Array<string | number | null | undefined>>) {
+  const content = buildCsvContent(rows);
+  const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function slugifyFilenamePart(value: string | null | undefined) {
+  const normalized = String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  return normalized || 'unknown';
+}
+
+function formatDateForFilename(value: string | null | undefined) {
+  if (!value) return 'unknown-date';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 'unknown-date';
+
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function formatDateRangeForFilename(from: string | null | undefined, to: string | null | undefined) {
+  const fromLabel = formatDateForFilename(from);
+  const toLabel = formatDateForFilename(to);
+  return fromLabel === toLabel ? fromLabel : `${fromLabel}_to_${toLabel}`;
+}
+
+function formatStoreForFilename(storeName: string | null | undefined, isAllStores: boolean) {
+  if (isAllStores) return 'all-stores';
+  return slugifyFilenamePart(storeName);
+}
+
+function buildReportFilename(
+  type: 'summary' | 'items' | 'payments' | 'store_summary',
+  from: string | null | undefined,
+  to: string | null | undefined,
+  storeName: string | null | undefined,
+  isAllStores: boolean,
+) {
+  const rangePart = formatDateRangeForFilename(from, to);
+  const storePart = formatStoreForFilename(storeName, isAllStores);
+  return `cultiv_${type}_${rangePart}_${storePart}.csv`;
+}
+
 function parseDateInputAsLocalDate(value: string) {
   const trimmed = value.trim();
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
@@ -151,6 +222,20 @@ function buildDateRange(params: {
   } as const;
 }
 
+function buildCsvMetadataRows(params: {
+  reportName: string;
+  rangeLabel: string;
+  storeLabel: string;
+}) {
+  return [
+    ['Report Name', params.reportName],
+    ['Selected Date Range', params.rangeLabel],
+    ['Selected Store', params.storeLabel],
+    ['Generated At', new Date().toLocaleString('en-IN')],
+    [],
+  ];
+}
+
 export function ReportsScreen() {
   const { session, permissions, activeStoreUuid, activeStore, stores } = useAdminDashboard();
   const [summary, setSummary] = useState<InternalReportsSummary | null>(null);
@@ -239,6 +324,76 @@ export function ReportsScreen() {
     })).sort((left, right) => right.amount - left.amount || right.count - left.count);
   }, [summary]);
 
+  const selectedStoreLabel = activeStore?.name ?? 'All stores';
+  const isAllStores = !activeStore;
+
+  const exportSummaryCsv = () => {
+    if (!summary) return;
+    downloadCsvFile(
+      buildReportFilename('summary', summary.rangeFrom, summary.rangeTo, selectedStoreLabel, isAllStores),
+      [
+        ...buildCsvMetadataRows({
+          reportName: 'Daily Summary Report',
+          rangeLabel: summary.rangeLabel,
+          storeLabel: selectedStoreLabel,
+        }),
+        ['Metric', 'Value'],
+        ['Revenue', summary.totalRevenue],
+        ['Orders', summary.totalOrders],
+        ['Average Ticket', summary.averageTicket],
+        ['Tax', summary.totalTax],
+      ],
+    );
+  };
+
+  const exportItemSalesCsv = () => {
+    if (!summary) return;
+    downloadCsvFile(
+      buildReportFilename('items', summary.rangeFrom, summary.rangeTo, selectedStoreLabel, isAllStores),
+      [
+        ...buildCsvMetadataRows({
+          reportName: 'Item Sales Report',
+          rangeLabel: summary.rangeLabel,
+          storeLabel: selectedStoreLabel,
+        }),
+        ['Item Name', 'Quantity Sold', 'Revenue'],
+        ...summary.itemSalesSummary.map((entry) => [entry.itemName, entry.quantity, entry.revenue]),
+      ],
+    );
+  };
+
+  const exportPaymentMethodsCsv = () => {
+    if (!summary) return;
+    downloadCsvFile(
+      buildReportFilename('payments', summary.rangeFrom, summary.rangeTo, selectedStoreLabel, isAllStores),
+      [
+        ...buildCsvMetadataRows({
+          reportName: 'Payment Method Split Report',
+          rangeLabel: summary.rangeLabel,
+          storeLabel: selectedStoreLabel,
+        }),
+        ['Payment Method', 'Payment Count', 'Amount'],
+        ...paymentMethodRows.map((entry) => [entry.paymentMethod, entry.count, entry.amount]),
+      ],
+    );
+  };
+
+  const exportStoreSummaryCsv = () => {
+    if (!summary) return;
+    downloadCsvFile(
+      buildReportFilename('store_summary', summary.rangeFrom, summary.rangeTo, selectedStoreLabel, isAllStores),
+      [
+        ...buildCsvMetadataRows({
+          reportName: 'Store Summary Report',
+          rangeLabel: summary.rangeLabel,
+          storeLabel: selectedStoreLabel,
+        }),
+        ['Store', 'Orders', 'Revenue', 'Tax'],
+        ...storeRows.map((entry) => [entry.name, entry.orders, entry.revenue, entry.tax]),
+      ],
+    );
+  };
+
   if (!permissions.canViewReports) {
     return <Navigate to="/operations/summary" replace />;
   }
@@ -249,7 +404,43 @@ export function ReportsScreen() {
         eyebrow="Reports"
         title="Operations performance"
         description="Backend-authoritative sales, channel mix, payment, item, and store reporting for the selected date range."
-        action={<div className="rounded-full bg-white/88 px-4 py-2 text-sm font-medium text-foreground/68">{activeStore?.name ?? 'All stores'}</div>}
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="rounded-full bg-white/88 px-4 py-2 text-sm font-medium text-foreground/68">{selectedStoreLabel}</div>
+            {summary ? (
+              <>
+                <button
+                  type="button"
+                  onClick={exportSummaryCsv}
+                  className="rounded-full border border-primary/16 bg-white px-4 py-2 text-sm font-medium text-foreground/72 transition hover:bg-primary/5"
+                >
+                  Export Summary CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={exportItemSalesCsv}
+                  className="rounded-full border border-primary/16 bg-white px-4 py-2 text-sm font-medium text-foreground/72 transition hover:bg-primary/5"
+                >
+                  Export Item CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={exportPaymentMethodsCsv}
+                  className="rounded-full border border-primary/16 bg-white px-4 py-2 text-sm font-medium text-foreground/72 transition hover:bg-primary/5"
+                >
+                  Export Payment CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={exportStoreSummaryCsv}
+                  className="rounded-full border border-primary/16 bg-white px-4 py-2 text-sm font-medium text-foreground/72 transition hover:bg-primary/5"
+                >
+                  Export Store CSV
+                </button>
+              </>
+            ) : null}
+          </div>
+        }
       />
 
       <section className="rounded-[24px] border border-primary/12 bg-white/90 p-4">
