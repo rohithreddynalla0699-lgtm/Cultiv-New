@@ -375,6 +375,9 @@ export type InternalPosCheckoutErrorCode =
   | 'UNKNOWN_ERROR';
 
 export interface InternalReportsSummary {
+  rangeLabel: string;
+  rangeFrom: string | null;
+  rangeTo: string | null;
   totalRevenue: number;
   todayRevenue: number;
   totalOrders: number;
@@ -1243,6 +1246,12 @@ export async function adjustInternalRewardCustomerPoints(params: {
 export async function loadInternalReports(params: {
   internalSessionToken: string;
   storeId?: string | null;
+  dateRange?: {
+    from?: string | null;
+    to?: string | null;
+    label?: string;
+    preset?: 'today' | 'yesterday' | 'this_week' | 'this_month' | 'custom';
+  } | null;
 }): Promise<{ data: InternalReportsResponse | null; error: string | null }> {
   return postInternal<InternalReportsResponse>(
     INTERNAL_REPORTS_URL,

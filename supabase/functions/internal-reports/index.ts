@@ -8,6 +8,12 @@ interface InternalReportsRequest {
   internalSessionToken?: string;
   action?: 'dashboard';
   storeId?: string | null;
+  dateRange?: {
+    from?: string;
+    to?: string;
+    label?: string;
+    preset?: 'today' | 'yesterday' | 'this_week' | 'this_month' | 'custom';
+  } | null;
 }
 
 interface InternalAccessSessionRow {
@@ -36,6 +42,54 @@ const json = (status: number, payload: Record<string, unknown>) =>
       'Cache-Control': 'no-store',
     },
   });
+
+const isValidIsoDate = (value: unknown) => {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  return !Number.isNaN(new Date(value).getTime());
+};
+
+const normalizeDateRange = (
+  dateRange: InternalReportsRequest['dateRange'],
+): {
+  from: string | null;
+  to: string | null;
+  label: string;
+  preset: 'today' | 'yesterday' | 'this_week' | 'this_month' | 'custom' | 'all_time';
+} | null => {
+  if (!dateRange) {
+    return {
+      from: null,
+      to: null,
+      label: 'All time',
+      preset: 'all_time',
+    };
+  }
+
+  const from = isValidIsoDate(dateRange.from) ? new Date(String(dateRange.from)).toISOString() : null;
+  const to = isValidIsoDate(dateRange.to) ? new Date(String(dateRange.to)).toISOString() : null;
+  const preset = (
+    dateRange.preset === 'today'
+    || dateRange.preset === 'yesterday'
+    || dateRange.preset === 'this_week'
+    || dateRange.preset === 'this_month'
+    || dateRange.preset === 'custom'
+  ) ? dateRange.preset : 'all_time';
+
+  if ((from && !to) || (!from && to)) {
+    return null;
+  }
+
+  if (from && to && new Date(from) > new Date(to)) {
+    return null;
+  }
+
+  return {
+    from,
+    to,
+    label: String(dateRange.label ?? '').trim() || 'Selected range',
+    preset,
+  };
+};
 
 const verifyAndLoadSession = async (
   db: ReturnType<typeof createClient>,
@@ -165,44 +219,64 @@ Deno.serve(async (req) => {
   }
 
   const storeIds = scopeResult.storeIds;
-  const now = new Date();
-  const startOfToday = new Date(now);
-  startOfToday.setHours(0, 0, 0, 0);
+  const normalizedDateRange = normalizeDateRange(body.dateRange ?? null);
+  if (!normalizedDateRange) {
+    return json(400, { error: 'dateRange must include a valid from/to pair.' });
+  }
 
-  const [ordersResult, paymentsResult, itemsResult, storesResult] = await Promise.all([
-    db
+  let ordersQuery = db
       .from('orders')
       .select('order_id, store_id, order_type, source_channel, order_status, total_amount, subtotal_amount, discount_amount, tax_amount, tip_amount, created_at')
-      .in('store_id', storeIds),
-    db
-      .from('order_payments')
-      .select('order_id, store_id, payment_method, amount, status, recorded_at')
-      .in('store_id', storeIds),
-    db
-      .from('order_items')
-      .select('order_id, item_name, quantity, line_total, orders!inner(store_id)')
-      .in('orders.store_id', storeIds),
+      .in('store_id', storeIds);
+
+  if (normalizedDateRange.from && normalizedDateRange.to) {
+    ordersQuery = ordersQuery
+      .gte('created_at', normalizedDateRange.from)
+      .lte('created_at', normalizedDateRange.to);
+  }
+
+  const [ordersResult, storesResult] = await Promise.all([
+    ordersQuery,
     db
       .from('stores')
       .select('id, name')
       .in('id', storeIds),
   ]);
 
-  if (ordersResult.error || paymentsResult.error || itemsResult.error || storesResult.error) {
+  if (ordersResult.error || storesResult.error) {
     return json(500, { error: 'Could not load reports.' });
   }
 
   const orders = (ordersResult.data ?? []).filter((row: any) => row.order_status !== 'cancelled');
-  const payments = (paymentsResult.data ?? []).filter((row: any) => row.status === 'recorded');
-  const orderItems = itemsResult.data ?? [];
   const stores = storesResult.data ?? [];
   const storeNameById = Object.fromEntries(stores.map((row: any) => [row.id, row.name]));
+  const filteredOrderIds = orders.map((row: any) => row.order_id);
 
-  const todayOrders = orders.filter((row: any) => new Date(row.created_at) >= startOfToday);
+  const [paymentsResult, itemsResult] = filteredOrderIds.length > 0
+    ? await Promise.all([
+      db
+        .from('order_payments')
+        .select('order_id, store_id, payment_method, amount, status, recorded_at')
+        .in('order_id', filteredOrderIds),
+      db
+        .from('order_items')
+        .select('order_id, item_name, quantity, line_total')
+        .in('order_id', filteredOrderIds),
+    ])
+    : [
+      { data: [], error: null },
+      { data: [], error: null },
+    ];
+
+  if (paymentsResult.error || itemsResult.error) {
+    return json(500, { error: 'Could not load reports.' });
+  }
+
+  const payments = (paymentsResult.data ?? []).filter((row: any) => row.status === 'recorded');
+  const orderItems = itemsResult.data ?? [];
+
   const totalRevenue = orders.reduce((sum: number, row: any) => sum + Number(row.total_amount ?? 0), 0);
-  const todayRevenue = todayOrders.reduce((sum: number, row: any) => sum + Number(row.total_amount ?? 0), 0);
   const totalTax = orders.reduce((sum: number, row: any) => sum + Number(row.tax_amount ?? 0), 0);
-  const todayTax = todayOrders.reduce((sum: number, row: any) => sum + Number(row.tax_amount ?? 0), 0);
 
   const ordersByChannel = orders.reduce((acc: Record<string, number>, row: any) => {
     const key = row.order_type === 'walk_in' ? 'walk_in' : row.order_type === 'phone' ? 'phone' : 'online';
@@ -242,13 +316,16 @@ Deno.serve(async (req) => {
   return json(200, {
     success: true,
     summary: {
+      rangeLabel: normalizedDateRange.label,
+      rangeFrom: normalizedDateRange.from,
+      rangeTo: normalizedDateRange.to,
       totalRevenue,
-      todayRevenue,
+      todayRevenue: totalRevenue,
       totalOrders: orders.length,
-      todayOrders: todayOrders.length,
+      todayOrders: orders.length,
       averageTicket: orders.length > 0 ? totalRevenue / orders.length : 0,
       totalTax,
-      todayTax,
+      todayTax: totalTax,
       ordersByChannel,
       paymentMethodSummary,
       itemSalesSummary,
