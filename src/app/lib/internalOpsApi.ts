@@ -446,6 +446,66 @@ export interface InternalRewardProgramSettingsResponse {
   programSettings: InternalRewardProgramSettingsRecord;
 }
 
+export interface InternalRewardActivityRecord {
+  loyaltyEntryId: string;
+  orderId: string | null;
+  entryType: 'earn' | 'redeem' | 'adjustment' | 'expire';
+  points: number;
+  pointsRemaining: number;
+  earnedAt: string;
+  expiresAt: string | null;
+  createdAt: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface InternalRewardEntitlementRecord {
+  entitlementId: string;
+  rewardId: string;
+  rewardCode: string | null;
+  title: string;
+  rewardType: string;
+  pointCost: number;
+  discountAmount: number | null;
+  freeItemTitle: string | null;
+  freeItemCategory: string | null;
+  freeItemFoodValue: number | null;
+  status: 'available' | 'used' | 'expired' | 'revoked';
+  redeemedAt: string;
+  expiresAt: string | null;
+  usedAt: string | null;
+  orderId: string | null;
+}
+
+export interface InternalRewardCustomerRecord {
+  customerId: string;
+  fullName: string;
+  phone: string;
+  email: string | null;
+  rewardPoints: number;
+  phoneVerified: boolean;
+  emailVerified: boolean;
+}
+
+export interface InternalRewardCustomerDetail {
+  customer: InternalRewardCustomerRecord;
+  recentActivity: InternalRewardActivityRecord[];
+  availableEntitlements: InternalRewardEntitlementRecord[];
+  usedEntitlements: InternalRewardEntitlementRecord[];
+}
+
+export interface InternalRewardCustomerLookupResponse {
+  success: boolean;
+  results: InternalRewardCustomerRecord[];
+  customer: InternalRewardCustomerDetail | null;
+}
+
+export interface InternalRewardCustomerAdjustmentResponse {
+  success: boolean;
+  adjustmentEntryId: string;
+  availablePoints: number;
+  customer: InternalRewardCustomerDetail;
+}
+
 export interface InternalStoreCredentialTarget {
   internalUserId: string;
   fullName: string;
@@ -1107,6 +1167,31 @@ export async function updateInternalRewardProgramSettings(params: {
     INTERNAL_REWARDS_URL,
     { ...params, action: 'update_program_settings' },
     'Could not update reward program settings.'
+  );
+}
+
+export async function lookupInternalRewardCustomerRewards(params: {
+  internalSessionToken: string;
+  search?: string;
+  customerId?: string;
+}): Promise<{ data: InternalRewardCustomerLookupResponse | null; error: string | null }> {
+  return postInternal<InternalRewardCustomerLookupResponse>(
+    INTERNAL_REWARDS_URL,
+    { ...params, action: 'lookup_customer_rewards' },
+    'Could not load customer rewards.'
+  );
+}
+
+export async function adjustInternalRewardCustomerPoints(params: {
+  internalSessionToken: string;
+  customerId: string;
+  pointsDelta: number;
+  reason: string;
+}): Promise<{ data: InternalRewardCustomerAdjustmentResponse | null; error: string | null }> {
+  return postInternal<InternalRewardCustomerAdjustmentResponse>(
+    INTERNAL_REWARDS_URL,
+    { ...params, action: 'adjust_customer_points' },
+    'Could not adjust customer reward points.'
   );
 }
 

@@ -1,9 +1,13 @@
 import {
+  adjustInternalRewardCustomerPoints,
   loadInternalRewardsDashboard,
+  lookupInternalRewardCustomerRewards,
   setInternalRewardActive,
   updateInternalRewardProgramSettings,
   upsertInternalReward,
   type InternalRewardCatalogRecord,
+  type InternalRewardCustomerDetail,
+  type InternalRewardCustomerRecord,
   type InternalRewardProgramSettingsRecord,
 } from '../lib/internalOpsApi';
 import type { InternalAccessSession } from '../types/admin';
@@ -11,6 +15,11 @@ import type { InternalAccessSession } from '../types/admin';
 export interface RewardsAdminDashboard {
   catalog: InternalRewardCatalogRecord[];
   programSettings: InternalRewardProgramSettingsRecord | null;
+}
+
+export interface RewardsAdminCustomerLookup {
+  results: InternalRewardCustomerRecord[];
+  customer: InternalRewardCustomerDetail | null;
 }
 
 const sessionPayload = (session: InternalAccessSession) => ({
@@ -99,6 +108,50 @@ export const rewardsAdminService = {
     return {
       success: true,
       message: 'Reward program settings updated.',
+    };
+  },
+
+  async lookupCustomerRewards(session: InternalAccessSession, input: {
+    search?: string;
+    customerId?: string;
+  }): Promise<RewardsAdminCustomerLookup> {
+    const { data, error } = await lookupInternalRewardCustomerRewards({
+      ...sessionPayload(session),
+      ...input,
+    });
+
+    if (error || !data) {
+      throw new Error(error ?? 'Could not load customer rewards.');
+    }
+
+    return {
+      results: data.results,
+      customer: data.customer,
+    };
+  },
+
+  async adjustCustomerPoints(session: InternalAccessSession, input: {
+    customerId: string;
+    pointsDelta: number;
+    reason: string;
+  }) {
+    const { data, error } = await adjustInternalRewardCustomerPoints({
+      ...sessionPayload(session),
+      ...input,
+    });
+
+    if (error || !data?.success) {
+      return {
+        success: false,
+        message: error ?? 'Could not adjust customer reward points.',
+        customer: null,
+      };
+    }
+
+    return {
+      success: true,
+      message: input.pointsDelta > 0 ? 'Customer points added.' : 'Customer points removed.',
+      customer: data.customer,
     };
   },
 };

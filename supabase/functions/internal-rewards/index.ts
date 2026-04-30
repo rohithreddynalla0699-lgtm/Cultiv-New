@@ -7,7 +7,9 @@ type RewardsAction =
   | 'dashboard'
   | 'upsert_reward'
   | 'set_reward_active'
-  | 'update_program_settings';
+  | 'update_program_settings'
+  | 'lookup_customer_rewards'
+  | 'adjust_customer_points';
 
 interface InternalRewardsRequest {
   internalSessionToken?: string;
@@ -32,6 +34,10 @@ interface InternalRewardsRequest {
   maxDiscountRatio?: number;
   allowRewardRedemption?: boolean;
   allowCheckoutRewardUse?: boolean;
+  search?: string;
+  customerId?: string;
+  pointsDelta?: number;
+  reason?: string;
 }
 
 interface InternalAccessSessionRow {
@@ -63,8 +69,10 @@ const json = (status: number, payload: Record<string, unknown>) =>
 
 const normalizeText = (value?: string | null) => String(value ?? '').trim();
 const normalizeRewardCode = (value?: string | null) => normalizeText(value).toLowerCase().replace(/\s+/g, '-');
+const normalizePhoneSearch = (value?: string | null) => String(value ?? '').replace(/\D/g, '').slice(-10);
 const parseInteger = (value: unknown) => Number.parseInt(String(value ?? ''), 10);
 const parseNumber = (value: unknown) => Number(String(value ?? ''));
+const unwrapJoinedReward = (value: any) => (Array.isArray(value) ? value[0] ?? null : value ?? null);
 
 const verifyAndLoadSession = async (
   db: ReturnType<typeof createClient>,
@@ -167,6 +175,49 @@ const mapSettingsRow = (row: any) => ({
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
+
+const mapCustomerRow = (row: any) => ({
+  customerId: row.id,
+  fullName: row.full_name,
+  phone: row.phone,
+  email: row.email ?? null,
+  rewardPoints: Number(row.reward_points ?? 0),
+  phoneVerified: Boolean(row.phone_verified),
+  emailVerified: Boolean(row.email_verified),
+});
+
+const mapActivityRow = (row: any) => ({
+  loyaltyEntryId: row.loyalty_entry_id,
+  orderId: row.order_id ?? null,
+  entryType: row.entry_type,
+  points: Number(row.points ?? 0),
+  pointsRemaining: Number(row.points_remaining ?? 0),
+  earnedAt: row.earned_at,
+  expiresAt: row.expires_at ?? null,
+  createdAt: row.created_at,
+  metadata: row.metadata ?? {},
+});
+
+const mapEntitlementRow = (row: any) => {
+  const reward = unwrapJoinedReward(row.reward_catalog);
+  return {
+    entitlementId: row.id,
+    rewardId: reward?.id ?? row.reward_id,
+    rewardCode: reward?.reward_code ?? null,
+    title: reward?.title ?? '',
+    rewardType: reward?.reward_type ?? '',
+    pointCost: Number(reward?.point_cost ?? 0),
+    discountAmount: reward?.discount_amount == null ? null : Number(reward?.discount_amount),
+    freeItemTitle: reward?.free_item_title ?? null,
+    freeItemCategory: reward?.free_item_category ?? null,
+    freeItemFoodValue: reward?.free_item_food_value == null ? null : Number(reward?.free_item_food_value),
+    status: row.status,
+    redeemedAt: row.redeemed_at,
+    expiresAt: row.expires_at ?? null,
+    usedAt: row.used_at ?? null,
+    orderId: row.order_id ?? null,
+  };
+};
 
 const loadDashboard = async (db: ReturnType<typeof createClient>) => {
   const [catalogResult, settingsResult] = await Promise.all([
@@ -425,6 +476,164 @@ const updateProgramSettings = async (db: ReturnType<typeof createClient>, body: 
   };
 };
 
+const loadCustomerRewardDetail = async (db: ReturnType<typeof createClient>, customerId: string) => {
+  const { data: syncedRewardPoints, error: syncError } = await db.rpc('sync_customer_reward_points', {
+    p_customer_id: customerId,
+  });
+
+  if (syncError) {
+    return { status: 500, payload: { error: 'Could not sync customer reward points.' } };
+  }
+
+  const [customerResult, activityResult, entitlementsResult] = await Promise.all([
+    db
+      .from('customers')
+      .select('id, full_name, phone, email, reward_points, phone_verified, email_verified, is_active')
+      .eq('id', customerId)
+      .eq('is_active', true)
+      .maybeSingle(),
+    db
+      .from('loyalty_points_ledger')
+      .select('loyalty_entry_id, order_id, entry_type, points, points_remaining, earned_at, expires_at, created_at, metadata')
+      .eq('user_id', customerId)
+      .order('created_at', { ascending: false })
+      .limit(20),
+    db
+      .from('customer_reward_entitlements')
+      .select('id, reward_id, status, redeemed_at, used_at, expires_at, order_id, reward_catalog(id, reward_code, title, reward_type, point_cost, discount_amount, free_item_title, free_item_category, free_item_food_value)')
+      .eq('customer_id', customerId)
+      .in('status', ['available', 'used'])
+      .order('redeemed_at', { ascending: false }),
+  ]);
+
+  if (customerResult.error) {
+    return { status: 500, payload: { error: 'Could not load customer.' } };
+  }
+  if (!customerResult.data) {
+    return { status: 404, payload: { error: 'Customer not found.' } };
+  }
+  if (activityResult.error) {
+    return { status: 500, payload: { error: 'Could not load loyalty activity.' } };
+  }
+  if (entitlementsResult.error) {
+    return { status: 500, payload: { error: 'Could not load reward entitlements.' } };
+  }
+
+  const customer = mapCustomerRow({
+    ...customerResult.data,
+    reward_points: syncedRewardPoints,
+  });
+  const entitlements = (entitlementsResult.data ?? []).map(mapEntitlementRow);
+
+  return {
+    status: 200,
+    payload: {
+      customer,
+      recentActivity: (activityResult.data ?? []).map(mapActivityRow),
+      availableEntitlements: entitlements.filter((entry: any) => entry.status === 'available'),
+      usedEntitlements: entitlements.filter((entry: any) => entry.status === 'used'),
+    },
+  };
+};
+
+const lookupCustomerRewards = async (db: ReturnType<typeof createClient>, body: InternalRewardsRequest) => {
+  const customerId = normalizeText(body.customerId);
+  const search = normalizeText(body.search);
+  const phoneSearch = normalizePhoneSearch(body.search);
+
+  let results: any[] = [];
+
+  if (search) {
+    const searchPattern = `%${search}%`;
+    let customerQuery = db
+      .from('customers')
+      .select('id, full_name, phone, email, reward_points, phone_verified, email_verified, is_active')
+      .eq('is_active', true)
+      .limit(12)
+      .order('updated_at', { ascending: false });
+
+    if (phoneSearch.length > 0) {
+      customerQuery = customerQuery.or(`full_name.ilike.${searchPattern},email.ilike.${searchPattern},phone.ilike.%${phoneSearch}%`);
+    } else {
+      customerQuery = customerQuery.or(`full_name.ilike.${searchPattern},email.ilike.${searchPattern}`);
+    }
+
+    const { data, error } = await customerQuery;
+    if (error) {
+      return { status: 500, payload: { error: 'Could not search customers.' } };
+    }
+
+    results = (data ?? []).map(mapCustomerRow);
+  }
+
+  let customer = null;
+  if (customerId) {
+    const detailResult = await loadCustomerRewardDetail(db, customerId);
+    if (detailResult.status !== 200) {
+      return detailResult;
+    }
+    customer = detailResult.payload;
+  }
+
+  return {
+    status: 200,
+    payload: {
+      success: true,
+      results,
+      customer,
+    },
+  };
+};
+
+const adjustCustomerPoints = async (
+  db: ReturnType<typeof createClient>,
+  body: InternalRewardsRequest,
+  session: InternalAccessSessionRow,
+) => {
+  const customerId = normalizeText(body.customerId);
+  const reason = normalizeText(body.reason);
+  const pointsDelta = parseInteger(body.pointsDelta);
+
+  if (!customerId) {
+    return { status: 400, payload: { error: 'customerId is required.' } };
+  }
+
+  if (!Number.isInteger(pointsDelta) || pointsDelta === 0) {
+    return { status: 400, payload: { error: 'pointsDelta must be a non-zero integer.' } };
+  }
+
+  if (!reason) {
+    return { status: 400, payload: { error: 'A reason is required for manual point adjustments.' } };
+  }
+
+  const { data, error } = await db.rpc('admin_adjust_customer_reward_points', {
+    p_customer_id: customerId,
+    p_points_delta: pointsDelta,
+    p_reason: reason,
+    p_actor_internal_user_id: session.internal_user_id,
+    p_actor_role_key: session.role_key,
+  });
+
+  if (error || !data) {
+    return { status: 400, payload: { error: error?.message ?? 'Could not adjust customer reward points.' } };
+  }
+
+  const detailResult = await loadCustomerRewardDetail(db, customerId);
+  if (detailResult.status !== 200) {
+    return detailResult;
+  }
+
+  return {
+    status: 200,
+    payload: {
+      success: true,
+      adjustmentEntryId: data.adjustmentEntryId,
+      availablePoints: data.availablePoints,
+      customer: detailResult.payload,
+    },
+  };
+};
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -482,6 +691,14 @@ Deno.serve(async (req) => {
     }
     case 'update_program_settings': {
       const result = await updateProgramSettings(db, body);
+      return json(result.status, result.payload);
+    }
+    case 'lookup_customer_rewards': {
+      const result = await lookupCustomerRewards(db, body);
+      return json(result.status, result.payload);
+    }
+    case 'adjust_customer_points': {
+      const result = await adjustCustomerPoints(db, body, verifiedSession.session);
       return json(result.status, result.payload);
     }
     default:
