@@ -79,6 +79,8 @@ const STORAGE_KEYS = {
   activeStoreScope: 'cultiv_admin_active_store_scope_v1',
 } as const;
 
+const INTERNAL_ACCESS_SESSION_UPDATED_EVENT = 'cultiv:internal-access-session-updated';
+
 const LEGACY_INVENTORY_STORAGE_KEYS = [
   'cultiv_admin_inventory_v4',
   'cultiv_admin_inventory_reset_applied_v1',
@@ -215,6 +217,10 @@ const createAccessSession = (params: {
 
 const writeStorage = (key: string, value: unknown) => {
   localStorage.setItem(key, JSON.stringify(value));
+};
+
+const notifyInternalAccessSessionUpdated = () => {
+  window.dispatchEvent(new CustomEvent(INTERNAL_ACCESS_SESSION_UPDATED_EVENT));
 };
 
 const getShiftHours = (shift: EmployeeShift) => {
@@ -487,6 +493,7 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     writeStorage(STORAGE_KEYS.activeStoreScope, 'all');
     setSession(nextSession);
     setStoredScope('all');
+    notifyInternalAccessSessionUpdated();
     return { success: true, message: 'Owner access enabled.' };
   };
 
@@ -512,6 +519,7 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     writeStorage(STORAGE_KEYS.activeStoreScope, 'all');
     setSession(nextSession);
     setStoredScope('all');
+    notifyInternalAccessSessionUpdated();
     return { success: true, message: 'Admin access enabled.' };
   };
 
@@ -544,23 +552,24 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     writeStorage(STORAGE_KEYS.activeStoreScope, store.id);   // local ID for UI scope filtering
     setSession(nextSession);
     setStoredScope(store.id);   // local ID for UI scope filtering
+    notifyInternalAccessSessionUpdated();
     return { success: true, message: `${store.name} workspace is ready.` };
   };
 
   const logoutInternalAccess = async () => {
+    const sessionToken = session?.internalSessionToken;
+    localStorage.removeItem(STORAGE_KEYS.session);
+    writeStorage(STORAGE_KEYS.activeStoreScope, 'all');
+    setSession(null);
+    setStoredScope('all');
+    notifyInternalAccessSessionUpdated();
+
     try {
-      const sessionToken = session?.internalSessionToken;
       if (sessionToken) {
-        // Call backend logout, but always clear local state regardless of result
         await import('../lib/internalOpsApi').then(({ internalLogout }) => internalLogout(sessionToken));
       }
     } catch {
-      // Ignore errors, always clear local state
-    } finally {
-      localStorage.removeItem(STORAGE_KEYS.session);
-      writeStorage(STORAGE_KEYS.activeStoreScope, 'all');
-      setSession(null);
-      setStoredScope('all');
+      // Ignore revoke errors; local logout has already completed.
     }
   };
 

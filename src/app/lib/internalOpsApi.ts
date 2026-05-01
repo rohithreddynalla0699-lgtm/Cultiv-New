@@ -39,6 +39,7 @@ export async function internalLogout(internalSessionToken: string): Promise<{ su
       headers: {
         'Content-Type': 'application/json',
         apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
         'x-internal-session-token': internalSessionToken,
       },
     });

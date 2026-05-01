@@ -44,6 +44,9 @@ export function OrdersBoardHeader({
   onChangeCustomDate,
   onChangeSearchQuery,
 }: OrdersBoardHeaderProps) {
+  const storeSelectId = 'orders-board-store-scope';
+  const searchInputId = 'orders-board-search';
+
   return (
     <section className="rounded-2xl border border-border bg-background p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -59,8 +62,10 @@ export function OrdersBoardHeader({
 
       <div className="mt-4 grid gap-3 xl:grid-cols-[220px_minmax(0,1fr)_180px_260px]">
         <div>
-          <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-foreground/55">Store</label>
+          <label htmlFor={storeSelectId} className="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-foreground/55">Store</label>
           <select
+            id={storeSelectId}
+            name="storeScope"
             value={activeStoreScope}
             onChange={(event) => onChangeStore(event.target.value)}
             disabled={!canSwitchStoreScope}
@@ -114,8 +119,10 @@ export function OrdersBoardHeader({
         </div>
 
         <div>
-          <label className="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-foreground/55">Search</label>
+          <label htmlFor={searchInputId} className="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-foreground/55">Search</label>
           <input
+            id={searchInputId}
+            name="orderSearch"
             type="search"
             value={searchQuery}
             onChange={(event) => onChangeSearchQuery(event.target.value)}

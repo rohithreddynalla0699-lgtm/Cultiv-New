@@ -79,6 +79,9 @@ export function PaymentPanel({
   onSubmit,
 }: PaymentPanelProps) {
   const canFindCustomer = customer.phone.length === 10 && customerLookup.status !== 'loading';
+  const customerPhoneInputId = 'pos-customer-phone';
+  const cashReceivedInputId = 'pos-cash-received';
+  const upiReferenceInputId = 'pos-upi-reference';
 
   return (
     <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-[22px] border border-[#E5EBDD] bg-[linear-gradient(180deg,#FFFFFF_0%,#FBFCF8_100%)] shadow-[0_12px_28px_rgba(31,46,18,0.08)]">
@@ -94,12 +97,17 @@ export function PaymentPanel({
       <div className="flex-1 space-y-1.5 overflow-y-auto px-3 py-2">
         <SectionCard eyebrow="Phone">
           <div className="flex items-center gap-2">
+            <label htmlFor={customerPhoneInputId} className="sr-only">
+              Customer phone
+            </label>
             <input
+              id={customerPhoneInputId}
+              name="customerPhone"
               type="tel"
               value={customer.phone}
               onChange={(event) => onCustomerPhoneChange(event.target.value)}
               placeholder="Customer phone"
-            className="min-h-[38px] min-w-0 flex-1 rounded-2xl border border-[#D9E2CD] bg-[#FCFDF9] px-3 text-[12px] text-[#1F2719] outline-none transition focus:border-primary/40"
+              className="min-h-[38px] min-w-0 flex-1 rounded-2xl border border-[#D9E2CD] bg-[#FCFDF9] px-3 text-[12px] text-[#1F2719] outline-none transition focus:border-primary/40"
             />
             <button
               type="button"
@@ -209,7 +217,12 @@ export function PaymentPanel({
         {payment.method === 'cash' ? (
           <SectionCard eyebrow="Cash">
             <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_132px]">
+              <label htmlFor={cashReceivedInputId} className="sr-only">
+                Amount received
+              </label>
               <input
+                id={cashReceivedInputId}
+                name="cashReceived"
                 type="number"
                 min="0"
                 step="0.01"
@@ -270,7 +283,12 @@ export function PaymentPanel({
                   </p>
                 </div>
 
+                <label htmlFor={upiReferenceInputId} className="sr-only">
+                  UPI reference
+                </label>
                 <input
+                  id={upiReferenceInputId}
+                  name="upiReference"
                   type="text"
                   value={payment.reference}
                   onChange={(event) => onReferenceChange(event.target.value)}

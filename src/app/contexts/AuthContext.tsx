@@ -106,6 +106,7 @@ const STORAGE_KEYS = {
 } as const;
 
 const ADMIN_ACCESS_SESSION_STORAGE_KEY = 'cultiv_admin_access_session_v1';
+const INTERNAL_ACCESS_SESSION_UPDATED_EVENT = 'cultiv:internal-access-session-updated';
 
 const STATUS_CONTENT: Record<OrderStatus, { label: string; description: string }> = {
   placed: { label: 'Order Placed', description: 'Your order is in the CULTIV queue.' },
@@ -222,6 +223,24 @@ const readStorage = <T,>(key: string, fallback: T): T => {
   } catch {
     return fallback;
   }
+};
+
+const readInternalAccessSessionSnapshot = (): InternalAccessSessionSnapshot | null => {
+  const session = readStorage<InternalAccessSessionSnapshot | null>(ADMIN_ACCESS_SESSION_STORAGE_KEY, null);
+  const internalSessionToken = typeof session?.internalSessionToken === 'string'
+    ? session.internalSessionToken.trim()
+    : '';
+
+  if (!session || !internalSessionToken) {
+    return null;
+  }
+
+  return {
+    internalSessionToken,
+    roleKey: session.roleKey,
+    scopeType: session.scopeType,
+    scopeStoreId: session.scopeStoreId ?? null,
+  };
 };
 
 const writeStorage = (key: string, value: unknown) => {
@@ -839,6 +858,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [supabaseReadSuccessful, setSupabaseReadSuccessful] = useState(false);
   const [supabaseReadDegraded, setSupabaseReadDegraded] = useState(false);
   const [supabaseRefreshTick, setSupabaseRefreshTick] = useState(0);
+  const [internalOrdersSession, setInternalOrdersSession] = useState<InternalAccessSessionSnapshot | null>(() => readInternalAccessSessionSnapshot());
   const [customerAccount, setCustomerAccount] = useState<CustomerAccountSummary | null>(null);
   const [customerSessionToken, setCustomerSessionToken] = useState<string | null>(() => readCustomerSessionTokenFromStorage());
   const [loyaltySummary, setLoyaltySummary] = useState<LoyaltySummary | null>(null);
@@ -919,6 +939,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
+    const syncInternalOrdersSession = () => {
+      setInternalOrdersSession(readInternalAccessSessionSnapshot());
+    };
+
     const onStorage = (event: StorageEvent) => {
       if (event.storageArea !== window.localStorage || !event.key) {
         return;
@@ -928,11 +952,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const nextCustomerSessionToken = normalizeCustomerSessionToken(parseStorageEventValue<unknown>(event.newValue));
         setCustomerSessionTokenAndStorage(nextCustomerSessionToken);
       }
+
+      if (event.key === ADMIN_ACCESS_SESSION_STORAGE_KEY) {
+        syncInternalOrdersSession();
+      }
     };
 
     window.addEventListener('storage', onStorage);
+    window.addEventListener(INTERNAL_ACCESS_SESSION_UPDATED_EVENT, syncInternalOrdersSession);
     return () => {
       window.removeEventListener('storage', onStorage);
+      window.removeEventListener(INTERNAL_ACCESS_SESSION_UPDATED_EVENT, syncInternalOrdersSession);
     };
   }, [setCustomerSessionTokenAndStorage]);
 
@@ -967,10 +997,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   useEffect(() => {
     writeStorage(STORAGE_KEYS.rejectedGuestClaims, rejectedGuestClaimIds);
   }, [rejectedGuestClaimIds]);
-    const refreshSharedOrdersFromSupabase = useCallback(async () => {
+
+  const refreshSharedOrdersFromSupabase = useCallback(async () => {
     try {
-      const internalSession = readStorage<InternalAccessSessionSnapshot | null>(ADMIN_ACCESS_SESSION_STORAGE_KEY, null);
-      if (!internalSession?.internalSessionToken) {
+      if (!internalOrdersSession?.internalSessionToken) {
         setSupabaseSharedOrders([]);
         setSupabaseReadSuccessful(false);
         setSupabaseReadDegraded(false);
@@ -978,10 +1008,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       const nextOrders = await fetchOperationalOrdersFromSupabase({
-        internalSessionToken: internalSession.internalSessionToken,
-        roleKey: internalSession.roleKey,
-        scopeType: internalSession.scopeType,
-        scopeStoreId: internalSession.scopeStoreId,
+        internalSessionToken: internalOrdersSession.internalSessionToken,
+        roleKey: internalOrdersSession.roleKey,
+        scopeType: internalOrdersSession.scopeType,
+        scopeStoreId: internalOrdersSession.scopeStoreId,
       });
       setSupabaseSharedOrders(nextOrders);
       setSupabaseReadSuccessful(true);
@@ -991,7 +1021,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setSupabaseReadSuccessful(false);
       setSupabaseReadDegraded(true);
     }
-  }, []);
+  }, [internalOrdersSession]);
 
   const refreshCustomerOrdersFromSupabase = useCallback(async () => {
     const requestToken = normalizeCustomerSessionToken(customerSessionToken);
@@ -1131,6 +1161,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, [clearInvalidCustomerSession, customerSessionToken]);
 
   useEffect(() => {
+    if (!internalOrdersSession?.internalSessionToken) {
+      setSupabaseSharedOrders([]);
+      setSupabaseReadSuccessful(false);
+      setSupabaseReadDegraded(false);
+      return;
+    }
+
     let active = true;
 
     const syncOrders = async () => {
@@ -1174,7 +1211,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const orders = user ? allOrders : guestOrders;
 
   const hasInternalOrdersSession = Boolean(
-    readStorage<InternalAccessSessionSnapshot | null>(ADMIN_ACCESS_SESSION_STORAGE_KEY, null)?.internalSessionToken,
+    internalOrdersSession?.internalSessionToken,
   );
 
   const sharedOrders = hasInternalOrdersSession

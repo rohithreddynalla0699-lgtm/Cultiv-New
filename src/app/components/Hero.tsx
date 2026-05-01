@@ -7,66 +7,61 @@ import { ImageWithFallback } from "./figma/ImageWithFallback";
 import { SectionReveal, HoverLift } from "../core/motion/cultivMotion";
 import { useNavigate } from "react-router-dom";
 import { MENU_CATEGORIES } from "../data/menuData";
-import { getSelectedStore, loadStores, subscribeSelectedStore, type StoreLocatorStore } from "../data/storeLocator";
 
 interface HeroProps {
   onOrderClick: () => void;
   onExploreMenu?: () => void;
 }
 
+const HOME_METRICS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/public-home-metrics`;
+
 export function Hero({ onOrderClick, onExploreMenu }: HeroProps) {
   const navigate = useNavigate();
-  const [bowlCount, setBowlCount] = useState(0);
-  const [stores, setStores] = useState<StoreLocatorStore[]>([]);
-  const targetCount = 2184;
+  const [bowlCount, setBowlCount] = useState<number | null>(null);
   const featuredChickenPrice = MENU_CATEGORIES
     .find((category) => category.slug === 'signature-bowls')
     ?.items.find((item) => item.id === 'everyday-chicken-bowl')
     ?.price ?? 189;
 
   useEffect(() => {
-    const duration = 2000;
-    const steps = 60;
-    const increment = targetCount / steps;
-    let current = 0;
-
-    const timer = setInterval(() => {
-      current += increment;
-      if (current >= targetCount) {
-        setBowlCount(targetCount);
-        clearInterval(timer);
-      } else {
-        setBowlCount(Math.floor(current));
-      }
-    }, duration / steps);
-
-    return () => clearInterval(timer);
-  }, []);
-
-  useEffect(() => {
     let isActive = true;
 
-    const syncStores = async () => {
-      const nextStores = await loadStores();
-      if (!isActive) return;
-      setStores(nextStores);
+    const loadMetric = async () => {
+      try {
+        const response = await fetch(HOME_METRICS_URL, {
+          method: 'GET',
+          headers: {
+            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY as string,
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY as string}`,
+          },
+        });
+
+        const payload = await response.json().catch(() => null);
+        if (!isActive) return;
+
+        if (!response.ok || !payload?.success) {
+          setBowlCount(null);
+          return;
+        }
+
+        const count = Number(payload.metrics?.successfulHealthyBowlsSold);
+        setBowlCount(Number.isFinite(count) && count >= 0 ? count : null);
+      } catch {
+        if (!isActive) return;
+        setBowlCount(null);
+      }
     };
 
-    void syncStores();
-    const unsubscribe = subscribeSelectedStore(() => {
-      void syncStores();
-    });
+    void loadMetric();
 
     return () => {
       isActive = false;
-      unsubscribe();
     };
   }, []);
 
-  const activeStore = getSelectedStore(stores);
-  const bowlsServedLabel = activeStore?.name
-    ? `${bowlCount.toLocaleString()}+ bowls served from ${activeStore.name}`
-    : `${bowlCount.toLocaleString()}+ bowls served`;
+  const bowlsServedLabel = bowlCount === null
+    ? 'Healthy bowls sold'
+    : `${bowlCount.toLocaleString()} successful healthy bowls sold`;
 
   return (
     <SectionReveal className="relative overflow-hidden bg-background pt-24 md:pt-28">

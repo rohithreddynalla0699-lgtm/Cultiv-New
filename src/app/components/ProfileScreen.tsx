@@ -119,10 +119,10 @@ export function ProfileScreen() {
                 <p className="text-xs uppercase tracking-[0.22em] text-primary/60">Account editing</p>
                 <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em]">Read-only for now.</h2>
                 <p className="mt-2 text-sm leading-6 text-foreground/62">
-                  Profile editing, saved addresses, and saved payment methods are hidden until they are fully backend-backed.
+                  You can view your account details, rewards, and linked orders here. Profile editing and advanced account tools are limited right now.
                 </p>
                 <div className="mt-5 rounded-2xl border border-border bg-background/78 px-4 py-4 text-sm leading-6 text-foreground/60">
-                  Checkout still works normally. Enter phone, email, and payment method during each order, and CULTIV will keep order history and rewards linked to your real customer account.
+                  Online customer payment is not available yet, and payment details are not saved to your profile.
                 </div>
               </div>
 

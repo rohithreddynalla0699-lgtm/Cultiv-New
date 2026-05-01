@@ -176,7 +176,11 @@ export function StoreShiftScreen() {
         ) : null}
 
         <div className="grid gap-4 xl:grid-cols-2 2xl:grid-cols-3">
-          {dashboard.map((employee) => (
+          {dashboard.map((employee) => {
+            const pinInputId = `store-shift-pin-${employee.employeeId}`;
+            const pinInputName = `storeShiftPin-${employee.employeeId}`;
+
+            return (
             <article key={employee.employeeId} className="rounded-[24px] border border-primary/12 bg-white/92 p-4 shadow-[0_12px_30px_rgba(45,80,22,0.08)]">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -212,9 +216,11 @@ export function StoreShiftScreen() {
               </button>
 
               <div className="mt-3">
-                <label className="block text-xs font-semibold uppercase tracking-[0.1em] text-foreground/55">PIN</label>
+                <label htmlFor={pinInputId} className="block text-xs font-semibold uppercase tracking-[0.1em] text-foreground/55">PIN</label>
                 <div className="relative mt-2">
                   <input
+                    id={pinInputId}
+                    name={pinInputName}
                     data-testid={`store-shift-pin-input-${employee.employeeId}`}
                     type={pinVisibility[employee.employeeId] ? 'text' : 'password'}
                     autoComplete="off"
@@ -258,7 +264,8 @@ export function StoreShiftScreen() {
                 </div>
               </div>
             </article>
-          ))}
+            );
+          })}
 
           {!isLoading && dashboard.length === 0 ? (
             <div className="rounded-[24px] border border-primary/12 bg-white/92 p-5 text-sm text-foreground/62">
