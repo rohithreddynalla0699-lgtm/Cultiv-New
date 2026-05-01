@@ -1,7 +1,6 @@
-import type { TableBuildType } from './buildYourOwnTableData';
 import { BREAKFAST_PRESET_META_BY_ID } from './menuData';
 
-export type BowlMode = 'signature' | 'salad' | 'table' | 'breakfast' | 'generic';
+export type PresetMode = 'signature' | 'salad' | 'breakfast' | 'generic';
 export type ProteinBlend = 'veg' | 'chicken' | 'power';
 
 export const VEG_PROTEIN_IDS = ['rajma', 'channa'] as const;
@@ -21,17 +20,11 @@ export interface PresetConfig {
   title: string;
   basePrice: number;
   categoryName: string;
-  mode: BowlMode;
+  mode: PresetMode;
   hideBaseStep?: boolean;
   allowedProteinIds?: string[];
   defaultSelections: Record<string, string[]>;
 }
-
-export const TABLE_BUILD_TYPE_BY_ITEM_ID: Record<string, TableBuildType> = {
-  'veg-table-bowl': 'veg',
-  'chicken-table-bowl': 'chicken',
-  'power-table-bowl': 'both',
-};
 
 export const SIGNATURE_PRESETS: Record<string, PresetConfig> = {
   'everyday-veg-bowl': {

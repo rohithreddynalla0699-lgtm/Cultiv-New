@@ -85,8 +85,11 @@ export function LoginScreen() {
 					}}
 				>
 					<motion.div variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }}>
-						<label className="mb-2 block text-[15px] font-medium text-foreground/80">Phone number or email</label>
+						<label htmlFor="login-identifier" className="mb-2 block text-[15px] font-medium text-foreground/80">Phone number or email</label>
 						<input 
+							id="login-identifier"
+							name="identifier"
+							autoComplete="username"
 							value={identifier} 
 							onChange={(e) => setIdentifier(e.target.value)} 
 							className="w-full rounded-2xl border border-primary/18 bg-[#f8faf7] px-4 py-4 text-[15px] text-foreground/90 placeholder:text-foreground/40 outline-none transition-colors focus:border-primary/70 focus:bg-white focus:shadow-[0_0_0_2px_rgba(126,183,154,0.13)]" 
@@ -95,9 +98,12 @@ export function LoginScreen() {
 						/>
 					</motion.div>
 					<motion.div variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }}>
-						<label className="mb-2 block text-[15px] font-medium text-foreground/80">Password</label>
+						<label htmlFor="login-password" className="mb-2 block text-[15px] font-medium text-foreground/80">Password</label>
 						<div className="relative">
 							<input 
+								id="login-password"
+								name="password"
+								autoComplete="current-password"
 								type={showPassword ? 'text' : 'password'} 
 								value={password} 
 								onChange={(e) => setPassword(e.target.value)} 

@@ -1,4 +1,4 @@
-export const DEFAULT_ACTIVE_ORDER_CATEGORY_SLUG = 'build-your-own-bowl';
+export const DEFAULT_ACTIVE_ORDER_CATEGORY_SLUG = 'signature-bowls';
 export const DEFAULT_REORDER_FALLBACK_CATEGORY_SLUG = 'signature-bowls';
 export const DEFAULT_FIRST_ORDER_CATEGORY_SLUG = 'rice-bowls';
 

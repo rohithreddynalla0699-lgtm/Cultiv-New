@@ -21,7 +21,7 @@ import { HomeStoreSection } from './components/HomeStoreSection';
 import { About } from './components/About';
 import { loadDraftCart, subscribeDraftCart } from './data/cartDraft';
 import { BREAKFAST_PRESET_META_BY_ID, MENU_CATEGORIES, hydrateMenuCatalogFromSupabase } from './data/menuData';
-import { syncPresetCatalogFromMenu } from './data/bowlConfigurations';
+import { syncPresetCatalogFromMenu } from './data/menuItemPresets';
 import { resolveCategorySlugFromLabel } from './utils/categoryRouting';
 import { StoreRouteGuard } from './components/store/StoreRouteGuard';
 import { StoreShiftScreen } from './components/store/StoreShiftScreen';

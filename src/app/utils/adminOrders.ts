@@ -1,9 +1,8 @@
 import type { Order } from '../types/platform';
-import { DEFAULT_ORDER_STORE_ID } from '../constants/admin';
 import type { AdminOrderBoardStatus } from '../types/admin';
 
 export function getOrderStoreId(order: Order) {
-  return order.storeId ?? DEFAULT_ORDER_STORE_ID;
+  return order.storeId ?? null;
 }
 
 export function getAdminOrderBoardStatus(order: Order): AdminOrderBoardStatus {

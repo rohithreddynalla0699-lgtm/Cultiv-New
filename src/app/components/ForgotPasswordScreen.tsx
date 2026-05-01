@@ -54,8 +54,8 @@ export function ForgotPasswordScreen() {
 				}}
 			>
 				<motion.div variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }}>
-					<label className="mb-2 block text-sm font-medium text-foreground/78">Phone number or email</label>
-					<input value={identifier} onChange={(event) => setIdentifier(event.target.value)} className="w-full rounded-2xl border border-border bg-background/80 px-4 py-4 outline-none transition-colors focus:border-primary" placeholder="9876543210 or member@cultiv.app" required />
+					<label htmlFor="forgot-password-identifier" className="mb-2 block text-sm font-medium text-foreground/78">Phone number or email</label>
+					<input id="forgot-password-identifier" name="identifier" autoComplete="username" value={identifier} onChange={(event) => setIdentifier(event.target.value)} className="w-full rounded-2xl border border-border bg-background/80 px-4 py-4 outline-none transition-colors focus:border-primary" placeholder="9876543210 or member@cultiv.app" required />
 				</motion.div>
 
 				<motion.button 

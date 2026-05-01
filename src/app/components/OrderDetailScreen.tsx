@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowLeft, ReceiptText } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { CardStagger, CardStaggerItem, PageReveal } from '../core/motion/cultivMotion';
@@ -8,6 +8,7 @@ import { Receipt } from '../receipts/components/Receipt';
 import { useReceiptData } from '../receipts/hooks/useReceiptData';
 import { printReceiptElement } from '../receipts/utils/printReceiptElement';
 import { getDisplayOrderNumber } from '../utils/orderDisplay';
+import { loadStores, type StoreLocatorStore } from '../data/storeLocator';
 
 type OrderItemModifier = {
   id?: string;
@@ -46,6 +47,7 @@ type OrderLike = {
 
 export function OrderDetailScreen() {
   const [showReceipt, setShowReceipt] = useState(false);
+  const [stores, setStores] = useState<StoreLocatorStore[]>([]);
   const { user, getOrderById } = useAuth();
   const { orderId } = useParams();
 
@@ -57,11 +59,21 @@ export function OrderDetailScreen() {
     orderId,
   });
 
-  const getStoreName = (storeId?: string) => {
-    if (!storeId) return 'CULTIV Store';
-    if (storeId === '45b3f0ff-ce56-4060-ae55-a773cb2e181e') return 'CULTIV Siddipet';
-    return 'CULTIV Store';
-  };
+  useEffect(() => {
+    let isActive = true;
+
+    const syncStores = async () => {
+      const nextStores = await loadStores();
+      if (!isActive) return;
+      setStores(nextStores);
+    };
+
+    void syncStores();
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   const statusLabel = useMemo(() => {
     if (!order && receiptData?.meta.orderStatus) {
@@ -119,7 +131,16 @@ export function OrderDetailScreen() {
   const displayTax = Number(order?.taxAmount ?? receiptData?.totals.tax ?? 0);
   const displayTotal = Number(order?.total ?? receiptData?.totals.total ?? 0);
   const displayCustomer = order?.fullName ?? receiptData?.meta.customerName ?? '—';
-  const displayStore = order?.storeId ? getStoreName(order.storeId) : (receiptData?.business?.storeName ?? 'CULTIV Store');
+  const displayStore = useMemo(() => {
+    if (order?.storeId) {
+      const matchedStore = stores.find((store) => store.id === order.storeId);
+      if (matchedStore?.name) {
+        return matchedStore.name;
+      }
+    }
+
+    return receiptData?.business?.storeName ?? 'CULTIV Store';
+  }, [order?.storeId, receiptData?.business?.storeName, stores]);
   const displayPaymentMethod = order?.paymentMethod ?? receiptData?.meta.paymentMethod ?? '—';
 
   if (!user) return <Navigate to="/" replace />;

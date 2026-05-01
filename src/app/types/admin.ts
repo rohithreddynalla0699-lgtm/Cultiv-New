@@ -11,6 +11,8 @@ export interface StoreRecord {
   state?: string;
   postalCode?: string;
   phone?: string;
+  latitude?: number;
+  longitude?: number;
   pin: string;
   isActive: boolean;
   createdAt: string;
@@ -24,6 +26,8 @@ export interface StoreInput {
   state?: string;
   postalCode?: string;
   phone?: string;
+  latitude?: number;
+  longitude?: number;
   pin: string;
   isActive: boolean;
 }
@@ -73,6 +77,7 @@ export interface InventoryItem {
   unit: string;
   threshold: number;
   status: InventoryStatus;
+  isArchived: boolean;
   updatedAt: string;
   sortOrder?: number;
 }

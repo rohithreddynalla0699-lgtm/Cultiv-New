@@ -7,6 +7,7 @@ import { ImageWithFallback } from "./figma/ImageWithFallback";
 import { SectionReveal, HoverLift } from "../core/motion/cultivMotion";
 import { useNavigate } from "react-router-dom";
 import { MENU_CATEGORIES } from "../data/menuData";
+import { getSelectedStore, loadStores, subscribeSelectedStore, type StoreLocatorStore } from "../data/storeLocator";
 
 interface HeroProps {
   onOrderClick: () => void;
@@ -16,6 +17,7 @@ interface HeroProps {
 export function Hero({ onOrderClick, onExploreMenu }: HeroProps) {
   const navigate = useNavigate();
   const [bowlCount, setBowlCount] = useState(0);
+  const [stores, setStores] = useState<StoreLocatorStore[]>([]);
   const targetCount = 2184;
   const featuredChickenPrice = MENU_CATEGORIES
     .find((category) => category.slug === 'signature-bowls')
@@ -41,6 +43,31 @@ export function Hero({ onOrderClick, onExploreMenu }: HeroProps) {
     return () => clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    let isActive = true;
+
+    const syncStores = async () => {
+      const nextStores = await loadStores();
+      if (!isActive) return;
+      setStores(nextStores);
+    };
+
+    void syncStores();
+    const unsubscribe = subscribeSelectedStore(() => {
+      void syncStores();
+    });
+
+    return () => {
+      isActive = false;
+      unsubscribe();
+    };
+  }, []);
+
+  const activeStore = getSelectedStore(stores);
+  const bowlsServedLabel = activeStore?.name
+    ? `${bowlCount.toLocaleString()}+ bowls served from ${activeStore.name}`
+    : `${bowlCount.toLocaleString()}+ bowls served`;
+
   return (
     <SectionReveal className="relative overflow-hidden bg-background pt-24 md:pt-28">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_12%_18%,rgba(45,80,22,0.10),transparent_24%),radial-gradient(circle_at_88%_12%,rgba(153,168,126,0.16),transparent_22%),linear-gradient(180deg,#f8f7f2_0%,#f3f4ec_44%,#f8f7f2_100%)]" />
@@ -50,7 +77,7 @@ export function Hero({ onOrderClick, onExploreMenu }: HeroProps) {
           <div className="max-w-3xl">
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="inline-flex items-center gap-2 rounded-full border border-primary/18 bg-white/86 px-5 py-2.5 shadow-sm">
               <div className="h-2 w-2 rounded-full bg-primary" />
-              <span className="text-sm font-medium tracking-wide text-primary">{bowlCount.toLocaleString()}+ bowls served in Siddipet</span>
+              <span className="text-sm font-medium tracking-wide text-primary">{bowlsServedLabel}</span>
             </motion.div>
 
             <motion.h1 initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.6, delay: 0.05 }} className="mt-7 text-6xl sm:text-7xl md:text-8xl leading-[0.92] tracking-tight font-semibold">

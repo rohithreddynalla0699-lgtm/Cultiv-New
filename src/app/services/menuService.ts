@@ -11,6 +11,7 @@ import type { InternalAccessSession } from '../types/admin';
 
 const LEGACY_MENU_STORAGE_KEY = 'cultiv_operations_menu_v1';
 export const MENU_UPDATED_EVENT = 'cultiv:menu-updated';
+const REMOVED_CATEGORY_SLUG = 'build-your-own-bowl';
 
 export interface OperationsMenuItem {
   id: string;
@@ -155,8 +156,10 @@ export const menuService = {
       throw new Error(error ?? 'Could not load menu dashboard.');
     }
 
+    const visibleItems = data.items.filter((item) => item.categorySlug !== REMOVED_CATEGORY_SLUG);
+
     return {
-      items: data.items.map(mapOperationsMenuItem),
+      items: visibleItems.map(mapOperationsMenuItem),
       optionGroups: data.optionGroups.map(mapOptionGroup),
     };
   },

@@ -93,15 +93,15 @@ export function ResetPasswordScreen() {
 					}}
 				>
 					<motion.div variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }} className="relative">
-						<label className="mb-2 block text-sm font-medium text-foreground/78">New password</label>
-						<input type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} className="w-full rounded-2xl border border-border bg-background/80 px-4 py-4 pr-12 outline-none transition-colors focus:border-primary" required />
+						<label htmlFor="reset-password-new" className="mb-2 block text-sm font-medium text-foreground/78">New password</label>
+						<input id="reset-password-new" name="password" autoComplete="new-password" type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} className="w-full rounded-2xl border border-border bg-background/80 px-4 py-4 pr-12 outline-none transition-colors focus:border-primary" required />
 						<button type="button" onClick={() => setShowPassword((current) => !current)} className="absolute right-4 top-[3.15rem] text-foreground/45">
 							{showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
 						</button>
 					</motion.div>
 					<motion.div variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }}>
-						<label className="mb-2 block text-sm font-medium text-foreground/78">Confirm password</label>
-						<input type={showPassword ? 'text' : 'password'} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="w-full rounded-2xl border border-border bg-background/80 px-4 py-4 outline-none transition-colors focus:border-primary" required />
+						<label htmlFor="reset-password-confirm" className="mb-2 block text-sm font-medium text-foreground/78">Confirm password</label>
+						<input id="reset-password-confirm" name="confirmPassword" autoComplete="new-password" type={showPassword ? 'text' : 'password'} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} className="w-full rounded-2xl border border-border bg-background/80 px-4 py-4 outline-none transition-colors focus:border-primary" required />
 					</motion.div>
 					<motion.button 
 						variants={{ hidden: { opacity: 0, y: 8 }, visible: { opacity: 1, y: 0, transition: { duration: 0.3 } } }}

@@ -2,11 +2,13 @@ import { ReactNode } from "react";
 import { ModalPortal } from "./ModalPortal";
 import { motion, AnimatePresence } from "framer-motion";
 
-export function Modal({ open, onClose, children, ariaLabel }: {
+export function Modal({ open, onClose, children, ariaLabel, panelClassName, bodyClassName }: {
   open: boolean;
   onClose: () => void;
   children: ReactNode;
   ariaLabel?: string;
+  panelClassName?: string;
+  bodyClassName?: string;
 }) {
   return (
     <ModalPortal>
@@ -36,7 +38,7 @@ export function Modal({ open, onClose, children, ariaLabel }: {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.98, y: 6 }}
               transition={{ type: "spring", stiffness: 220, damping: 28, mass: 1 }}
-              className="relative w-[min(92vw,900px)] max-h-[85vh] flex flex-col rounded-3xl bg-white/95 border border-primary/10 shadow-[0_20px_50px_rgba(20,35,10,0.14)]"
+              className={`relative w-[min(92vw,900px)] max-h-[85vh] flex flex-col rounded-3xl bg-white/95 border border-primary/10 shadow-[0_20px_50px_rgba(20,35,10,0.14)] ${panelClassName ?? ""}`}
             >
               <button
                 onClick={onClose}
@@ -46,7 +48,7 @@ export function Modal({ open, onClose, children, ariaLabel }: {
               >
                 <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M6 6l8 8M14 6l-8 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
               </button>
-              <div className="max-h-[80vh] overflow-y-auto p-6 sm:p-10 rounded-3xl">
+              <div className={`max-h-[80vh] overflow-y-auto p-6 sm:p-10 rounded-3xl ${bodyClassName ?? ""}`}>
                 {children}
               </div>
             </motion.div>

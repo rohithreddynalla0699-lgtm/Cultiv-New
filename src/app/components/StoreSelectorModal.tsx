@@ -8,6 +8,8 @@ export interface StoreSelectorItem {
   city: string;
   code: string;
   zipCode: string;
+  latitude?: number;
+  longitude?: number;
   isActive: boolean;
 }
 
@@ -18,14 +20,6 @@ interface StoreSelectorModalProps {
   onClose: () => void;
   onSelectStore: (storeId: string) => void;
 }
-
-const CITY_COORDINATES: Record<string, { lat: number; lng: number }> = {
-  siddipet: { lat: 18.1018, lng: 78.8525 },
-  hyderabad: { lat: 17.385, lng: 78.4867 },
-  warangal: { lat: 17.9689, lng: 79.5941 },
-};
-
-const MAX_NEARBY_DISTANCE_KM = 25;
 
 function toRadians(value: number) {
   return (value * Math.PI) / 180;
@@ -40,6 +34,10 @@ function distanceInKm(latA: number, lngA: number, latB: number, lngB: number) {
     Math.cos(toRadians(latA)) * Math.cos(toRadians(latB)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return earthRadiusKm * c;
+}
+
+function hasValidCoordinate(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
 }
 
 export function StoreSelectorModal({
@@ -86,6 +84,7 @@ export function StoreSelectorModal({
   }, [isOpen, onClose]);
 
   const safeStores = Array.isArray(stores) ? stores : [];
+  const hasStores = safeStores.length > 0;
 
 const filteredStores = useMemo(() => {
   if (!appliedZipFilter.trim()) {
@@ -105,29 +104,33 @@ const filteredStores = useMemo(() => {
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const activeStoresWithCoordinates = safeStores
-        .filter((store) => store.isActive)
+          .filter((store) => store.isActive)
           .map((store) => {
-            const coordinates = CITY_COORDINATES[store.city.toLowerCase()];
-            if (!coordinates) {
+            if (!hasValidCoordinate(store.latitude) || !hasValidCoordinate(store.longitude)) {
               return null;
             }
 
             return {
               ...store,
-              distance: distanceInKm(position.coords.latitude, position.coords.longitude, coordinates.lat, coordinates.lng),
+              distance: distanceInKm(position.coords.latitude, position.coords.longitude, store.latitude, store.longitude),
             };
           })
           .filter((store): store is StoreSelectorItem & { distance: number } => store !== null)
           .sort((a, b) => a.distance - b.distance);
 
+        if (activeStoresWithCoordinates.length === 0) {
+          setFeedback('No stores with location data available.');
+          return;
+        }
+
         const nearest = activeStoresWithCoordinates[0];
-        if (!nearest || nearest.distance > MAX_NEARBY_DISTANCE_KM) {
-          setFeedback('No stores nearby for your current location.');
+        if (!nearest) {
+          setFeedback('Could not determine the nearest store.');
           return;
         }
 
         onSelectStore(nearest.id);
-        setFeedback(`Nearest store selected: ${nearest.name}`);
+        setFeedback(`Nearest store selected: ${nearest.name} (${nearest.distance.toFixed(1)} km away).`);
       },
       () => {
         setFeedback('Location access is blocked. You can still select using zip code search.');
@@ -218,6 +221,7 @@ const filteredStores = useMemo(() => {
                 <button
                   type="button"
                   onClick={handleUseLocation}
+                  disabled={!hasStores}
                   className="inline-flex items-center justify-center gap-2 rounded-2xl border border-primary/22 bg-white/90 px-4 py-3 text-sm font-semibold text-foreground transition-all hover:-translate-y-0.5 hover:border-primary/40"
                 >
                   <LocateFixed className="h-4 w-4 text-primary" />
@@ -227,6 +231,9 @@ const filteredStores = useMemo(() => {
                 <div className="flex items-center gap-2 rounded-2xl border border-black/10 bg-white/95 px-3 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)]">
                   <Search className="h-4 w-4 text-foreground/45" />
                   <input
+                    id="store-selector-zip"
+                    name="zipCode"
+                    aria-label="Search by zip code"
                     type="text"
                     inputMode="numeric"
                     maxLength={6}
@@ -238,6 +245,7 @@ const filteredStores = useMemo(() => {
                   <button
                     type="button"
                     onClick={handleZipSearch}
+                    disabled={!hasStores}
                     className="rounded-xl bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-transform hover:scale-[1.03]"
                   >
                     Find
@@ -266,13 +274,18 @@ const filteredStores = useMemo(() => {
                 transition={{ delay: 0.18, duration: 0.3 }}
                 className="mt-4 min-h-[208px] max-h-[46vh] space-y-2 overflow-y-auto pr-1"
               >
-                {filteredStores.length === 0 ? (
+                {!hasStores ? (
+                  <div className="rounded-2xl border border-dashed border-black/15 bg-white/80 px-4 py-5 text-sm text-foreground/65">
+                    No stores available right now.
+                  </div>
+                ) : filteredStores.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-black/15 bg-white/80 px-4 py-5 text-sm text-foreground/65">
                     No stores found for this zip code.
                   </div>
                 ) : (
                   filteredStores.map((store, index) => {
                     const isSelected = store.id === selectedStoreId;
+                    const hasCoordinates = hasValidCoordinate(store.latitude) && hasValidCoordinate(store.longitude);
                     return (
                       <motion.button
                         type="button"
@@ -302,6 +315,11 @@ const filteredStores = useMemo(() => {
                             >
                               {store.isActive ? 'Active' : 'Coming Soon'}
                             </span>
+                            {!hasCoordinates ? (
+                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-700">
+                                Missing location data
+                              </span>
+                            ) : null}
                           </div>
                         </div>
 

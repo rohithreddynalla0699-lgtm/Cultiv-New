@@ -1,5 +1,4 @@
-import type { TableBuildType } from '../data/buildYourOwnTableData';
-import type { PresetConfig } from '../data/bowlConfigurations';
+import type { PresetConfig } from '../data/menuItemPresets';
 import type { DraftCartLine } from '../data/cartDraft';
 
 export interface AuthRedirectState {
@@ -33,8 +32,6 @@ export interface OrderPageLocationState {
   categorySlug?: string;
   openCustomize?: boolean;
   presetConfig?: PresetConfig;
-  tableOrder?: boolean;
-  buildType?: TableBuildType;
   reorderCartLines?: DraftCartLine[];
   reorderSourceOrderId?: string;
 }

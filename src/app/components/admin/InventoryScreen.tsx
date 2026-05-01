@@ -8,8 +8,22 @@ import { useAdminDashboard } from '../../contexts/AdminDashboardContext';
 import { useStoreSession } from '../../hooks/useStoreSession';
 
 type InventoryStatusFilter = 'all' | 'low_stock' | 'out_of_stock';
+type InventoryViewFilter = 'active' | 'archived' | 'all';
 
 type FeedbackTone = 'success' | 'error' | 'info';
+
+type RiskyInventoryActionMode = 'reduce' | 'set' | 'out_of_stock' | 'archive' | 'delete';
+
+interface RiskyInventoryActionState {
+  itemId: string;
+  itemName: string;
+  currentQuantity: number;
+  unit: string;
+  storeUuid?: string;
+  mode: RiskyInventoryActionMode;
+  requestedAmount?: number;
+  requestedQuantity?: number;
+}
 
 const INVENTORY_CATEGORY_OPTIONS = [
   { value: 'rice', label: 'Rice' },
@@ -71,12 +85,15 @@ export function InventoryScreen() {
   const { touchActivity } = useStoreSession();
   const {
     scopedInventory,
+    scopedArchivedInventory,
     inventoryHistory,
     inventoryLoading,
     inventoryError,
     refreshInventory,
     createInventoryItem,
     archiveInventoryItem,
+    unarchiveInventoryItem,
+    deleteInventoryItem,
     addInventoryStock,
     reduceInventoryStock,
     setInventoryQuantity,
@@ -89,12 +106,19 @@ export function InventoryScreen() {
   } = useAdminDashboard();
   const [searchValue, setSearchValue] = useState('');
   const [statusFilter, setStatusFilter] = useState<InventoryStatusFilter>('all');
+  const [viewFilter, setViewFilter] = useState<InventoryViewFilter>('active');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [pendingActionKey, setPendingActionKey] = useState<string | null>(null);
   const [quantityInputs, setQuantityInputs] = useState<Record<string, string>>({});
   const [feedback, setFeedback] = useState<{ tone: FeedbackTone; text: string } | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newItemForm, setNewItemForm] = useState(EMPTY_NEW_ITEM_FORM);
+  const [createItemError, setCreateItemError] = useState<string | null>(null);
+  const [isSubmittingCreateItem, setIsSubmittingCreateItem] = useState(false);
+  const [riskyActionState, setRiskyActionState] = useState<RiskyInventoryActionState | null>(null);
+  const [riskyActionNotes, setRiskyActionNotes] = useState('');
+  const [riskyActionError, setRiskyActionError] = useState<string | null>(null);
+  const [isSubmittingRiskyAction, setIsSubmittingRiskyAction] = useState(false);
 
   useEffect(() => {
     const onActivity = () => {
@@ -124,10 +148,23 @@ export function InventoryScreen() {
     return () => window.clearTimeout(timeout);
   }, [feedback]);
 
-  const categories = useMemo(() => ['all', ...new Set(scopedInventory.map((item) => item.category))], [scopedInventory]);
+  const allScopedInventory = useMemo(
+    () => ([...(scopedInventory ?? []), ...(scopedArchivedInventory ?? [])]).sort((left, right) => {
+      if (left.storeId !== right.storeId) {
+        return left.storeId.localeCompare(right.storeId);
+      }
+      if ((left.sortOrder ?? 0) !== (right.sortOrder ?? 0)) {
+        return (left.sortOrder ?? 0) - (right.sortOrder ?? 0);
+      }
+      return left.name.localeCompare(right.name);
+    }),
+    [scopedArchivedInventory, scopedInventory],
+  );
+
+  const categories = useMemo(() => ['all', ...new Set(allScopedInventory.map((item) => item.category))], [allScopedInventory]);
 
   const lowStockItems = useMemo(
-    () => scopedInventory
+    () => (scopedInventory ?? [])
       .filter((item) => item.status === 'low_stock' || item.status === 'out_of_stock')
       .sort((a, b) => {
         if (a.status === b.status) return a.name.localeCompare(b.name);
@@ -138,15 +175,18 @@ export function InventoryScreen() {
     [scopedInventory],
   );
 
-  const visibleItems = useMemo(() => scopedInventory.filter((item) => {
+  const visibleItems = useMemo(() => allScopedInventory.filter((item) => {
     const query = searchValue.toLowerCase().trim();
     const matchesSearch = !query || item.name.toLowerCase().includes(query) || item.code.toLowerCase().includes(query);
-    const matchesStatus = statusFilter === 'all' || item.status === statusFilter;
+    const matchesStatus = item.isArchived || statusFilter === 'all' || item.status === statusFilter;
     const matchesCategory = categoryFilter === 'all' || item.category === categoryFilter;
-    return matchesSearch && matchesStatus && matchesCategory;
-  }), [categoryFilter, scopedInventory, searchValue, statusFilter]);
+    const matchesView = viewFilter === 'all'
+      || (viewFilter === 'active' && !item.isArchived)
+      || (viewFilter === 'archived' && item.isArchived);
+    return matchesSearch && matchesStatus && matchesCategory && matchesView;
+  }), [allScopedInventory, categoryFilter, searchValue, statusFilter, viewFilter]);
 
-  const recentHistory = useMemo(() => inventoryHistory.slice(0, 10), [inventoryHistory]);
+  const recentHistory = useMemo(() => (inventoryHistory ?? []).slice(0, 10), [inventoryHistory]);
 
   const runAction = async (actionKey: string, action: () => Promise<{ success: boolean; message: string }>) => {
     void touchActivity();
@@ -175,10 +215,31 @@ export function InventoryScreen() {
       return;
     }
 
+    const currentItem = (scopedInventory ?? []).find((item) => item.id === itemId);
+    if (!currentItem) {
+      setFeedback({ tone: 'error', text: 'Inventory item not found.' });
+      return;
+    }
+
+    if (mode === 'reduce' || mode === 'set') {
+      setRiskyActionNotes('');
+      setRiskyActionError(null);
+      setRiskyActionState({
+        itemId,
+        itemName: currentItem.name,
+        currentQuantity: currentItem.quantity,
+        unit: currentItem.unit,
+        mode,
+        requestedAmount: mode === 'reduce' ? parsed : undefined,
+        requestedQuantity: mode === 'set' ? parsed : undefined,
+      });
+      return;
+    }
+
     const actionMap = {
       add: () => addInventoryStock(itemId, parsed),
-      reduce: () => reduceInventoryStock(itemId, parsed),
-      set: () => setInventoryQuantity(itemId, parsed),
+      reduce: () => reduceInventoryStock(itemId, parsed, ''),
+      set: () => setInventoryQuantity(itemId, parsed, ''),
     };
 
     const result = await runAction(`${itemId}:${mode}`, actionMap[mode]);
@@ -201,27 +262,178 @@ export function InventoryScreen() {
     await runAction(`${itemId}:threshold`, () => updateInventoryThreshold(itemId, parsed));
   };
 
-  const handleArchive = async (inventoryItemId: string, itemName: string) => {
-    const confirmed = window.confirm(`Archive ${itemName}? It will be hidden from operations screens, but inventory history stays intact.`);
-    if (!confirmed) return;
-
-    await runAction(`${inventoryItemId}:archive`, () => archiveInventoryItem(inventoryItemId));
+  const handleArchive = async (inventoryItemId: string, storeUuid: string, itemName: string) => {
+    setFeedback(null);
+    setRiskyActionNotes('');
+    setRiskyActionError(null);
+    setRiskyActionState({
+      itemId: inventoryItemId,
+      itemName,
+      currentQuantity: 0,
+      unit: '',
+      storeUuid,
+      mode: 'archive',
+    });
   };
 
+  const handleDelete = async (inventoryItemId: string, storeUuid: string, itemName: string) => {
+    setFeedback(null);
+    setRiskyActionNotes('');
+    setRiskyActionError(null);
+    setRiskyActionState({
+      itemId: inventoryItemId,
+      itemName,
+      currentQuantity: 0,
+      unit: '',
+      storeUuid,
+      mode: 'delete',
+    });
+  };
+
+  const handleRestore = async (inventoryItemId: string, storeUuid: string) => {
+    const result = await runAction(
+      `${inventoryItemId}:${storeUuid}:restore`,
+      () => unarchiveInventoryItem(inventoryItemId, storeUuid, { suppressGlobalError: false }),
+    );
+
+    if (result.success) {
+      await refreshInventory();
+    }
+  };
+
+  const openRiskyActionModal = (
+    itemId: string,
+    itemName: string,
+    currentQuantity: number,
+    unit: string,
+    mode: RiskyInventoryActionMode,
+    requestedAmount?: number,
+    requestedQuantity?: number,
+  ) => {
+    setFeedback(null);
+    setRiskyActionNotes('');
+    setRiskyActionError(null);
+    setRiskyActionState({
+      itemId,
+      itemName,
+      currentQuantity,
+      unit,
+      storeUuid: undefined,
+      mode,
+      requestedAmount,
+      requestedQuantity,
+    });
+  };
+
+  const closeRiskyActionModal = () => {
+    if (isSubmittingRiskyAction) return;
+    setRiskyActionState(null);
+    setRiskyActionNotes('');
+    setRiskyActionError(null);
+  };
+
+  const handleSubmitRiskyAction = async () => {
+    if (!riskyActionState) return;
+
+    const normalizedNotes = riskyActionNotes.trim();
+    if (riskyActionState.mode !== 'archive' && riskyActionState.mode !== 'delete' && !normalizedNotes) {
+      setRiskyActionError('Reason/notes are required for this inventory adjustment.');
+      return;
+    }
+
+    setIsSubmittingRiskyAction(true);
+    setRiskyActionError(null);
+
+    let result: { success: boolean; message: string };
+    if (riskyActionState.mode === 'reduce') {
+      result = await reduceInventoryStock(
+        riskyActionState.itemId,
+        riskyActionState.requestedAmount ?? 0,
+        normalizedNotes,
+        { suppressGlobalError: true },
+      );
+    } else if (riskyActionState.mode === 'set') {
+      result = await setInventoryQuantity(
+        riskyActionState.itemId,
+        riskyActionState.requestedQuantity ?? 0,
+        normalizedNotes,
+        { suppressGlobalError: true },
+      );
+    } else if (riskyActionState.mode === 'archive') {
+      result = await archiveInventoryItem(
+        riskyActionState.itemId,
+        riskyActionState.storeUuid ?? '',
+        { suppressGlobalError: true },
+      );
+    } else if (riskyActionState.mode === 'delete') {
+      result = await deleteInventoryItem(
+        riskyActionState.itemId,
+        riskyActionState.storeUuid ?? '',
+        { suppressGlobalError: true },
+      );
+    } else {
+      result = await markInventoryOutOfStock(
+        riskyActionState.itemId,
+        normalizedNotes,
+        { suppressGlobalError: true },
+      );
+    }
+
+    setIsSubmittingRiskyAction(false);
+
+    if (!result.success) {
+      setRiskyActionError(result.message);
+      return;
+    }
+
+    if (riskyActionState.mode === 'reduce' || riskyActionState.mode === 'set') {
+      setQuantityInputs((previous) => ({
+        ...previous,
+        [riskyActionState.itemId]: '',
+      }));
+    }
+
+    await refreshInventory();
+    setFeedback({ tone: 'success', text: result.message });
+    closeRiskyActionModal();
+  };
+
+  const riskyActionTitle = useMemo(() => {
+    if (!riskyActionState) return '';
+    switch (riskyActionState.mode) {
+      case 'reduce':
+        return 'Reduce Inventory';
+      case 'set':
+        return 'Set Exact Quantity';
+      case 'out_of_stock':
+        return 'Mark Out of Stock';
+      case 'archive':
+        return 'Archive Item';
+      case 'delete':
+        return 'Delete Item From Store';
+      default:
+        return 'Inventory Adjustment';
+    }
+  }, [riskyActionState]);
+
   const handleCreateInventoryItem = async () => {
+    void touchActivity();
+    setFeedback(null);
+    setCreateItemError(null);
+
     if (!newItemForm.name.trim()) {
-      setFeedback({ tone: 'error', text: 'Inventory item name is required.' });
+      setCreateItemError('Inventory item name is required.');
       return;
     }
 
     if (!newItemForm.unit.trim()) {
-      setFeedback({ tone: 'error', text: 'Unit is required.' });
+      setCreateItemError('Unit is required.');
       return;
     }
 
     const threshold = Number(newItemForm.threshold);
     if (!Number.isFinite(threshold) || threshold < 0) {
-      setFeedback({ tone: 'error', text: 'Threshold must be a non-negative number.' });
+      setCreateItemError('Threshold must be a non-negative number.');
       return;
     }
 
@@ -230,21 +442,27 @@ export function InventoryScreen() {
       : Number(newItemForm.initialQuantity);
 
     if (!Number.isFinite(initialQuantity) || initialQuantity < 0) {
-      setFeedback({ tone: 'error', text: 'Initial quantity must be a non-negative number.' });
+      setCreateItemError('Initial quantity must be a non-negative number.');
       return;
     }
 
-    const result = await runAction('create-inventory-item', () => createInventoryItem({
+    setIsSubmittingCreateItem(true);
+    const result = await createInventoryItem({
       name: newItemForm.name,
       category: newItemForm.category,
       unit: newItemForm.unit,
       threshold,
       initialQuantity,
-    }));
+    }, { suppressGlobalError: true });
+    setIsSubmittingCreateItem(false);
 
     if (result.success) {
       setIsAddModalOpen(false);
       setNewItemForm(EMPTY_NEW_ITEM_FORM);
+      setCreateItemError(null);
+      setFeedback({ tone: 'success', text: result.message });
+    } else {
+      setCreateItemError(result.message);
     }
   };
 
@@ -323,6 +541,27 @@ export function InventoryScreen() {
         />
 
         <div className="flex flex-col gap-3 md:items-end">
+          <div className="flex flex-wrap gap-2">
+            {([
+              { key: 'active', label: 'Active' },
+              { key: 'archived', label: 'Archived' },
+              { key: 'all', label: 'All' },
+            ] as const).map((option) => (
+              <button
+                key={option.key}
+                type="button"
+                onClick={() => setViewFilter(option.key)}
+                className={`cursor-pointer rounded-full px-4 py-2 text-sm font-medium transition ${
+                  viewFilter === option.key
+                    ? 'bg-primary text-primary-foreground shadow-[0_10px_24px_rgba(45,80,22,0.18)]'
+                    : 'bg-white/85 text-foreground/70 hover:bg-white'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+
           <div className="flex flex-wrap gap-2">
             {([
               { key: 'all', label: 'All' },
@@ -423,7 +662,7 @@ export function InventoryScreen() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => { void runAction(`${item.id}:out`, () => markInventoryOutOfStock(item.id)); }}
+                    onClick={() => openRiskyActionModal(item.id, item.name, item.quantity, item.unit, 'out_of_stock')}
                     disabled={pendingActionKey === `${item.id}:out`}
                     className="cursor-pointer text-sm font-medium text-[#8B2E2E] transition hover:text-[#6e2020] disabled:cursor-not-allowed disabled:opacity-55"
                   >
@@ -444,7 +683,9 @@ export function InventoryScreen() {
         className="space-y-4"
       >
         <div className="flex items-center justify-between gap-3">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary/58">All Inventory Items</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary/58">
+            {viewFilter === 'active' ? 'Active Inventory' : viewFilter === 'archived' ? 'Archived Inventory' : 'All Inventory'}
+          </p>
           <p className="rounded-full bg-white/88 px-4 py-2 text-sm font-medium text-foreground/68">Showing {visibleItems.length}</p>
         </div>
 
@@ -487,83 +728,111 @@ export function InventoryScreen() {
                     <p className="text-sm text-foreground/62">{formatUpdatedAt(item.updatedAt)}</p>
                     <div className="space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          data-testid={`inventory-add-${item.id}`}
-                          type="button"
-                          disabled={pendingActionKey === `${item.id}:add-one`}
-                          onClick={() => { void runAction(`${item.id}:add-one`, () => addInventoryStock(item.id, 1)); }}
-                          className="cursor-pointer rounded-lg border border-primary/16 bg-white px-2.5 py-1.5 text-xs font-medium text-foreground/74 transition hover:border-primary/24 hover:bg-white disabled:cursor-not-allowed disabled:opacity-55"
-                        >
-                          Add
-                        </button>
-                        <button
-                          type="button"
-                          disabled={pendingActionKey === `${item.id}:reduce-one`}
-                          onClick={() => { void runAction(`${item.id}:reduce-one`, () => reduceInventoryStock(item.id, 1)); }}
-                          className="cursor-pointer rounded-lg border border-primary/16 bg-white px-2.5 py-1.5 text-xs font-medium text-foreground/74 transition hover:border-primary/24 hover:bg-white disabled:cursor-not-allowed disabled:opacity-55"
-                        >
-                          Reduce
-                        </button>
-                        <button
-                          type="button"
-                          disabled={pendingActionKey === `${item.id}:threshold`}
-                          onClick={() => { void promptAndSetThreshold(item.id, item.name, item.threshold); }}
-                          className="cursor-pointer rounded-lg border border-primary/16 bg-white px-2.5 py-1.5 text-xs font-medium text-foreground/74 transition hover:border-primary/24 hover:bg-white disabled:cursor-not-allowed disabled:opacity-55"
-                        >
-                          Threshold
-                        </button>
-                        <button
-                          data-testid={`inventory-out-${item.id}`}
-                          type="button"
-                          disabled={pendingActionKey === `${item.id}:out`}
-                          onClick={() => { void runAction(`${item.id}:out`, () => markInventoryOutOfStock(item.id)); }}
-                          className="cursor-pointer rounded-lg border border-[#E7B5B5] bg-[#FFF4F4] px-2.5 py-1.5 text-xs font-medium text-[#8B2E2E] transition hover:bg-[#ffeaea] disabled:cursor-not-allowed disabled:opacity-55"
-                        >
-                          Out
-                        </button>
-                        <button
-                          type="button"
-                          disabled={pendingActionKey === `${item.inventoryItemId}:archive`}
-                          onClick={() => { void handleArchive(item.inventoryItemId, item.name); }}
-                          className="cursor-pointer text-xs font-medium text-[#8B2E2E] transition hover:text-[#6e2020] disabled:cursor-not-allowed disabled:opacity-55"
-                        >
-                          Archive
-                        </button>
+                        {item.isArchived ? (
+                          <>
+                            <span className="rounded-full border border-[#E7B5B5] bg-[#FFF4F4] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#8B2E2E]">
+                              Archived
+                            </span>
+                            <button
+                              type="button"
+                              disabled={pendingActionKey === `${item.inventoryItemId}:${item.storeUuid}:restore`}
+                              onClick={() => { void handleRestore(item.inventoryItemId, item.storeUuid); }}
+                              className="cursor-pointer rounded-lg border border-primary/16 bg-white px-2.5 py-1.5 text-xs font-medium text-foreground/74 transition hover:border-primary/24 hover:bg-white disabled:cursor-not-allowed disabled:opacity-55"
+                            >
+                              Restore
+                            </button>
+                            <button
+                              type="button"
+                              disabled={pendingActionKey === `${item.inventoryItemId}:${item.storeUuid}:delete`}
+                              onClick={() => { void handleDelete(item.inventoryItemId, item.storeUuid, item.name); }}
+                              className="cursor-pointer rounded-lg border border-[#E7B5B5] bg-[#FFF4F4] px-2.5 py-1.5 text-xs font-medium text-[#8B2E2E] transition hover:bg-[#ffeaea] disabled:cursor-not-allowed disabled:opacity-55"
+                            >
+                              Delete
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              data-testid={`inventory-add-${item.id}`}
+                              type="button"
+                              disabled={pendingActionKey === `${item.id}:add-one`}
+                              onClick={() => { void runAction(`${item.id}:add-one`, () => addInventoryStock(item.id, 1)); }}
+                              className="cursor-pointer rounded-lg border border-primary/16 bg-white px-2.5 py-1.5 text-xs font-medium text-foreground/74 transition hover:border-primary/24 hover:bg-white disabled:cursor-not-allowed disabled:opacity-55"
+                            >
+                              Add
+                            </button>
+                            <button
+                              type="button"
+                              disabled={pendingActionKey === `${item.id}:reduce-one`}
+                              onClick={() => openRiskyActionModal(item.id, item.name, item.quantity, item.unit, 'reduce', 1)}
+                              className="cursor-pointer rounded-lg border border-primary/16 bg-white px-2.5 py-1.5 text-xs font-medium text-foreground/74 transition hover:border-primary/24 hover:bg-white disabled:cursor-not-allowed disabled:opacity-55"
+                            >
+                              Reduce
+                            </button>
+                            <button
+                              type="button"
+                              disabled={pendingActionKey === `${item.id}:threshold`}
+                              onClick={() => { void promptAndSetThreshold(item.id, item.name, item.threshold); }}
+                              className="cursor-pointer rounded-lg border border-primary/16 bg-white px-2.5 py-1.5 text-xs font-medium text-foreground/74 transition hover:border-primary/24 hover:bg-white disabled:cursor-not-allowed disabled:opacity-55"
+                            >
+                              Threshold
+                            </button>
+                            <button
+                              data-testid={`inventory-out-${item.id}`}
+                              type="button"
+                              disabled={pendingActionKey === `${item.id}:out`}
+                              onClick={() => openRiskyActionModal(item.id, item.name, item.quantity, item.unit, 'out_of_stock')}
+                              className="cursor-pointer rounded-lg border border-[#E7B5B5] bg-[#FFF4F4] px-2.5 py-1.5 text-xs font-medium text-[#8B2E2E] transition hover:bg-[#ffeaea] disabled:cursor-not-allowed disabled:opacity-55"
+                            >
+                              Out
+                            </button>
+                            <button
+                              type="button"
+                              disabled={pendingActionKey === `${item.inventoryItemId}:${item.storeUuid}:archive`}
+                              onClick={() => { void handleArchive(item.inventoryItemId, item.storeUuid, item.name); }}
+                              className="cursor-pointer text-xs font-medium text-[#8B2E2E] transition hover:text-[#6e2020] disabled:cursor-not-allowed disabled:opacity-55"
+                            >
+                              Archive
+                            </button>
+                          </>
+                        )}
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-2">
-                        <input
-                          value={getEnteredQuantity(item.id)}
-                          onChange={(event) => handleEnteredQuantityChange(item.id, event.target.value)}
-                          inputMode="decimal"
-                          placeholder={`Qty in ${item.unit}`}
-                          className="w-[120px] rounded-xl border border-primary/12 bg-white px-3 py-2 text-sm outline-none transition focus:border-primary/24"
-                        />
-                        <button
-                          type="button"
-                          disabled={pendingActionKey === `${item.id}:add`}
-                          onClick={() => { void handleDirectQuantityAction(item.id, 'add'); }}
-                          className="cursor-pointer rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-55"
-                        >
-                          Add Entered
-                        </button>
-                        <button
-                          type="button"
-                          disabled={pendingActionKey === `${item.id}:reduce`}
-                          onClick={() => { void handleDirectQuantityAction(item.id, 'reduce'); }}
-                          className="cursor-pointer rounded-xl border border-primary/16 bg-white px-3 py-2 text-xs font-semibold text-foreground/76 transition hover:border-primary/24 hover:bg-white disabled:cursor-not-allowed disabled:opacity-55"
-                        >
-                          Reduce Entered
-                        </button>
-                        <button
-                          type="button"
-                          disabled={pendingActionKey === `${item.id}:set`}
-                          onClick={() => { void handleDirectQuantityAction(item.id, 'set'); }}
-                          className="cursor-pointer rounded-xl border border-primary/16 bg-[#F7FAF3] px-3 py-2 text-xs font-semibold text-foreground/76 transition hover:border-primary/24 hover:bg-white disabled:cursor-not-allowed disabled:opacity-55"
-                        >
-                          Set Exact
-                        </button>
-                      </div>
+                      {item.isArchived ? null : (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <input
+                            value={getEnteredQuantity(item.id)}
+                            onChange={(event) => handleEnteredQuantityChange(item.id, event.target.value)}
+                            inputMode="decimal"
+                            placeholder={`Qty in ${item.unit}`}
+                            className="w-[120px] rounded-xl border border-primary/12 bg-white px-3 py-2 text-sm outline-none transition focus:border-primary/24"
+                          />
+                          <button
+                            type="button"
+                            disabled={pendingActionKey === `${item.id}:add`}
+                            onClick={() => { void handleDirectQuantityAction(item.id, 'add'); }}
+                            className="cursor-pointer rounded-xl bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-55"
+                          >
+                            Add Entered
+                          </button>
+                          <button
+                            type="button"
+                            disabled={pendingActionKey === `${item.id}:reduce`}
+                            onClick={() => { void handleDirectQuantityAction(item.id, 'reduce'); }}
+                            className="cursor-pointer rounded-xl border border-primary/16 bg-white px-3 py-2 text-xs font-semibold text-foreground/76 transition hover:border-primary/24 hover:bg-white disabled:cursor-not-allowed disabled:opacity-55"
+                          >
+                            Reduce Entered
+                          </button>
+                          <button
+                            type="button"
+                            disabled={pendingActionKey === `${item.id}:set`}
+                            onClick={() => { void handleDirectQuantityAction(item.id, 'set'); }}
+                            className="cursor-pointer rounded-xl border border-primary/16 bg-[#F7FAF3] px-3 py-2 text-xs font-semibold text-foreground/76 transition hover:border-primary/24 hover:bg-white disabled:cursor-not-allowed disabled:opacity-55"
+                          >
+                            Set Exact
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </motion.div>
                 ))}
@@ -628,15 +897,128 @@ export function InventoryScreen() {
       </motion.section>
 
       <Modal
-        open={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        ariaLabel="Add inventory item"
+        open={Boolean(riskyActionState)}
+        onClose={closeRiskyActionModal}
+        ariaLabel="Inventory adjustment reason"
+        panelClassName="w-[min(92vw,448px)]"
+        bodyClassName="p-5 sm:p-5"
       >
-        <div className="space-y-5">
+        {riskyActionState ? (
+          <div className="w-full space-y-3.5">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/58">Inventory</p>
+              <h2 className="mt-1 text-lg font-semibold tracking-tight text-foreground">{riskyActionTitle}</h2>
+              <p className="mt-1 text-sm text-foreground/64">
+                {riskyActionState.mode === 'archive'
+                  ? 'This item will be hidden only in this store. Inventory history will remain intact.'
+                  : riskyActionState.mode === 'delete'
+                    ? 'This will remove the item from this store’s inventory list. Global catalog and history will remain intact.'
+                  : 'Confirm this adjustment and record the reason before updating stock.'}
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-primary/10 bg-[#F7FAF3] px-3.5 py-3">
+              <p className="text-sm font-semibold text-foreground">{riskyActionState.itemName}</p>
+              {riskyActionState.mode === 'archive' || riskyActionState.mode === 'delete' ? null : (
+                <p className="mt-1 text-xs text-foreground/66">
+                  Current quantity: {riskyActionState.currentQuantity} {riskyActionState.unit}
+                </p>
+              )}
+              {riskyActionState.mode === 'reduce' ? (
+                <p className="mt-1 text-xs text-foreground/66">
+                  Requested reduction: {riskyActionState.requestedAmount} {riskyActionState.unit}
+                </p>
+              ) : null}
+              {riskyActionState.mode === 'set' ? (
+                <p className="mt-1 text-xs text-foreground/66">
+                  Requested quantity: {riskyActionState.requestedQuantity} {riskyActionState.unit}
+                </p>
+              ) : null}
+              {riskyActionState.mode === 'out_of_stock' ? (
+                <p className="mt-1 text-xs text-foreground/66">
+                  This will set quantity to 0 {riskyActionState.unit}.
+                </p>
+              ) : null}
+            </div>
+
+            <div className="space-y-1.5">
+              {riskyActionState.mode === 'archive' || riskyActionState.mode === 'delete' ? null : (
+                <>
+                  <label htmlFor="inventory-adjustment-notes" className="text-sm font-medium text-foreground/74">
+                    Reason / Notes
+                  </label>
+                  <textarea
+                    id="inventory-adjustment-notes"
+                    value={riskyActionNotes}
+                    onChange={(event) => {
+                      setRiskyActionNotes(event.target.value);
+                      if (riskyActionError) setRiskyActionError(null);
+                    }}
+                    rows={3}
+                    placeholder="Describe why this adjustment is needed"
+                    className="h-24 w-full resize-none rounded-2xl border border-primary/12 bg-background/80 px-4 py-2.5 text-sm outline-none transition focus:border-primary/24"
+                  />
+                </>
+              )}
+              <div className="min-h-[52px]">
+                {riskyActionError ? (
+                  <div className="rounded-2xl border border-[#E7B5B5] bg-[#FFF4F4] px-3.5 py-2.5 text-sm text-[#8B2E2E]">
+                    {riskyActionError}
+                  </div>
+                ) : (
+                  <div aria-hidden="true" className="h-[52px]" />
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-0.5">
+              <button
+                type="button"
+                onClick={() => { void handleSubmitRiskyAction(); }}
+                disabled={isSubmittingRiskyAction}
+                className={`cursor-pointer rounded-2xl px-4 py-2.5 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                  riskyActionState.mode === 'delete'
+                    ? 'border border-[#E7B5B5] bg-[#FFF4F4] text-[#8B2E2E] hover:bg-[#ffeaea]'
+                    : 'bg-primary text-primary-foreground hover:brightness-105'
+                }`}
+              >
+                {isSubmittingRiskyAction
+                  ? 'Saving…'
+                  : riskyActionState.mode === 'archive'
+                    ? 'Confirm Archive'
+                    : riskyActionState.mode === 'delete'
+                      ? 'Delete Item'
+                      : 'Confirm Adjustment'}
+              </button>
+              <button
+                type="button"
+                onClick={closeRiskyActionModal}
+                disabled={isSubmittingRiskyAction}
+                className="cursor-pointer rounded-2xl border border-primary/12 bg-white px-4 py-2.5 text-sm font-medium text-foreground/72 transition hover:bg-[#F7FAF3] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
+      <Modal
+        open={isAddModalOpen}
+        onClose={() => {
+          if (isSubmittingCreateItem) return;
+          setIsAddModalOpen(false);
+          setCreateItemError(null);
+        }}
+        ariaLabel="Add inventory item"
+        panelClassName="w-[min(92vw,448px)]"
+        bodyClassName="p-5 sm:p-5"
+      >
+        <div className="space-y-4">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/58">Inventory</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-foreground">Add Inventory Item</h2>
-            <p className="mt-2 text-sm text-foreground/64">
+            <h2 className="mt-1 text-lg font-semibold tracking-tight text-foreground">Add Inventory Item</h2>
+            <p className="mt-1 text-sm text-foreground/64">
               Create a new inventory item for {activeStore?.name ?? 'the selected store'} and record its starting count truthfully.
             </p>
           </div>
@@ -679,19 +1061,34 @@ export function InventoryScreen() {
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="min-h-[52px]">
+            {createItemError ? (
+              <div className="rounded-2xl border border-[#E7B5B5] bg-[#FFF4F4] px-3.5 py-2.5 text-sm text-[#8B2E2E]">
+                {createItemError}
+              </div>
+            ) : (
+              <div aria-hidden="true" className="h-[52px]" />
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-end gap-2.5">
             <button
               type="button"
               onClick={() => { void handleCreateInventoryItem(); }}
-              disabled={pendingActionKey === 'create-inventory-item'}
-              className="cursor-pointer rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={isSubmittingCreateItem}
+              className="cursor-pointer rounded-2xl bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {pendingActionKey === 'create-inventory-item' ? 'Creating…' : 'Create item'}
+              {isSubmittingCreateItem ? 'Creating…' : 'Create item'}
             </button>
             <button
               type="button"
-              onClick={() => setIsAddModalOpen(false)}
-              className="cursor-pointer rounded-2xl border border-primary/12 bg-white px-4 py-3 text-sm font-medium text-foreground/72 transition hover:bg-[#F7FAF3]"
+              onClick={() => {
+                if (isSubmittingCreateItem) return;
+                setIsAddModalOpen(false);
+                setCreateItemError(null);
+              }}
+              disabled={isSubmittingCreateItem}
+              className="cursor-pointer rounded-2xl border border-primary/12 bg-white px-4 py-2.5 text-sm font-medium text-foreground/72 transition hover:bg-[#F7FAF3] disabled:cursor-not-allowed disabled:opacity-60"
             >
               Cancel
             </button>

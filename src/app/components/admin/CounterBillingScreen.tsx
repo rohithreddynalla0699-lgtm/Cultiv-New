@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useReducer, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Check, CreditCard, ReceiptText, ShoppingBag } from 'lucide-react';
-import { PRESETS_BY_ITEM_ID } from '../../data/bowlConfigurations';
+import { PRESETS_BY_ITEM_ID } from '../../data/menuItemPresets';
 import {
-  BOWL_BUILDER_STEPS,
+  BOWL_CUSTOMIZATION_STEPS,
   BREAKFAST_CUSTOMIZE_STEPS,
   getBreakfastCustomizationPolicy,
   type BuilderStep,
@@ -442,7 +442,7 @@ function getCustomizeSteps(itemId: string) {
     const policy = getBreakfastCustomizationPolicy(itemId);
     return BREAKFAST_CUSTOMIZE_STEPS.filter((step) => policy?.editableGroupIds.includes(step.id) ?? true);
   }
-  return BOWL_BUILDER_STEPS;
+  return BOWL_CUSTOMIZATION_STEPS;
 }
 
 function calculateUnitPrice(item: FoodItem, selections: Record<string, string[]>) {

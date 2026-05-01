@@ -4,6 +4,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 type RoleKey = 'owner' | 'admin' | 'store';
 type ScopeType = 'global' | 'store' | 'owner' | 'admin';
 type MenuAction = 'dashboard' | 'upsert_item' | 'set_availability' | 'delete_item';
+const REMOVED_CATEGORY_SLUG = 'build-your-own-bowl';
 
 interface InternalMenuRequest {
   internalSessionToken?: string;
@@ -190,6 +191,7 @@ const loadMenuDashboard = async (db: ReturnType<typeof createClient>) => {
     db
       .from('menu_items')
       .select('menu_item_id, category_slug, subcategory_slug, name, description, base_price, is_available, sort_order, image_url, calories, protein_grams, badge, created_at, updated_at')
+      .neq('category_slug', REMOVED_CATEGORY_SLUG)
       .order('sort_order', { ascending: true })
       .order('name', { ascending: true }),
     db
@@ -327,6 +329,10 @@ const upsertMenuItem = async (
 
   if (!normalizedCategorySlug) {
     return { status: 400, payload: { error: 'categorySlug is required.' } };
+  }
+
+  if (normalizedCategorySlug === REMOVED_CATEGORY_SLUG) {
+    return { status: 400, payload: { error: 'This removed category can no longer be created or updated.' } };
   }
 
   if (basePrice === null || basePrice < 0) {

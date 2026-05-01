@@ -16,6 +16,8 @@ interface StoreEditorState {
   state: string;
   postalCode: string;
   phone: string;
+  latitude: string;
+  longitude: string;
   code: string;
   isActive: boolean;
   storeLoginInternalUserId: string | null;
@@ -60,6 +62,8 @@ const createEmptyStoreEditorState = (): StoreEditorState => ({
   state: '',
   postalCode: '',
   phone: '',
+  latitude: '',
+  longitude: '',
   code: '',
   isActive: true,
   storeLoginInternalUserId: null,
@@ -176,6 +180,8 @@ export function StoresScreen() {
     state?: string;
     postalCode?: string;
     phone?: string;
+    latitude?: number;
+    longitude?: number;
     code: string;
     isActive: boolean;
     storeUser: OperationsInternalUserRecord | null;
@@ -189,6 +195,8 @@ export function StoresScreen() {
       state: params.state ?? '',
       postalCode: params.postalCode ?? '',
       phone: params.phone ?? '',
+      latitude: params.latitude == null ? '' : String(params.latitude),
+      longitude: params.longitude == null ? '' : String(params.longitude),
       code: params.code,
       isActive: params.isActive,
       storeLoginInternalUserId: params.storeUser?.internalUserId ?? null,
@@ -210,6 +218,26 @@ export function StoresScreen() {
 
     if (!storeEditor.name.trim() || !storeEditor.addressLine1.trim() || !storeEditor.city.trim() || !storeEditor.state.trim() || !storeEditor.postalCode.trim() || !storeEditor.code.trim()) {
       setMessage('Store name, address, city, state, postal code, and code are required.');
+      return;
+    }
+
+    const trimmedLatitude = storeEditor.latitude.trim();
+    const trimmedLongitude = storeEditor.longitude.trim();
+    const parsedLatitude = trimmedLatitude ? Number(trimmedLatitude) : undefined;
+    const parsedLongitude = trimmedLongitude ? Number(trimmedLongitude) : undefined;
+
+    if ((trimmedLatitude && !Number.isFinite(parsedLatitude)) || (trimmedLongitude && !Number.isFinite(parsedLongitude))) {
+      setMessage('Latitude and longitude must be valid numbers when provided.');
+      return;
+    }
+
+    if ((trimmedLatitude && parsedLatitude! < -90) || (trimmedLatitude && parsedLatitude! > 90)) {
+      setMessage('Latitude must be between -90 and 90.');
+      return;
+    }
+
+    if ((trimmedLongitude && parsedLongitude! < -180) || (trimmedLongitude && parsedLongitude! > 180)) {
+      setMessage('Longitude must be between -180 and 180.');
       return;
     }
 
@@ -235,6 +263,8 @@ export function StoresScreen() {
         state: storeEditor.state.trim(),
         postalCode: storeEditor.postalCode.trim(),
         phone: storeEditor.phone.trim() || undefined,
+        latitude: parsedLatitude,
+        longitude: parsedLongitude,
         code: storeEditor.code.trim(),
         isActive: storeEditor.isActive,
         storeLoginInternalUserId: storeEditor.storeLoginInternalUserId ?? undefined,
@@ -495,6 +525,8 @@ export function StoresScreen() {
                           state: store.state,
                           postalCode: store.postalCode,
                           phone: store.phone,
+                          latitude: store.latitude,
+                          longitude: store.longitude,
                           code: store.code,
                           isActive: store.isActive,
                           storeUser: hasAmbiguousStoreUsers ? null : primaryStoreUser,
@@ -609,6 +641,14 @@ export function StoresScreen() {
               <label className="block text-sm text-foreground/68">
                 <span className="mb-2 block font-medium">Store phone</span>
                 <input value={storeEditor.phone} onChange={(event) => setStoreEditor((previous) => ({ ...previous, phone: event.target.value.replace(/\D/g, '').slice(0, 10) }))} placeholder="Optional" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+              </label>
+              <label className="block text-sm text-foreground/68">
+                <span className="mb-2 block font-medium">Latitude</span>
+                <input value={storeEditor.latitude} onChange={(event) => setStoreEditor((previous) => ({ ...previous, latitude: event.target.value }))} placeholder="Optional, e.g. 45.4871" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+              </label>
+              <label className="block text-sm text-foreground/68">
+                <span className="mb-2 block font-medium">Longitude</span>
+                <input value={storeEditor.longitude} onChange={(event) => setStoreEditor((previous) => ({ ...previous, longitude: event.target.value }))} placeholder="Optional, e.g. -122.8037" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
               <label className="block text-sm text-foreground/68">
                 <span className="mb-2 block font-medium">Store code</span>

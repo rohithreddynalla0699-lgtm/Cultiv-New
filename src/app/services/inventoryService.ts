@@ -1,18 +1,23 @@
 import {
   archiveInternalInventoryItem,
   createInternalInventoryItem,
+  deleteInternalInventoryItem,
   loadInternalInventoryDashboard,
+  unarchiveInternalInventoryItem,
   updateInternalInventoryItem,
-  type InternalInventoryAdjustmentType,
+  type InternalInventoryMutationAdjustmentType,
   type InternalInventoryArchiveResponse,
   type InternalInventoryCreateResponse,
+  type InternalInventoryDeleteResponse,
   type InternalInventoryDashboardResponse,
   type InternalInventoryMutationResponse,
+  type InternalInventoryUnarchiveResponse,
 } from '../lib/internalOpsApi';
 import type { InternalAccessSession } from '../types/admin';
 
 export interface InventoryDashboardResult {
   items: InternalInventoryDashboardResponse['items'];
+  archivedItems: InternalInventoryDashboardResponse['archivedItems'];
   adjustments: InternalInventoryDashboardResponse['adjustments'];
 }
 
@@ -41,8 +46,9 @@ export const inventoryService = {
     }
 
     return {
-      items: data.items,
-      adjustments: data.adjustments,
+      items: Array.isArray(data.items) ? data.items : [],
+      archivedItems: Array.isArray(data.archivedItems) ? data.archivedItems : [],
+      adjustments: Array.isArray(data.adjustments) ? data.adjustments : [],
     } satisfies InventoryDashboardResult;
   },
 
@@ -50,7 +56,7 @@ export const inventoryService = {
     session: InternalAccessSession;
     storeId?: string | null;
     inventoryItemId: string;
-    adjustmentType: InternalInventoryAdjustmentType;
+    adjustmentType: InternalInventoryMutationAdjustmentType;
     amount?: number;
     quantity?: number;
     threshold?: number;
@@ -102,10 +108,12 @@ export const inventoryService = {
 
   async archiveInventoryItem(params: {
     session: InternalAccessSession;
+    storeId: string;
     inventoryItemId: string;
   }) {
     const { data, error } = await archiveInternalInventoryItem({
       ...sessionPayload(params.session),
+      storeId: params.storeId,
       inventoryItemId: params.inventoryItemId,
     });
 
@@ -114,5 +122,41 @@ export const inventoryService = {
     }
 
     return data satisfies InternalInventoryArchiveResponse;
+  },
+
+  async unarchiveInventoryItem(params: {
+    session: InternalAccessSession;
+    storeId: string;
+    inventoryItemId: string;
+  }) {
+    const { data, error } = await unarchiveInternalInventoryItem({
+      ...sessionPayload(params.session),
+      storeId: params.storeId,
+      inventoryItemId: params.inventoryItemId,
+    });
+
+    if (error || !data?.success) {
+      throw new Error(error ?? 'Could not restore inventory item.');
+    }
+
+    return data satisfies InternalInventoryUnarchiveResponse;
+  },
+
+  async deleteInventoryItem(params: {
+    session: InternalAccessSession;
+    storeId: string;
+    inventoryItemId: string;
+  }) {
+    const { data, error } = await deleteInternalInventoryItem({
+      ...sessionPayload(params.session),
+      storeId: params.storeId,
+      inventoryItemId: params.inventoryItemId,
+    });
+
+    if (error || !data?.success) {
+      throw new Error(error ?? 'Could not delete inventory item from this store.');
+    }
+
+    return data satisfies InternalInventoryDeleteResponse;
   },
 };

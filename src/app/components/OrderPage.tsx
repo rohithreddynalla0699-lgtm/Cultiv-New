@@ -7,7 +7,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { PageReveal } from '../core/motion/cultivMotion';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import {
-  BOWL_BUILDER_STEPS,
+  BOWL_CUSTOMIZATION_STEPS,
   BREAKFAST_AVAILABLE_FRUIT_IDS,
   BREAKFAST_CUSTOMIZE_STEPS,
   BREAKFAST_SECTION_ITEM_IDS,
@@ -17,7 +17,6 @@ import {
   type BuilderStep,
   type FoodItem,
 } from '../data/menuData';
-import { TABLE_BUILD_OPTIONS_BY_TYPE, type TableBuildType } from '../data/buildYourOwnTableData';
 import { DRINKS_BY_SECTION, DRINK_SECTION_META, type DrinkItem, type DrinkSection } from '../data/drinksData';
 import {
   addDraftLine,
@@ -34,9 +33,8 @@ import {
 import {
   PRESETS_BY_ITEM_ID,
   SIGNATURE_BASE_PRICE_BY_BLEND,
-  TABLE_BUILD_TYPE_BY_ITEM_ID,
   resolveProteinBlend,
-} from '../data/bowlConfigurations';
+} from '../data/menuItemPresets';
 import { AuthPromptBeforeCheckout } from './AuthPromptBeforeCheckout';
 import { OrderReviewModal } from './OrderReviewModal';
 import { useAuth } from '../contexts/AuthContext';
@@ -107,16 +105,14 @@ interface CustomizeState {
   title: string;
   categoryName: string;
   basePrice: number;
-  mode: 'signature' | 'table' | 'breakfast' | 'generic';
+  mode: 'signature' | 'breakfast' | 'generic';
   selections: Record<string, string[]>;
   stepIndex: number;
   hideBaseStep?: boolean;
   allowedProteinIds?: string[];
-  servesLabel?: string;
 }
 
 const CATEGORY_PRIORITY = [
-  'build-your-own-bowl',
   'signature-bowls',
   'breakfast-bowls',
   'high-protein-cups',
@@ -131,7 +127,7 @@ const CUSTOMER_ONLINE_CHECKOUT_ENABLED = import.meta.env.VITE_CUSTOMER_ONLINE_CH
 const ONLINE_CHECKOUT_DISABLED_MESSAGE = 'Online checkout is not live yet. Please place your order at the store.';
 const MOCK_PAYMENT_OUTCOME = (env.env?.VITE_MOCK_PAYMENT_OUTCOME || 'succeeded').trim().toLowerCase();
 const STEP_BY_ID = Object.fromEntries(
-  [...BOWL_BUILDER_STEPS, ...BREAKFAST_CUSTOMIZE_STEPS].map((step) => [step.id, step]),
+  [...BOWL_CUSTOMIZATION_STEPS, ...BREAKFAST_CUSTOMIZE_STEPS].map((step) => [step.id, step]),
 );
 
 function requiresBreakfastCustomization(itemId: string) {
@@ -147,10 +143,6 @@ interface MenuSection {
 }
 
 const CATEGORY_CONTEXT: Record<string, { accentLabel?: string; helperText: string }> = {
-  'build-your-own-bowl': {
-    accentLabel: 'GROUP ORDER',
-    helperText: 'Serves 4-5 people with preset and custom paths.',
-  },
   'breakfast-bowls': {
     accentLabel: 'MORNING FUEL',
     helperText: 'Preset favorites with optional customization and direct add.',
@@ -220,18 +212,6 @@ function buildMenuSections(slug: string, items: FoodItem[]): MenuSection[] {
     ].filter((section) => section.items.length > 0);
   }
 
-  if (slug === 'build-your-own-bowl') {
-    return [
-      {
-        id: 'table-bowls',
-        title: 'Table Bowl Lineup',
-        subtitle: 'Shared bowls for 4-5 people with protein-led options.',
-        accentLabel: 'SERVES 4-5',
-        items,
-      },
-    ];
-  }
-
   if (slug === 'breakfast-bowls') {
     const yogurtChia = items.filter((item) => BREAKFAST_SECTION_ITEM_IDS.chiaYogurtBowls.some((id) => id === item.id));
     const overnightOats = items.filter((item) => BREAKFAST_SECTION_ITEM_IDS.overnightOats.some((id) => id === item.id));
@@ -282,8 +262,7 @@ function sectionSubtitleBySlug(slug: string) {
 
 function supportsCustomize(slug: string) {
   return (
-    slug === 'build-your-own-bowl'
-    || slug === 'signature-bowls'
+    slug === 'signature-bowls'
     || slug === 'salad-bowls'
     || slug === 'breakfast-bowls'
   );
@@ -305,12 +284,6 @@ function getSelectedIngredients(steps: BuilderStep[], selections: Record<string,
   return steps.flatMap((step) =>
     (selections[step.id] ?? []).flatMap((id) => step.ingredients.filter((ingredient) => ingredient.id === id)),
   );
-}
-
-function getAllowedProteinIdsForTableType(type: TableBuildType) {
-  if (type === 'veg') return ['rajma', 'channa'];
-  if (type === 'chicken') return ['classic-chicken', 'spicy-chicken'];
-  return ['rajma', 'channa', 'classic-chicken', 'spicy-chicken'];
 }
 
 function mapSelectionsToLabels(selections: Record<string, string[]>) {
@@ -389,7 +362,7 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
   if (!stores.length) {
     return {
       id: '',
-      name: 'Loading store...',
+      name: 'No stores available',
       city: '',
       code: '',
       zipCode: '',
@@ -397,7 +370,14 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
     };
   }
 
-  return getSelectedStore(stores);
+  return getSelectedStore(stores) ?? {
+    id: '',
+    name: 'Select location',
+    city: '',
+    code: '',
+    zipCode: '',
+    isActive: false,
+  };
 }, [stores]);
 
   useEffect(() => {
@@ -489,7 +469,7 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
     setActiveCategorySlug(locationState.categorySlug);
 
     const hasCustomizeState = Boolean(
-      locationState.openCustomize || locationState.presetConfig || locationState.tableOrder,
+      locationState.openCustomize || locationState.presetConfig,
     );
     if (!hasCustomizeState) {
       navigate(location.pathname, { replace: true, state: null });
@@ -544,29 +524,6 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
       });
       navigate(location.pathname, { replace: true, state: null });
       return;
-    }
-
-    if (locationState.tableOrder) {
-      const type =
-        locationState.buildType === 'veg' ||
-        locationState.buildType === 'both' ||
-        locationState.buildType === 'chicken'
-          ? locationState.buildType
-          : 'chicken';
-      const option = TABLE_BUILD_OPTIONS_BY_TYPE[type];
-      setActiveCategorySlug(DEFAULT_ACTIVE_ORDER_CATEGORY_SLUG);
-      setCustomizing({
-        itemId: `table-${type}`,
-        title: option.title,
-        categoryName: 'Build Your Own Bowl',
-        basePrice: option.basePrice,
-        mode: 'table',
-        selections: option.defaultSelections,
-        stepIndex: 0,
-        allowedProteinIds: getAllowedProteinIdsForTableType(type),
-        servesLabel: 'Serves 4-5 people',
-      });
-      navigate(location.pathname, { replace: true, state: null });
     }
   }, [location.pathname, locationState, navigate]);
 
@@ -690,7 +647,7 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
     return '';
   };
   const customizeSteps = useMemo(() => {
-    if (!customizing) return BOWL_BUILDER_STEPS;
+    if (!customizing) return BOWL_CUSTOMIZATION_STEPS;
 
     const allowedGroupIds = getAllowedOptionGroupIdsForItem(customizing.itemId);
 
@@ -704,7 +661,7 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
       return filteredBreakfastSteps.length > 0 ? filteredBreakfastSteps : breakfastSteps;
     }
 
-    const baseSteps = BOWL_BUILDER_STEPS;
+    const baseSteps = BOWL_CUSTOMIZATION_STEPS;
     const scopedSteps = (!allowedGroupIds || allowedGroupIds.length === 0)
       ? baseSteps
       : (() => {
@@ -739,15 +696,6 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
           title: `Everyday ${label} Bowl`,
           basePrice: SIGNATURE_BASE_PRICE_BY_BLEND[blend],
         };
-      }
-    }
-
-    if (customizing.mode === 'table') {
-      const blend = resolveProteinBlend(customizing.selections.protein ?? []);
-      if (blend) {
-        const tableType: TableBuildType = blend === 'power' ? 'both' : blend;
-        const option = TABLE_BUILD_OPTIONS_BY_TYPE[tableType];
-        return { title: option.title, basePrice: option.basePrice };
       }
     }
 
@@ -790,36 +738,6 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
       return;
     }
 
-    if (activeCategory.slug === 'build-your-own-bowl') {
-      const buildType = TABLE_BUILD_TYPE_BY_ITEM_ID[item.id];
-      if (buildType) {
-        const option = TABLE_BUILD_OPTIONS_BY_TYPE[buildType];
-        const selections = [
-          { section: 'Serving', choices: ['Serves 4-5 people'] },
-          ...mapSelectionsToLabels(option.defaultSelections),
-        ];
-        const customizeSnapshot: DraftCustomizeSnapshot = {
-          mode: 'table',
-          selections: option.defaultSelections,
-          basePrice: option.basePrice,
-          allowedProteinIds: getAllowedProteinIdsForTableType(buildType),
-          servesLabel: 'Serves 4-5 people',
-        };
-        addDraftLine({
-          key: createDraftLineKey(`table-${buildType}`, selections),
-          itemId: `table-${buildType}`,
-          title: option.title,
-          categoryName: 'Build Your Own Bowl',
-          unitPrice: option.basePrice,
-          quantity: 1,
-          selections,
-          customizeSnapshot,
-        });
-        setRecentlyAddedItemId(item.id);
-        return;
-      }
-    }
-
     addDraftLine({
       key: createDraftLineKey(item.id),
       itemId: item.id,
@@ -859,25 +777,6 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
       return;
     }
 
-    if (activeCategory.slug === 'build-your-own-bowl') {
-      const buildType = TABLE_BUILD_TYPE_BY_ITEM_ID[item.id];
-      if (buildType) {
-        const option = TABLE_BUILD_OPTIONS_BY_TYPE[buildType];
-        setCustomizing({
-          itemId: `table-${buildType}`,
-          title: option.title,
-          categoryName: 'Build Your Own Bowl',
-          basePrice: option.basePrice,
-          mode: 'table',
-          selections: option.defaultSelections,
-          stepIndex: 0,
-          allowedProteinIds: getAllowedProteinIdsForTableType(buildType),
-          servesLabel: 'Serves 4-5 people',
-        });
-        return;
-      }
-    }
-
     setCustomizing({
       itemId: item.id,
       title: item.name,
@@ -909,12 +808,13 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
       title: line.title,
       categoryName: line.categoryName,
       basePrice: line.customizeSnapshot.basePrice,
-      mode: line.customizeSnapshot.mode,
+      mode: line.customizeSnapshot.mode === 'signature' || line.customizeSnapshot.mode === 'breakfast'
+        ? line.customizeSnapshot.mode
+        : 'generic',
       selections: line.customizeSnapshot.selections,
       stepIndex: 0,
       hideBaseStep: line.customizeSnapshot.hideBaseStep,
       allowedProteinIds: line.customizeSnapshot.allowedProteinIds,
-      servesLabel: line.customizeSnapshot.servesLabel,
     });
     setEditingLineKey(line.key);
     setEditingLineQuantity(line.quantity);
@@ -978,7 +878,6 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
         basePrice: customizeResolved?.basePrice ?? customizing.basePrice,
         hideBaseStep: customizing.hideBaseStep,
         allowedProteinIds: customizing.allowedProteinIds,
-        servesLabel: customizing.servesLabel,
       },
     });
 
@@ -1411,9 +1310,6 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
                                 <div className="flex flex-1 flex-col p-4">
                                   <h3 className="text-[15px] font-semibold leading-snug">{item.name}</h3>
                                   <p className="mt-1.5 line-clamp-2 text-sm leading-relaxed text-foreground/60">{item.description}</p>
-                                  {activeCategory.slug === 'build-your-own-bowl' ? (
-                                    <p className="mt-2 text-[11px] font-medium uppercase tracking-[0.14em] text-primary/70">Serves 4-5 people</p>
-                                  ) : null}
                                   {activeCategory.slug !== 'drinks-juices' ? (
                                     <div className="mt-1.5 text-[11px] text-foreground/52">{item.calories} cal · {item.protein}g protein</div>
                                   ) : null}
@@ -1502,7 +1398,6 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
                     <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-primary/65">Customization</p>
                     <h2 className="mt-2 text-2xl font-semibold">{customizeResolved?.title ?? customizing.title}</h2>
                     <p className="mt-1 text-sm text-foreground/62">Step {customizing.stepIndex + 1} of {customizeSteps.length}</p>
-                    {customizing.servesLabel ? <p className="mt-1 text-xs text-foreground/54">{customizing.servesLabel}</p> : null}
                     {customizing.mode === 'breakfast' && getBreakfastCustomizationPolicy(customizing.itemId)?.fruitMode === 'fixed' ? (
                       <p className="mt-1 text-xs font-medium text-foreground/56">
                         Includes {getBreakfastCustomizationPolicy(customizing.itemId)?.fixedFruitIds.map((fruitId) =>
@@ -1823,6 +1718,9 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
                       </div>
                       {selectedTipOption === 'custom' ? (
                         <input
+                          id="checkout-custom-tip"
+                          name="customTip"
+                          aria-label="Custom tip amount"
                           type="number"
                           min="0"
                           step="0.01"
@@ -1932,6 +1830,10 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
                     </div>
                     {errors.paymentMethod ? <p className="text-xs text-red-600">{errors.paymentMethod}</p> : null}
                     <input
+                      id="checkout-full-name"
+                      name="fullName"
+                      aria-label="Full name"
+                      autoComplete="name"
                       type="text"
                       value={customer.fullName}
                       onChange={(e) => setCustomer((prev) => ({ ...prev, fullName: e.target.value }))}
@@ -1940,6 +1842,10 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
                     />
                     {errors.fullName ? <p className="text-xs text-red-600">{errors.fullName}</p> : null}
                     <input
+                      id="checkout-phone"
+                      name="phone"
+                      aria-label="Phone number"
+                      autoComplete="tel"
                       type="tel"
                       value={customer.phone}
                       onChange={(e) => setCustomer((prev) => ({ ...prev, phone: e.target.value }))}
@@ -1948,6 +1854,10 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
                     />
                     {errors.phone ? <p className="text-xs text-red-600">{errors.phone}</p> : null}
                     <input
+                      id="checkout-email"
+                      name="email"
+                      aria-label="Email address"
+                      autoComplete="email"
                       type="email"
                       value={customer.email}
                       onChange={(e) => setCustomer((prev) => ({ ...prev, email: e.target.value }))}

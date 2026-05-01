@@ -4,12 +4,11 @@ export interface DraftSelection {
 }
 
 export interface DraftCustomizeSnapshot {
-  mode: 'signature' | 'table' | 'breakfast' | 'generic';
+  mode: 'signature' | 'breakfast' | 'generic';
   selections: Record<string, string[]>;
   basePrice: number;
   hideBaseStep?: boolean;
   allowedProteinIds?: string[];
-  servesLabel?: string;
 }
 
 export interface DraftCartLine {

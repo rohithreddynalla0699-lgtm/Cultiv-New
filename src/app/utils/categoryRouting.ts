@@ -10,7 +10,6 @@ const CATEGORY_ALIAS_MAP: Record<string, string> = {
   'drinks and juices': 'drinks-juices',
   'kids meal': 'kids-meal',
   'salad bowls': 'salad-bowls',
-  'build your own bowl': 'build-your-own-bowl',
 };
 
 export function resolveCategorySlugFromLabel(categoryLabel: string): string | null {

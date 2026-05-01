@@ -187,6 +187,8 @@ export type InternalInventoryAdjustmentType =
   | 'out_of_stock'
   | 'opening_balance';
 
+export type InternalInventoryMutationAdjustmentType = Exclude<InternalInventoryAdjustmentType, 'opening_balance'>;
+
 export interface InternalInventoryDashboardItem {
   storeInventoryId: string;
   storeId: string;
@@ -199,6 +201,7 @@ export interface InternalInventoryDashboardItem {
   unit: string;
   quantity: number;
   threshold: number;
+  isActive: boolean;
   sortOrder: number;
   updatedAt: string;
   updatedBy: string | null;
@@ -226,6 +229,7 @@ export interface InternalInventoryAdjustmentRow {
 
 export interface InternalInventoryDashboardResponse {
   items: InternalInventoryDashboardItem[];
+  archivedItems: InternalInventoryDashboardItem[];
   adjustments: InternalInventoryAdjustmentRow[];
 }
 
@@ -246,6 +250,21 @@ export interface InternalInventoryArchiveResponse {
   success: boolean;
   mode: 'archived';
   inventoryItemId: string;
+  storeId: string;
+}
+
+export interface InternalInventoryUnarchiveResponse {
+  success: boolean;
+  mode: 'unarchived';
+  inventoryItemId: string;
+  storeId: string;
+}
+
+export interface InternalInventoryDeleteResponse {
+  success: boolean;
+  mode: 'deleted';
+  inventoryItemId: string;
+  storeId: string;
 }
 
 export interface InternalMenuOptionGroup {
@@ -573,6 +592,8 @@ export interface ManagedStoreRecord {
   state?: string;
   postalCode?: string;
   phone?: string;
+  latitude?: number;
+  longitude?: number;
   isActive: boolean;
 }
 
@@ -830,7 +851,7 @@ export async function updateInternalInventoryItem(params: {
   scopeStoreId: string | null;
   storeId?: string | null;
   inventoryItemId: string;
-  adjustmentType: InternalInventoryAdjustmentType;
+  adjustmentType: InternalInventoryMutationAdjustmentType;
   amount?: number;
   quantity?: number;
   threshold?: number;
@@ -867,12 +888,43 @@ export async function archiveInternalInventoryItem(params: {
   roleKey: 'owner' | 'admin' | 'store';
   scopeType: 'global' | 'store';
   scopeStoreId: string | null;
+  storeId: string;
   inventoryItemId: string;
 }): Promise<{ data: InternalInventoryArchiveResponse | null; error: string | null }> {
   return postInternal<InternalInventoryArchiveResponse>(
     INTERNAL_INVENTORY_URL,
     { ...params, action: 'archive_item' },
     'Could not archive inventory item.'
+  );
+}
+
+export async function unarchiveInternalInventoryItem(params: {
+  internalSessionToken: string;
+  roleKey: 'owner' | 'admin' | 'store';
+  scopeType: 'global' | 'store';
+  scopeStoreId: string | null;
+  storeId: string;
+  inventoryItemId: string;
+}): Promise<{ data: InternalInventoryUnarchiveResponse | null; error: string | null }> {
+  return postInternal<InternalInventoryUnarchiveResponse>(
+    INTERNAL_INVENTORY_URL,
+    { ...params, action: 'unarchive_item' },
+    'Could not restore inventory item.'
+  );
+}
+
+export async function deleteInternalInventoryItem(params: {
+  internalSessionToken: string;
+  roleKey: 'owner' | 'admin' | 'store';
+  scopeType: 'global' | 'store';
+  scopeStoreId: string | null;
+  storeId: string;
+  inventoryItemId: string;
+}): Promise<{ data: InternalInventoryDeleteResponse | null; error: string | null }> {
+  return postInternal<InternalInventoryDeleteResponse>(
+    INTERNAL_INVENTORY_URL,
+    { ...params, action: 'delete_item' },
+    'Could not delete inventory item from this store.'
   );
 }
 
@@ -1083,6 +1135,8 @@ export async function upsertManagedStore(params: {
   state: string;
   postalCode: string;
   phone?: string;
+  latitude?: number;
+  longitude?: number;
   isActive: boolean;
   storeLoginFullName?: string;
   storeLoginPin?: string;

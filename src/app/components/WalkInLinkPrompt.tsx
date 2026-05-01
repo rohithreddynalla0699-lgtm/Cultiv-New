@@ -41,6 +41,10 @@ export function WalkInLinkPrompt({ defaultPhone = '', compact = false }: WalkInL
 				<div className="relative flex-1">
 					<Phone className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-foreground/40" />
 					<input
+						id="walk-in-phone"
+						name="phone"
+						aria-label="Phone number"
+						autoComplete="tel"
 						value={phone}
 						onChange={(event) => setPhone(event.target.value)}
 						placeholder="Phone number"
@@ -50,6 +54,9 @@ export function WalkInLinkPrompt({ defaultPhone = '', compact = false }: WalkInL
 					/>
 				</div>
 				<input
+					id="walk-in-reference"
+					name="reference"
+					aria-label="Receipt or order reference"
 					value={reference}
 					onChange={(event) => setReference(event.target.value)}
 					placeholder="Receipt or order ref (optional)"

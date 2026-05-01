@@ -1,6 +1,5 @@
 // @ts-ignore
 import { supabase } from '../../lib/supabase.js';
-import { DEFAULT_ORDER_STORE_ID } from '../constants/admin';
 
 export interface StoreLocatorStore {
   id: string;
@@ -11,6 +10,8 @@ export interface StoreLocatorStore {
   state?: string;
   zipCode: string;
   phone?: string;
+  latitude?: number;
+  longitude?: number;
   isActive: boolean;
 }
 
@@ -18,33 +19,19 @@ export const SELECTED_STORE_STORAGE_KEY = 'cultiv_selected_store_id_v1';
 const STORE_CHANGED_EVENT = 'cultiv:store-changed';
 const OPEN_SELECTOR_EVENT = 'cultiv:open-store-selector';
 
-export const CUSTOMER_STORE_METADATA: StoreLocatorStore[] = [
-  {
-    id: 'store-siddipet',
-    name: 'CULTIV Siddipet',
-    city: 'Siddipet',
-    code: 'SID-CEN',
-    addressLine1: '',
-    state: '',
-    zipCode: '',
-    phone: '',
-    isActive: true,
-  },
-];
-
 function isBrowser() {
   return typeof window !== 'undefined' && typeof localStorage !== 'undefined';
 }
 
-export async function loadStores(allowFallback = true): Promise<StoreLocatorStore[]> {
+export async function loadStores(): Promise<StoreLocatorStore[]> {
   const { data, error } = await supabase
     .from('stores')
-    .select('id, name, city, code, address_line_1, state, postal_code, phone, is_active')
+    .select('id, name, city, code, address_line_1, state, postal_code, phone, latitude, longitude, is_active')
     .order('name', { ascending: true });
 
   if (error || !data) {
     console.error('Failed to load stores:', error);
-    return allowFallback ? CUSTOMER_STORE_METADATA : [];
+    return [];
   }
 
   return data.map((store: any) => ({
@@ -56,61 +43,81 @@ export async function loadStores(allowFallback = true): Promise<StoreLocatorStor
     state: store.state ?? '',
     zipCode: store.postal_code ?? '',
     phone: store.phone ?? '',
+    latitude: typeof store.latitude === 'number' ? store.latitude : (store.latitude == null ? undefined : Number(store.latitude)),
+    longitude: typeof store.longitude === 'number' ? store.longitude : (store.longitude == null ? undefined : Number(store.longitude)),
     isActive: store.is_active,
   }));
 }
 
-export function loadSelectedStoreId(stores: StoreLocatorStore[] = CUSTOMER_STORE_METADATA) {
-  if (!Array.isArray(stores) || stores.length === 0) {
-    stores = CUSTOMER_STORE_METADATA;
+const clearSelectedStoreId = () => {
+  if (!isBrowser()) return;
+  localStorage.removeItem(SELECTED_STORE_STORAGE_KEY);
+};
+
+const persistSelectedStoreId = (storeId: string) => {
+  if (!isBrowser()) return;
+  localStorage.setItem(SELECTED_STORE_STORAGE_KEY, storeId);
+};
+
+export function loadSelectedStoreId(stores: StoreLocatorStore[] = []) {
+  const safeStores = Array.isArray(stores) ? stores : [];
+  const activeStores = safeStores.filter((store) => store.isActive);
+
+  if (activeStores.length === 0) {
+    clearSelectedStoreId();
+    return '';
   }
 
   if (!isBrowser()) {
-    return DEFAULT_ORDER_STORE_ID;
+    return activeStores[0]?.id ?? '';
   }
 
-  const storedId = localStorage.getItem(SELECTED_STORE_STORAGE_KEY) ?? DEFAULT_ORDER_STORE_ID;
-  const activeStore = stores.find((store) => store.id === storedId && store.isActive);
+  const storedId = localStorage.getItem(SELECTED_STORE_STORAGE_KEY)?.trim() ?? '';
+  const activeStore = activeStores.find((store) => store.id === storedId);
 
-  return activeStore
-    ? activeStore.id
-    : (stores.find((store) => store.isActive)?.id ?? DEFAULT_ORDER_STORE_ID);
+  if (activeStore) {
+    return activeStore.id;
+  }
+
+  clearSelectedStoreId();
+
+  const fallbackStoreId = activeStores[0]?.id ?? '';
+  if (fallbackStoreId) {
+    persistSelectedStoreId(fallbackStoreId);
+  }
+
+  return fallbackStoreId;
 }
 
-export function getSelectedStore(stores: StoreLocatorStore[] = CUSTOMER_STORE_METADATA) {
-  if (!Array.isArray(stores) || stores.length === 0) {
-    stores = CUSTOMER_STORE_METADATA;
-  }
-
-  const selectedStoreId = loadSelectedStoreId(stores);
-  return stores.find((store) => store.id === selectedStoreId) ?? stores[0] ?? CUSTOMER_STORE_METADATA[0];
+export function getSelectedStore(stores: StoreLocatorStore[] = []) {
+  const safeStores = Array.isArray(stores) ? stores : [];
+  const selectedStoreId = loadSelectedStoreId(safeStores);
+  return safeStores.find((store) => store.id === selectedStoreId) ?? safeStores.find((store) => store.isActive) ?? null;
 }
 
 export function setSelectedStoreId(
   storeId: string,
-  stores: StoreLocatorStore[] = CUSTOMER_STORE_METADATA,
+  stores: StoreLocatorStore[] = [],
 ) {
-  if (!Array.isArray(stores) || stores.length === 0) {
-    stores = CUSTOMER_STORE_METADATA;
-  }
+  const safeStores = Array.isArray(stores) ? stores : [];
 
-  const activeStore = stores.find((store) => store.id === storeId && store.isActive);
+  const activeStore = safeStores.find((store) => store.id === storeId && store.isActive);
   if (!activeStore || !isBrowser()) {
     return false;
   }
 
-  localStorage.setItem(SELECTED_STORE_STORAGE_KEY, activeStore.id);
+  persistSelectedStoreId(activeStore.id);
   window.dispatchEvent(new CustomEvent(STORE_CHANGED_EVENT, { detail: { storeId: activeStore.id } }));
   return true;
 }
 
-export function subscribeSelectedStore(listener: (storeId: string) => void) {
+export function subscribeSelectedStore(listener: () => void) {
   if (!isBrowser()) {
     return () => {};
   }
 
   const handleChanged = () => {
-    listener(loadSelectedStoreId(CUSTOMER_STORE_METADATA));
+    listener();
   };
 
   window.addEventListener(STORE_CHANGED_EVENT, handleChanged);

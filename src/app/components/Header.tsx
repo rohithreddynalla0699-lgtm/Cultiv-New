@@ -44,11 +44,11 @@ export function Header() {
       setSelectedStoreIdState(loadSelectedStoreId(loadedStores));
     });
 
-    const unsubscribeSelection = subscribeSelectedStore((nextStoreId) => {
+    const unsubscribeSelection = subscribeSelectedStore(() => {
       void loadStores().then((refreshedStores) => {
         if (!active) return;
         setStores(refreshedStores);
-        setSelectedStoreIdState(nextStoreId);
+        setSelectedStoreIdState(loadSelectedStoreId(refreshedStores));
       });
     });
 
@@ -259,7 +259,7 @@ export function Header() {
         <div className="flex items-center gap-2 justify-self-end">
           <button type="button" onClick={() => setShowStoreSelector(true)} className={rightUtilityClassName}>
             <MapPin className="h-4 w-4 text-primary" />
-            <span className="hidden 2xl:inline flex-1 truncate text-left">{activeStore?.name ?? 'Select Store'}</span>
+            <span className="hidden 2xl:inline flex-1 truncate text-left">{activeStore?.name ?? (stores.length === 0 ? 'No stores available' : 'Select location')}</span>
             <span className="2xl:hidden">Store</span>
             <ChevronDown className="h-4 w-4 text-foreground/45" />
           </button>

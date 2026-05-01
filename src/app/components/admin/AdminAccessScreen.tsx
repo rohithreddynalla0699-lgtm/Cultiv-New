@@ -157,10 +157,10 @@ export function AdminAccessScreen({
                       transition={{ duration: 0.18, ease: 'easeOut' }}
                       className="mx-auto w-full max-w-[420px] space-y-4"
                     >
-                      <label className="block text-base text-foreground/68">
+                      <label htmlFor="owner-pin" className="block text-base text-foreground/68">
                         <span className="mb-3 block font-medium">Owner PIN</span>
                         <div className="relative">
-                          <input type={showPin ? 'text' : 'password'} inputMode="numeric" autoComplete="current-password" data-testid="owner-pin-input" value={ownerPin} onChange={(event) => setOwnerPin(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6-digit owner PIN" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-5 py-4 pr-14 text-lg outline-none transition-colors focus:border-primary" />
+                          <input id="owner-pin" name="ownerPin" type={showPin ? 'text' : 'password'} inputMode="numeric" autoComplete="current-password" data-testid="owner-pin-input" value={ownerPin} onChange={(event) => setOwnerPin(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6-digit owner PIN" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-5 py-4 pr-14 text-lg outline-none transition-colors focus:border-primary" />
                           <button
                             type="button"
                             onClick={() => setShowPin((value) => !value)}
@@ -182,10 +182,10 @@ export function AdminAccessScreen({
                       transition={{ duration: 0.18, ease: 'easeOut' }}
                       className="mx-auto w-full max-w-[420px] space-y-4"
                     >
-                      <label className="block text-base text-foreground/68">
+                      <label htmlFor="admin-pin" className="block text-base text-foreground/68">
                         <span className="mb-3 block font-medium">Admin PIN</span>
                         <div className="relative">
-                          <input type={showPin ? 'text' : 'password'} inputMode="numeric" autoComplete="current-password" data-testid="admin-pin-input" value={adminPin} onChange={(event) => setAdminPin(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6-digit admin PIN" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-5 py-4 pr-14 text-lg outline-none transition-colors focus:border-primary" />
+                          <input id="admin-pin" name="adminPin" type={showPin ? 'text' : 'password'} inputMode="numeric" autoComplete="current-password" data-testid="admin-pin-input" value={adminPin} onChange={(event) => setAdminPin(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6-digit admin PIN" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-5 py-4 pr-14 text-lg outline-none transition-colors focus:border-primary" />
                           <button
                             type="button"
                             onClick={() => setShowPin((value) => !value)}
@@ -207,18 +207,18 @@ export function AdminAccessScreen({
                       transition={{ duration: 0.18, ease: 'easeOut' }}
                       className="mx-auto w-full max-w-[420px] space-y-4"
                     >
-                      <label className="block text-base text-foreground/68">
+                      <label htmlFor="store-code" className="block text-base text-foreground/68">
                         <span className="mb-3 block font-medium">Store</span>
-                        <select data-testid="store-select" value={storeCode} onChange={(event) => setStoreCode(event.target.value)} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-5 py-4 text-lg outline-none transition-colors focus:border-primary">
+                        <select id="store-code" name="storeCode" data-testid="store-select" value={storeCode} onChange={(event) => setStoreCode(event.target.value)} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-5 py-4 text-lg outline-none transition-colors focus:border-primary">
                           {activeStores.map((store) => (
                             <option key={store.id} value={store.code}>{store.name} · {store.city}</option>
                           ))}
                         </select>
                       </label>
-                      <label className="block text-base text-foreground/68">
+                      <label htmlFor="store-pin" className="block text-base text-foreground/68">
                         <span className="mb-3 block font-medium">6-digit PIN</span>
                         <div className="relative">
-                          <input type={showPin ? 'text' : 'password'} inputMode="numeric" autoComplete="current-password" data-testid="store-pin-input" value={storePin} onChange={(event) => setStorePin(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Store PIN" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-5 py-4 pr-14 text-lg outline-none transition-colors focus:border-primary" />
+                          <input id="store-pin" name="storePin" type={showPin ? 'text' : 'password'} inputMode="numeric" autoComplete="current-password" data-testid="store-pin-input" value={storePin} onChange={(event) => setStorePin(event.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Store PIN" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-5 py-4 pr-14 text-lg outline-none transition-colors focus:border-primary" />
                           <button
                             type="button"
                             onClick={() => setShowPin((value) => !value)}

@@ -18,7 +18,7 @@ export function Menu() {
             <p className="text-xs uppercase tracking-[0.22em] text-primary/70 mb-3">What we serve</p>
             <h1 className="text-5xl md:text-6xl font-semibold tracking-tight">Our Menu</h1>
             <p className="mt-4 text-base md:text-lg text-foreground/60 max-w-2xl mx-auto leading-relaxed">
-              Eight categories. Clean ingredients. Built for everyday eating.
+              {MENU_CATEGORIES.length} categories. Clean ingredients. Built for everyday eating.
             </p>
           </div>
 

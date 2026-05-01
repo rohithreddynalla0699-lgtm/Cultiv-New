@@ -37,6 +37,8 @@ export const operationsAdminService = {
     state: string;
     postalCode: string;
     phone?: string;
+    latitude?: number;
+    longitude?: number;
     isActive: boolean;
     storeLoginFullName?: string;
     storeLoginPin?: string;

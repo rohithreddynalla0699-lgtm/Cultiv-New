@@ -21,7 +21,7 @@ import { createEmptyLoyaltyProfile, type LoyaltyBatchSummary, type LoyaltySummar
 import type { PosCustomerLookupResult } from '../types/pos';
 import { setDraftCartScope } from '../data/cartDraft';
 import { resetShoppingSessionStorage } from '../data/shoppingSession';
-import { BOWL_BUILDER_STEPS, BREAKFAST_CUSTOMIZE_STEPS } from '../data/menuData';
+import { BOWL_CUSTOMIZATION_STEPS, BREAKFAST_CUSTOMIZE_STEPS } from '../data/menuData';
 import { fetchOperationalOrdersFromSupabase, updateSupabaseOrderStatus } from '../data/orderRepository';
 import {
   DISCOUNT_REWARD_VALUES,
@@ -31,7 +31,6 @@ import {
   OFFER_LIBRARY,
   REWARD_ID_SET,
 } from '../config/rewardsCatalog';
-import { DEFAULT_ORDER_STORE_ID } from '../constants/admin';
 import { POS_TAX_RATE, PRICE_EPSILON, REWARD_MAX_DISCOUNT_RATIO, REWARD_MIN_ORDER_SUBTOTAL } from '../constants/business';
 import type { CheckoutPaymentIntent, ConfirmCheckoutPaymentInput } from '../services/checkoutPaymentProvider';
 // @ts-ignore - Supabase client is defined in JS module.
@@ -208,7 +207,7 @@ const normalizeOrderRecords = (orders: Order[], records: AuthRecord[]) => (
     const linkedUserEmail = order.userId ? records.find((entry) => entry.id === order.userId)?.email : undefined;
     return {
       ...order,
-      storeId: order.storeId ?? DEFAULT_ORDER_STORE_ID,
+      storeId: order.storeId ?? undefined,
       email: normalizeEmail(order.email || linkedUserEmail),
     };
   })
@@ -234,6 +233,46 @@ const parseStorageEventValue = <T,>(raw: string | null): T | null => {
   try {
     return JSON.parse(raw) as T;
   } catch {
+    return null;
+  }
+};
+
+const normalizeCustomerSessionToken = (value: unknown): string | null => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === 'null' || trimmed === 'undefined') {
+    return null;
+  }
+  return trimmed;
+};
+
+const readCustomerSessionTokenFromStorage = (): string | null => {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.customerSessionToken);
+    if (raw === null) return null;
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = raw;
+    }
+
+    const normalized = normalizeCustomerSessionToken(parsed);
+    if (!normalized) {
+      localStorage.removeItem(STORAGE_KEYS.customerSessionToken);
+      return null;
+    }
+
+    return normalized;
+  } catch {
+    try {
+      localStorage.removeItem(STORAGE_KEYS.customerSessionToken);
+    } catch {
+      // Ignore storage cleanup failures.
+    }
     return null;
   }
 };
@@ -289,7 +328,7 @@ const hasValidOrderItems = (items: Array<{
 type SupabaseOrderType = 'online' | 'walk_in' | 'phone';
 type SupabaseSourceChannel = 'app' | 'walk_in' | 'phone';
 
-const SELECTION_STEP_CATALOG = [...BOWL_BUILDER_STEPS, ...BREAKFAST_CUSTOMIZE_STEPS];
+const SELECTION_STEP_CATALOG = [...BOWL_CUSTOMIZATION_STEPS, ...BREAKFAST_CUSTOMIZE_STEPS];
 
 const normalizeSelectionToken = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
 const toSnapshotGroupId = (value: string) =>
@@ -801,16 +840,59 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [supabaseReadDegraded, setSupabaseReadDegraded] = useState(false);
   const [supabaseRefreshTick, setSupabaseRefreshTick] = useState(0);
   const [customerAccount, setCustomerAccount] = useState<CustomerAccountSummary | null>(null);
-  const [customerSessionToken, setCustomerSessionToken] = useState<string | null>(() => readStorage(STORAGE_KEYS.customerSessionToken, null));
+  const [customerSessionToken, setCustomerSessionToken] = useState<string | null>(() => readCustomerSessionTokenFromStorage());
   const [loyaltySummary, setLoyaltySummary] = useState<LoyaltySummary | null>(null);
   const [loyaltyLoading, setLoyaltyLoading] = useState(false);
 
   const usersRef = useRef(users);
   const previousUserIdRef = useRef<string | null>(currentUserId);
+  const customerSessionTokenRef = useRef<string | null>(customerSessionToken);
+
+  const setCustomerSessionTokenAndStorage = useCallback((token: string | null | undefined) => {
+    const nextToken = normalizeCustomerSessionToken(token);
+    customerSessionTokenRef.current = nextToken;
+    setCustomerSessionToken(nextToken);
+
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      if (nextToken) {
+        localStorage.setItem(STORAGE_KEYS.customerSessionToken, JSON.stringify(nextToken));
+      } else {
+        localStorage.removeItem(STORAGE_KEYS.customerSessionToken);
+      }
+    } catch {
+      // Ignore storage write failures.
+    }
+  }, []);
+
+  const clearInvalidCustomerSession = useCallback((failedToken?: string) => {
+    const normalizedFailedToken = normalizeCustomerSessionToken(failedToken);
+    const currentToken = customerSessionTokenRef.current;
+
+    if (normalizedFailedToken && currentToken && normalizedFailedToken !== currentToken) {
+      console.warn('Ignoring stale invalid-session error for old token');
+      return;
+    }
+
+    setCustomerSessionTokenAndStorage(null);
+    setCustomerAccount(null);
+    setCurrentUserId(null);
+    setAllOrders([]);
+    setPendingGuestOrderClaims([]);
+    setPendingGuestClaimsError(null);
+    setLoyaltySummary(null);
+  }, [setCustomerSessionTokenAndStorage]);
 
   useEffect(() => {
     usersRef.current = users;
   }, [users]);
+
+  useEffect(() => {
+    customerSessionTokenRef.current = customerSessionToken;
+  }, [customerSessionToken]);
 
   useEffect(() => {
     setUsers((previous) => {
@@ -831,10 +913,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   useEffect(() => {
-    writeStorage(STORAGE_KEYS.customerSessionToken, customerSessionToken);
-  }, [customerSessionToken]);
-
-  useEffect(() => {
     setDraftCartScope(currentUserId);
   }, [currentUserId]);
 
@@ -847,8 +925,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       if (event.key === STORAGE_KEYS.customerSessionToken) {
-        const nextCustomerSessionToken = parseStorageEventValue<string | null>(event.newValue);
-        setCustomerSessionToken(nextCustomerSessionToken);
+        const nextCustomerSessionToken = normalizeCustomerSessionToken(parseStorageEventValue<unknown>(event.newValue));
+        setCustomerSessionTokenAndStorage(nextCustomerSessionToken);
       }
     };
 
@@ -856,29 +934,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return () => {
       window.removeEventListener('storage', onStorage);
     };
-  }, []);
+  }, [setCustomerSessionTokenAndStorage]);
 
   useEffect(() => {
-    if (currentUserId) return;
-
-    setPendingGuestOrderClaims([]);
-    setCustomerAccount(null);
-    setCustomerSessionToken(null);
-    setLoyaltySummary(null);
-    setAllOrders([]);
-  }, [currentUserId]);
-
-  useEffect(() => {
-    if (customerSessionToken) {
-      return;
+    if (!customerSessionToken) {
+      setCustomerAccount(null);
+      setCurrentUserId(null);
+      setAllOrders([]);
+      setPendingGuestOrderClaims([]);
+      setPendingGuestClaimsError(null);
+      setLoyaltySummary(null);
     }
-
-    setCurrentUserId(null);
-    setCustomerAccount(null);
-    setPendingGuestOrderClaims([]);
-    setPendingGuestClaimsError(null);
-    setLoyaltySummary(null);
-    setAllOrders([]);
   }, [customerSessionToken]);
 
   useEffect(() => {
@@ -928,7 +994,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   const refreshCustomerOrdersFromSupabase = useCallback(async () => {
-    if (!customerSessionToken || !customerAccount?.id) {
+    const requestToken = normalizeCustomerSessionToken(customerSessionToken);
+    if (!requestToken) {
       setAllOrders([]);
       return;
     }
@@ -936,7 +1003,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       const { data, error } = await supabase.functions.invoke('customer-list-orders', {
         body: {
-          customerSessionToken,
+          customerSessionToken: requestToken,
         },
       });
 
@@ -1004,13 +1071,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       setAllOrders(normalizeOrderRecords(nextOrders, usersRef.current));
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err ?? '');
+      if (message.includes('Customer session token is invalid or expired.')) {
+        clearInvalidCustomerSession(requestToken);
+        return;
+      }
       console.error('Customer orders read failed.', err);
       setAllOrders([]);
     }
-  }, [customerAccount?.id, customerSessionToken]);
+  }, [clearInvalidCustomerSession, customerSessionToken]);
 
   const refreshLoyalty = useCallback(async () => {
-    if (!customerSessionToken) {
+    const requestToken = normalizeCustomerSessionToken(customerSessionToken);
+    if (!requestToken) {
       setLoyaltySummary(null);
       return;
     }
@@ -1019,7 +1092,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       const { data, error } = await supabase.functions.invoke('loyalty-summary', {
         body: {
-          customerSessionToken,
+          customerSessionToken: requestToken,
         },
       });
 
@@ -1045,12 +1118,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           : previous
       ));
     } catch (err) {
+      const message = err instanceof Error ? err.message : String(err ?? '');
+      if (message.includes('Customer session token is invalid or expired.')) {
+        clearInvalidCustomerSession(requestToken);
+        return;
+      }
       console.error('Failed to refresh loyalty summary', err);
       setLoyaltySummary(null);
     } finally {
       setLoyaltyLoading(false);
     }
-  }, [customerSessionToken]);
+  }, [clearInvalidCustomerSession, customerSessionToken]);
 
   useEffect(() => {
     let active = true;
@@ -1070,26 +1148,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, [refreshSharedOrdersFromSupabase, supabaseRefreshTick]);
 
   useEffect(() => {
-    if (!customerAccount?.id || !customerSessionToken) {
-      if (!currentUserId) {
-        setAllOrders([]);
-      }
+    if (!customerSessionToken) {
+      setAllOrders([]);
       return;
     }
 
     void refreshCustomerOrdersFromSupabase();
-  }, [customerAccount?.id, customerSessionToken, currentUserId, refreshCustomerOrdersFromSupabase, supabaseRefreshTick]);
+  }, [customerSessionToken, refreshCustomerOrdersFromSupabase, supabaseRefreshTick]);
 
   useEffect(() => {
-    if (!customerAccount?.id || !customerSessionToken) {
+    if (!customerSessionToken) {
       setLoyaltySummary(null);
       return;
     }
 
     void refreshLoyalty();
-  }, [customerAccount?.id, customerSessionToken, refreshLoyalty, supabaseRefreshTick]);
+  }, [customerSessionToken, refreshLoyalty, supabaseRefreshTick]);
 
-  const userRecord = users.find((entry) => entry.id === currentUserId) ?? null;
+  const userRecord = customerSessionToken
+    ? users.find((entry) => entry.id === currentUserId) ?? null
+    : null;
   const user = userRecord ? ({ ...userRecord, password: undefined } as unknown as User) : null;
 
   const guestOrders: Order[] = [];
@@ -1135,7 +1213,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, [userRecord?.id]);
 
   const syncCanonicalCustomerProfile = useCallback(async (sessionToken: string) => {
-    const profile = await fetchCanonicalCustomerProfile(sessionToken);
+    const requestToken = normalizeCustomerSessionToken(sessionToken);
+    if (!requestToken) {
+      return;
+    }
+
+    const profile = await fetchCanonicalCustomerProfile(requestToken);
 
     setUsers((previous) => upsertBackendCustomerUser(previous, profile));
     setCurrentUserId(profile.id);
@@ -1147,28 +1230,42 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     });
   }, []);
   useEffect(() => {
-    if (!customerSessionToken) {
+    const requestToken = normalizeCustomerSessionToken(customerSessionToken);
+    if (!requestToken) {
       return;
     }
 
-    void syncCanonicalCustomerProfile(customerSessionToken).catch((error) => {
+    void syncCanonicalCustomerProfile(requestToken).catch((error) => {
       console.error('Customer profile sync failed.', error);
-      setCurrentUserId(null);
-      setCustomerAccount(null);
-      setAllOrders([]);
-      setCustomerSessionToken(null);
+      const message = error instanceof Error ? error.message : String(error ?? '');
+      if (message.includes('Customer session token is invalid or expired.')) {
+        clearInvalidCustomerSession(requestToken);
+      }
     });
-  }, [customerSessionToken, syncCanonicalCustomerProfile]);
+  }, [clearInvalidCustomerSession, customerSessionToken, syncCanonicalCustomerProfile]);
 
   const refreshPendingGuestOrderClaims = useCallback(async (sessionToken: string) => {
+    const requestToken = normalizeCustomerSessionToken(sessionToken);
+    if (!requestToken) {
+      setPendingGuestOrderClaims([]);
+      setPendingGuestClaimsError(null);
+      setPendingGuestClaimsLoading(false);
+      return;
+    }
+
     setPendingGuestClaimsLoading(true);
     setPendingGuestClaimsError(null);
 
     try {
-      const nextClaims = await loadPendingGuestOrderClaims(sessionToken);
+      const nextClaims = await loadPendingGuestOrderClaims(requestToken);
       const filteredClaims = nextClaims.filter((claim) => !rejectedGuestClaimIds.includes(claim.orderId));
       setPendingGuestOrderClaims(filteredClaims);
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error ?? '');
+      if (message.includes('Customer session token is invalid or expired.')) {
+        clearInvalidCustomerSession(requestToken);
+        return;
+      }
       console.error('Guest claim preview failed.', error);
       setPendingGuestOrderClaims([]);
       setPendingGuestClaimsError(
@@ -1177,7 +1274,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     } finally {
       setPendingGuestClaimsLoading(false);
     }
-  }, [rejectedGuestClaimIds]);
+  }, [clearInvalidCustomerSession, rejectedGuestClaimIds]);
+
+  useEffect(() => {
+    if (!customerSessionToken || !customerAccount?.id) {
+      return;
+    }
+
+    void refreshPendingGuestOrderClaims(customerSessionToken);
+  }, [customerAccount?.id, customerSessionToken, refreshPendingGuestOrderClaims]);
 
   const claimPendingGuestOrders = async () => {
     if (!customerSessionToken || pendingGuestOrderClaims.length === 0) return;
@@ -1220,25 +1325,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       const customerId = loginResponse.customer_id;
       const customerData = loginResponse.customer;
-      const customerSessionTokenFromLogin = loginResponse.customer_session_token;
+      const customerSessionTokenFromLogin = normalizeCustomerSessionToken(loginResponse.customer_session_token);
 
       if (!customerId || !customerData || !customerSessionTokenFromLogin) {
         return { success: false, message: 'Invalid email, phone, or password.' };
       }
 
+      setCustomerSessionTokenAndStorage(customerSessionTokenFromLogin);
       setUsers((previous) => upsertBackendCustomerUser(previous, customerData));
       setCurrentUserId(customerId);
-
       setCustomerAccount({
         id: customerId,
         reward_points: customerData.reward_points,
         phone_verified: customerData.phone_verified,
         email_verified: customerData.email_verified,
       });
-      setCustomerSessionToken(customerSessionTokenFromLogin);
       setSupabaseRefreshTick((value) => value + 1);
-
-      void refreshPendingGuestOrderClaims(customerSessionTokenFromLogin);
 
       return { success: true, message: loginResponse.message };
     } catch (err) {
@@ -1304,7 +1406,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       const customerId = edgeFunctionResponse.customerId ?? edgeFunctionResponse.customer_id;
-      const customerSessionTokenFromSignup = edgeFunctionResponse.customer_session_token;
+      const customerSessionTokenFromSignup = normalizeCustomerSessionToken(edgeFunctionResponse.customer_session_token);
       if (!customerId) {
         return { success: false, message: 'Could not create your CULTIV profile right now. Please try again.' };
       }
@@ -1323,12 +1425,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         ...previous,
         [customerId]: createEmptyLoyaltyProfile(customerId),
       }));
+      setCustomerSessionTokenAndStorage(customerSessionTokenFromSignup);
       setCurrentUserId(customerId);
       setCustomerAccount({ id: customerId, reward_points: 0, phone_verified: false, email_verified: false });
-      setCustomerSessionToken(customerSessionTokenFromSignup);
       setSupabaseRefreshTick((value) => value + 1);
-
-      void refreshPendingGuestOrderClaims(customerSessionTokenFromSignup);
 
       return { success: true, message: 'Your CULTIV profile is ready.' };
     } catch (err) {
@@ -1777,7 +1877,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     resetShoppingSessionStorage();
     setCurrentUserId(null);
     setCustomerAccount(null);
-    setCustomerSessionToken(null);
+    setCustomerSessionTokenAndStorage(null);
     setLoyaltySummary(null);
     setPendingGuestOrderClaims([]);
     setPendingGuestClaimsError(null);
@@ -1795,7 +1895,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const value: AuthContextType = {
     user,
     customerAccount,
-    isAuthenticated: Boolean(user),
+    isAuthenticated: Boolean(customerSessionToken),
     orders,
     sharedOrders,
     activeOrders,

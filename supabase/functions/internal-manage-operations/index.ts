@@ -34,6 +34,8 @@ interface ManageOperationsRequest {
   state?: string;
   postalCode?: string;
   phone?: string;
+  latitude?: number;
+  longitude?: number;
   code?: string;
   storeLoginFullName?: string;
   storeLoginPin?: string;
@@ -80,6 +82,20 @@ const normalizeText = (value?: string) => String(value ?? '').trim();
 const normalizeOptionalPhone = (value?: string) => {
   const normalized = String(value ?? '').replace(/\D/g, '').slice(-10);
   return normalized || null;
+};
+const parseCoordinate = (value: unknown, axis: 'latitude' | 'longitude') => {
+  if (value === undefined || value === null || value === '') return { value: null };
+  const numeric = typeof value === 'number' ? value : Number(String(value).trim());
+  if (!Number.isFinite(numeric)) {
+    return { error: `${axis} must be a valid number.` };
+  }
+  if (axis === 'latitude' && (numeric < -90 || numeric > 90)) {
+    return { error: 'latitude must be between -90 and 90.' };
+  }
+  if (axis === 'longitude' && (numeric < -180 || numeric > 180)) {
+    return { error: 'longitude must be between -180 and 180.' };
+  }
+  return { value: numeric };
 };
 
 const verifyAndLoadSession = async (
@@ -254,6 +270,8 @@ const createStoreWithLogin = async (
   const state = normalizeText(body.state);
   const postalCode = normalizeText(body.postalCode);
   const phone = normalizeOptionalPhone(body.phone);
+  const latitudeResult = parseCoordinate(body.latitude, 'latitude');
+  const longitudeResult = parseCoordinate(body.longitude, 'longitude');
   const code = normalizeCode(body.code);
   const loginName = String(body.storeLoginFullName ?? '').trim();
   const loginPin = parsePin(body.storeLoginPin);
@@ -264,6 +282,8 @@ const createStoreWithLogin = async (
   if (!city) return { status: 400, payload: { error: 'Store city is required.' } };
   if (!state) return { status: 400, payload: { error: 'Store state is required.' } };
   if (!postalCode) return { status: 400, payload: { error: 'Store postal code is required.' } };
+  if (latitudeResult.error) return { status: 400, payload: { error: latitudeResult.error } };
+  if (longitudeResult.error) return { status: 400, payload: { error: longitudeResult.error } };
   if (!code) return { status: 400, payload: { error: 'Store code is required.' } };
   if (!loginName) return { status: 400, payload: { error: 'Store login full name is required.' } };
   if (!loginPin) return { status: 400, payload: { error: 'A valid 6-digit initial store login PIN is required.' } };
@@ -293,12 +313,14 @@ const createStoreWithLogin = async (
       state,
       postal_code: postalCode,
       phone,
+      latitude: latitudeResult.value,
+      longitude: longitudeResult.value,
       code,
       is_active: isActive,
       created_at: nowIso,
       updated_at: nowIso,
     })
-    .select('id, name, city, code, address_line_1, state, postal_code, phone, is_active')
+    .select('id, name, city, code, address_line_1, state, postal_code, phone, latitude, longitude, is_active')
     .single();
 
   if (storeError || !createdStore) {
@@ -339,6 +361,8 @@ const createStoreWithLogin = async (
         state: createdStore.state,
         postalCode: createdStore.postal_code,
         phone: createdStore.phone,
+        latitude: createdStore.latitude,
+        longitude: createdStore.longitude,
         isActive: createdStore.is_active,
       },
       storeLoginUser: {
@@ -362,6 +386,8 @@ const updateStoreAndLogin = async (
   const state = normalizeText(body.state);
   const postalCode = normalizeText(body.postalCode);
   const phone = normalizeOptionalPhone(body.phone);
+  const latitudeResult = parseCoordinate(body.latitude, 'latitude');
+  const longitudeResult = parseCoordinate(body.longitude, 'longitude');
   const code = normalizeCode(body.code);
   const isActive = body.isActive !== false;
   const storeLoginUserId = String(body.storeLoginInternalUserId ?? '').trim() || null;
@@ -375,11 +401,13 @@ const updateStoreAndLogin = async (
   if (!city) return { status: 400, payload: { error: 'Store city is required.' } };
   if (!state) return { status: 400, payload: { error: 'Store state is required.' } };
   if (!postalCode) return { status: 400, payload: { error: 'Store postal code is required.' } };
+  if (latitudeResult.error) return { status: 400, payload: { error: latitudeResult.error } };
+  if (longitudeResult.error) return { status: 400, payload: { error: longitudeResult.error } };
   if (!code) return { status: 400, payload: { error: 'Store code is required.' } };
 
   const { data: existingStore, error: existingStoreError } = await db
     .from('stores')
-    .select('id, name, city, code, address_line_1, state, postal_code, phone, is_active')
+    .select('id, name, city, code, address_line_1, state, postal_code, phone, latitude, longitude, is_active')
     .eq('id', storeId)
     .single();
 
@@ -408,6 +436,8 @@ const updateStoreAndLogin = async (
       state,
       postal_code: postalCode,
       phone,
+      latitude: latitudeResult.value,
+      longitude: longitudeResult.value,
       code,
       is_active: isActive,
       updated_at: nowIso,

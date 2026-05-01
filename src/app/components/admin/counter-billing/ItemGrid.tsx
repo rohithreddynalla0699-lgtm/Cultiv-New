@@ -1,4 +1,4 @@
-import { PRESETS_BY_ITEM_ID } from '../../../data/bowlConfigurations';
+import { PRESETS_BY_ITEM_ID } from '../../../data/menuItemPresets';
 import type { FoodItem } from '../../../data/menuData';
 import { ItemCard } from './ItemCard';
 

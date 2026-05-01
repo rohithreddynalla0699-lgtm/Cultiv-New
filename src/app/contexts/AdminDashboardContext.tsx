@@ -1,5 +1,4 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { DEFAULT_ORDER_STORE_ID } from '../constants/admin';
 import { loadStores, type StoreLocatorStore } from '../data/storeLocator';
 import { inventoryService } from '../services/inventoryService';
 import { loginInternal } from '../lib/internalOpsApi';
@@ -24,11 +23,13 @@ interface AdminDashboardContextType {
   stores: StoreRecord[];
   employees: EmployeeRecord[];
   inventory: InventoryItem[];
+  archivedInventory: InventoryItem[];
   inventoryHistory: InventoryAdjustmentHistoryItem[];
   inventoryLoading: boolean;
   inventoryError: string | null;
   scopedEmployees: EmployeeRecord[];
   scopedInventory: InventoryItem[];
+  scopedArchivedInventory: InventoryItem[];
   orderNotes: AdminOrderNoteMap;
   permissions: AdminPermissions;
   hasPermission: (permissionKey: string) => boolean;
@@ -57,13 +58,15 @@ interface AdminDashboardContextType {
     unit: string;
     threshold: number;
     initialQuantity?: number;
-  }) => Promise<{ success: boolean; message: string }>;
-  archiveInventoryItem: (inventoryItemId: string) => Promise<{ success: boolean; message: string }>;
+  }, options?: { suppressGlobalError?: boolean }) => Promise<{ success: boolean; message: string }>;
+  archiveInventoryItem: (inventoryItemId: string, storeUuid: string, options?: { suppressGlobalError?: boolean }) => Promise<{ success: boolean; message: string }>;
+  unarchiveInventoryItem: (inventoryItemId: string, storeUuid: string, options?: { suppressGlobalError?: boolean }) => Promise<{ success: boolean; message: string }>;
+  deleteInventoryItem: (inventoryItemId: string, storeUuid: string, options?: { suppressGlobalError?: boolean }) => Promise<{ success: boolean; message: string }>;
   addInventoryStock: (itemId: string, amount: number) => Promise<{ success: boolean; message: string }>;
-  reduceInventoryStock: (itemId: string, amount: number) => Promise<{ success: boolean; message: string }>;
-  setInventoryQuantity: (itemId: string, quantity: number) => Promise<{ success: boolean; message: string }>;
+  reduceInventoryStock: (itemId: string, amount: number, notes: string, options?: { suppressGlobalError?: boolean }) => Promise<{ success: boolean; message: string }>;
+  setInventoryQuantity: (itemId: string, quantity: number, notes: string, options?: { suppressGlobalError?: boolean }) => Promise<{ success: boolean; message: string }>;
   updateInventoryThreshold: (itemId: string, threshold: number) => Promise<{ success: boolean; message: string }>;
-  markInventoryOutOfStock: (itemId: string) => Promise<{ success: boolean; message: string }>;
+  markInventoryOutOfStock: (itemId: string, notes: string, options?: { suppressGlobalError?: boolean }) => Promise<{ success: boolean; message: string }>;
   saveOrderNote: (orderId: string, note: string) => void;
   getStoreName: (storeId: string) => string;
 }
@@ -90,6 +93,8 @@ const daysAgo = (days: number, hour = 9, minute = 0) => {
 const nowIso = () => new Date().toISOString();
 
 const isSixDigitPin = (value: string) => /^\d{6}$/.test(value.trim());
+
+const normalizeInventoryNotes = (value: string) => value.trim();
 
 const getInventoryStatus = (quantity: number, threshold: number): InventoryStatus => {
   if (quantity <= 0) return 'out_of_stock';
@@ -329,7 +334,7 @@ const normalizeStores = (stores: StoreRecord[]) => stores.map((store) => {
 });
 
 const normalizeEmployees = (employees: EmployeeRecord[]) => employees.map((employee) => {
-  const storeId = employee.storeId ?? DEFAULT_ORDER_STORE_ID;
+  const storeId = employee.storeId ?? '';
   const normalizedPin = isSixDigitPin(employee.pin ?? '')
     ? employee.pin.trim()
     : '';
@@ -381,6 +386,7 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
   const [canonicalStores, setCanonicalStores] = useState<StoreLocatorStore[]>([]);
   const [employees, setEmployees] = useState<EmployeeRecord[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [archivedInventory, setArchivedInventory] = useState<InventoryItem[]>([]);
   const [inventoryHistory, setInventoryHistory] = useState<InventoryAdjustmentHistoryItem[]>([]);
   const [inventoryLoading, setInventoryLoading] = useState(false);
   const [inventoryError, setInventoryError] = useState<string | null>(null);
@@ -400,6 +406,8 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
       state: store.state,
       postalCode: store.zipCode,
       phone: store.phone,
+      latitude: store.latitude,
+      longitude: store.longitude,
       pin: '',
       isActive: store.isActive,
       createdAt: nowIso(),
@@ -630,6 +638,7 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
 
   const scopedEmployees = useMemo(() => employees.filter((employee) => matchesScope(employee.storeId)), [activeStoreScope, employees]);
   const scopedInventory = inventory;
+  const scopedArchivedInventory = archivedInventory;
 
   const getStoreName = (storeId: string) => (
     stores.find((store) => store.id === storeId)?.name
@@ -654,6 +663,7 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
       unit: row.unit,
       threshold,
       status: getInventoryStatus(quantity, threshold),
+      isArchived: row.isActive === false,
       updatedAt: row.updatedAt,
       sortOrder: row.sortOrder,
     };
@@ -682,6 +692,7 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     if (!session || !permissions.canAccessInventory) {
       setInventoryLoading(false);
       setInventory([]);
+      setArchivedInventory([]);
       setInventoryHistory([]);
       setInventoryError(null);
       return;
@@ -690,6 +701,7 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     if (activeStoreScope !== 'all' && !activeStoreUuid) {
       setInventoryLoading(false);
       setInventory([]);
+      setArchivedInventory([]);
       setInventoryHistory([]);
       setInventoryError('The selected store is not mapped to a backend store yet.');
       return;
@@ -700,11 +712,13 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
 
     try {
       const dashboard = await inventoryService.fetchInventoryDashboard(session, activeStoreUuid, 20);
-      setInventory(dashboard.items.map(mapInventoryItem));
-      setInventoryHistory(dashboard.adjustments.map(mapInventoryHistoryItem));
+      setInventory((dashboard.items ?? []).map(mapInventoryItem));
+      setArchivedInventory((dashboard.archivedItems ?? []).map(mapInventoryItem));
+      setInventoryHistory((dashboard.adjustments ?? []).map(mapInventoryHistoryItem));
     } catch (error) {
       console.error('Failed to load inventory dashboard.', error);
       setInventory([]);
+      setArchivedInventory([]);
       setInventoryHistory([]);
       setInventoryError(error instanceof Error ? error.message : 'Could not load inventory.');
     } finally {
@@ -860,6 +874,9 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
       notes?: string;
     },
     successMessage: string,
+    options?: {
+      suppressGlobalError?: boolean;
+    },
   ) => {
     if (!session) {
       return { success: false, message: 'You need an active internal session to update inventory.' };
@@ -868,6 +885,16 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     const currentItem = inventory.find((item) => item.id === itemId);
     if (!currentItem) {
       return { success: false, message: 'Inventory item not found.' };
+    }
+
+    const normalizedNotes = normalizeInventoryNotes(mutation.notes ?? '');
+    if (
+      (mutation.adjustmentType === 'reduce'
+        || mutation.adjustmentType === 'set'
+        || mutation.adjustmentType === 'out_of_stock')
+      && !normalizedNotes
+    ) {
+      return { success: false, message: 'Reason/notes are required for this inventory adjustment.' };
     }
 
     try {
@@ -879,7 +906,7 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
         amount: mutation.amount,
         quantity: mutation.quantity,
         threshold: mutation.threshold,
-        notes: mutation.notes,
+        notes: normalizedNotes || undefined,
       });
 
       const nextItem = mapInventoryItem(result.item);
@@ -892,13 +919,17 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
         nextHistoryItem,
         ...previous.filter((item) => item.id !== nextHistoryItem.id),
       ].slice(0, 20));
-      setInventoryError(null);
+      if (!options?.suppressGlobalError) {
+        setInventoryError(null);
+      }
 
       return { success: true, message: successMessage };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not update inventory.';
       console.error('Failed to update inventory item.', error);
-      setInventoryError(message);
+      if (!options?.suppressGlobalError) {
+        setInventoryError(message);
+      }
       return { success: false, message };
     }
   }, [activeStoreUuid, inventory, mapInventoryHistoryItem, mapInventoryItem, session]);
@@ -914,7 +945,7 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     unit: string;
     threshold: number;
     initialQuantity?: number;
-  }) => {
+  }, options?: { suppressGlobalError?: boolean }) => {
     if (!session) {
       return { success: false, message: 'You need an active internal session to add inventory.' };
     }
@@ -954,17 +985,21 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
         setInventoryHistory((previous) => [nextHistoryItem, ...previous.filter((item) => item.id !== nextHistoryItem.id)].slice(0, 20));
       }
 
-      setInventoryError(null);
+      if (!options?.suppressGlobalError) {
+        setInventoryError(null);
+      }
       return { success: true, message: 'Inventory item created.' };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not create inventory item.';
       console.error('Failed to create inventory item.', error);
-      setInventoryError(message);
+      if (!options?.suppressGlobalError) {
+        setInventoryError(message);
+      }
       return { success: false, message };
     }
   };
 
-  const archiveInventoryItem = async (inventoryItemId: string) => {
+  const archiveInventoryItem = async (inventoryItemId: string, storeUuid: string, options?: { suppressGlobalError?: boolean }) => {
     if (!session) {
       return { success: false, message: 'You need an active internal session to archive inventory.' };
     }
@@ -972,30 +1007,89 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     try {
       await inventoryService.archiveInventoryItem({
         session,
+        storeId: storeUuid,
         inventoryItemId,
       });
 
-      setInventory((previous) => previous.filter((item) => item.inventoryItemId !== inventoryItemId));
-      setInventoryError(null);
+      setInventory((previous) => previous.filter((item) => !(item.inventoryItemId === inventoryItemId && item.storeUuid === storeUuid)));
+      if (!options?.suppressGlobalError) {
+        setInventoryError(null);
+      }
       return { success: true, message: 'Inventory item archived.' };
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not archive inventory item.';
       console.error('Failed to archive inventory item.', error);
-      setInventoryError(message);
+      if (!options?.suppressGlobalError) {
+        setInventoryError(message);
+      }
       return { success: false, message };
     }
   };
 
-  const reduceInventoryStock = async (itemId: string, amount: number) => {
-    if (amount <= 0) return { success: false, message: 'Use a value greater than 0.' };
-    return applyInventoryMutation(itemId, { adjustmentType: 'reduce', amount }, 'Inventory updated.');
+  const unarchiveInventoryItem = async (inventoryItemId: string, storeUuid: string, options?: { suppressGlobalError?: boolean }) => {
+    if (!session) {
+      return { success: false, message: 'You need an active internal session to restore inventory.' };
+    }
+
+    try {
+      await inventoryService.unarchiveInventoryItem({
+        session,
+        storeId: storeUuid,
+        inventoryItemId,
+      });
+
+      setArchivedInventory((previous) => previous.filter((item) => !(item.inventoryItemId === inventoryItemId && item.storeUuid === storeUuid)));
+      if (!options?.suppressGlobalError) {
+        setInventoryError(null);
+      }
+      return { success: true, message: 'Inventory item restored.' };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not restore inventory item.';
+      console.error('Failed to restore inventory item.', error);
+      if (!options?.suppressGlobalError) {
+        setInventoryError(message);
+      }
+      return { success: false, message };
+    }
   };
 
-  const setInventoryQuantity = async (itemId: string, quantity: number) => {
+  const deleteInventoryItem = async (inventoryItemId: string, storeUuid: string, options?: { suppressGlobalError?: boolean }) => {
+    if (!session) {
+      return { success: false, message: 'You need an active internal session to delete inventory.' };
+    }
+
+    try {
+      await inventoryService.deleteInventoryItem({
+        session,
+        storeId: storeUuid,
+        inventoryItemId,
+      });
+
+      setArchivedInventory((previous) => previous.filter((item) => !(item.inventoryItemId === inventoryItemId && item.storeUuid === storeUuid)));
+      if (!options?.suppressGlobalError) {
+        setInventoryError(null);
+      }
+      return { success: true, message: 'Inventory item removed from this store.' };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Could not delete inventory item from this store.';
+      console.error('Failed to delete inventory item.', error);
+      if (!options?.suppressGlobalError) {
+        setInventoryError(message);
+      }
+      return { success: false, message };
+    }
+  };
+
+  const reduceInventoryStock = async (itemId: string, amount: number, notes: string, options?: { suppressGlobalError?: boolean }) => {
+    if (amount <= 0) return { success: false, message: 'Use a value greater than 0.' };
+    return applyInventoryMutation(itemId, { adjustmentType: 'reduce', amount, notes }, 'Inventory updated.', options);
+  };
+
+  const setInventoryQuantity = async (itemId: string, quantity: number, notes: string, options?: { suppressGlobalError?: boolean }) => {
     if (!Number.isFinite(quantity) || quantity < 0) {
       return { success: false, message: 'Quantity must be a non-negative number.' };
     }
-    return applyInventoryMutation(itemId, { adjustmentType: 'set', quantity }, 'Inventory quantity saved.');
+    return applyInventoryMutation(itemId, { adjustmentType: 'set', quantity, notes }, 'Inventory quantity saved.', options);
   };
 
   const updateInventoryThreshold = async (itemId: string, threshold: number) => {
@@ -1005,8 +1099,8 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     return applyInventoryMutation(itemId, { adjustmentType: 'threshold_update', threshold }, 'Threshold updated.');
   };
 
-  const markInventoryOutOfStock = async (itemId: string) => (
-    applyInventoryMutation(itemId, { adjustmentType: 'out_of_stock' }, 'Item marked out of stock.')
+  const markInventoryOutOfStock = async (itemId: string, notes: string, options?: { suppressGlobalError?: boolean }) => (
+    applyInventoryMutation(itemId, { adjustmentType: 'out_of_stock', notes }, 'Item marked out of stock.', options)
   );
 
   const saveOrderNote = (orderId: string, note: string) => {
@@ -1021,11 +1115,13 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     stores,
     employees,
     inventory,
+    archivedInventory,
     inventoryHistory,
     inventoryLoading,
     inventoryError,
     scopedEmployees,
     scopedInventory,
+    scopedArchivedInventory,
     orderNotes,
     permissions,
     hasPermission,
@@ -1050,6 +1146,8 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     refreshInventory,
     createInventoryItem,
     archiveInventoryItem,
+    unarchiveInventoryItem,
+    deleteInventoryItem,
     addInventoryStock,
     reduceInventoryStock,
     setInventoryQuantity,

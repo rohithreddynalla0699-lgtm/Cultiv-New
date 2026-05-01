@@ -3,7 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 type RoleKey = 'owner' | 'admin' | 'store';
 type ScopeType = 'global' | 'store' | 'owner' | 'admin';
-type InventoryAction = 'dashboard' | 'adjust_item' | 'create_item' | 'archive_item';
+type InventoryAction = 'dashboard' | 'adjust_item' | 'create_item' | 'archive_item' | 'unarchive_item' | 'delete_item';
 type InventoryAdjustmentType =
   | 'set'
   | 'add'
@@ -11,8 +11,7 @@ type InventoryAdjustmentType =
   | 'threshold_update'
   | 'receive'
   | 'manual_correction'
-  | 'out_of_stock'
-  | 'opening_balance';
+  | 'out_of_stock';
 
 interface InternalInventoryRequest {
   internalSessionToken?: string;
@@ -68,8 +67,10 @@ const normalizeAction = (body: InternalInventoryRequest): { value?: InventoryAct
     && body.action !== 'adjust_item'
     && body.action !== 'create_item'
     && body.action !== 'archive_item'
+    && body.action !== 'unarchive_item'
+    && body.action !== 'delete_item'
   ) {
-    return { error: 'action must be one of dashboard, adjust_item, create_item, or archive_item.' };
+    return { error: 'action must be one of dashboard, adjust_item, create_item, archive_item, unarchive_item, or delete_item.' };
   }
   return { value: body.action };
 };
@@ -89,6 +90,31 @@ const slugify = (value: string) => (
 );
 
 const normalizeText = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
+
+const requireExplicitStoreId = (body: InternalInventoryRequest) => {
+  if (!body.storeId || !isUuid(body.storeId)) {
+    return { error: 'storeId is required and must be a valid UUID.' };
+  }
+  return { storeId: body.storeId };
+};
+
+const requiresAdjustmentNotes = (adjustmentType: InventoryAdjustmentType) => (
+  adjustmentType === 'reduce'
+  || adjustmentType === 'set'
+  || adjustmentType === 'manual_correction'
+  || adjustmentType === 'out_of_stock'
+);
+
+const isInventoryValidationError = (message: string) => (
+  message.includes('Reason/notes are required for this inventory adjustment.')
+  || message.includes('Cannot reduce inventory below zero.')
+  || message.includes('quantity_delta must be greater than 0')
+  || message.includes('next_quantity must be provided and non-negative')
+  || message.includes('next_quantity must be non-negative')
+  || message.includes('next_threshold must be provided and non-negative')
+  || message.includes('next_threshold must be non-negative')
+  || message.includes('Unsupported adjustment type')
+);
 
 const verifyAndLoadSession = async (
   db: ReturnType<typeof createClient>,
@@ -220,6 +246,7 @@ const mapInventoryItemRow = (row: any) => ({
   unit: row.inventory_items?.unit ?? '',
   quantity: Number(row.quantity ?? 0),
   threshold: Number(row.threshold ?? 0),
+  isActive: row.is_active !== false,
   sortOrder: Number(row.inventory_items?.sort_order ?? 0),
   updatedAt: row.updated_at,
   updatedBy: row.updated_by ?? null,
@@ -261,12 +288,19 @@ const buildDashboard = async (
     };
   }
 
-  const [inventoryResult, historyResult] = await Promise.all([
+  const [inventoryResult, archivedInventoryResult, historyResult] = await Promise.all([
     db
       .from('store_inventory')
-      .select('id, store_id, inventory_item_id, quantity, threshold, updated_at, updated_by, stores(name, code), inventory_items!inner(sku, name, category, unit, sort_order, is_active)')
+      .select('id, store_id, inventory_item_id, quantity, threshold, is_active, is_deleted, updated_at, updated_by, stores(name, code), inventory_items!inner(sku, name, category, unit, sort_order, is_active)')
       .in('store_id', storeIds)
-      .eq('inventory_items.is_active', true),
+      .eq('is_active', true)
+      .eq('is_deleted', false),
+    db
+      .from('store_inventory')
+      .select('id, store_id, inventory_item_id, quantity, threshold, is_active, is_deleted, updated_at, updated_by, stores(name, code), inventory_items!inner(sku, name, category, unit, sort_order, is_active)')
+      .in('store_id', storeIds)
+      .eq('is_active', false)
+      .eq('is_deleted', false),
     db
       .from('inventory_adjustments')
       .select('id, store_id, inventory_item_id, adjustment_type, quantity_delta, quantity_before, quantity_after, threshold_before, threshold_after, notes, actor_internal_user_id, created_at, stores(name, code), inventory_items!inner(sku, name), internal_users(full_name)')
@@ -277,6 +311,10 @@ const buildDashboard = async (
 
   if (inventoryResult.error) {
     return { status: 500, payload: { error: 'Could not load store inventory.' } };
+  }
+
+  if (archivedInventoryResult.error) {
+    return { status: 500, payload: { error: 'Could not load archived inventory.' } };
   }
 
   if (historyResult.error) {
@@ -295,12 +333,25 @@ const buildDashboard = async (
       return left.name.localeCompare(right.name);
     });
 
+  const archivedItems = (archivedInventoryResult.data ?? [])
+    .map(mapInventoryItemRow)
+    .sort((left, right) => {
+      if (left.storeName !== right.storeName) {
+        return left.storeName.localeCompare(right.storeName);
+      }
+      if (left.sortOrder !== right.sortOrder) {
+        return left.sortOrder - right.sortOrder;
+      }
+      return left.name.localeCompare(right.name);
+    });
+
   const adjustments = (historyResult.data ?? []).map(mapAdjustmentRow);
 
   return {
     status: 200,
     payload: {
       items,
+      archivedItems,
       adjustments,
     },
   };
@@ -312,8 +363,9 @@ const loadInventoryItemByStoreInventoryId = async (
 ) => {
   const { data, error } = await db
     .from('store_inventory')
-    .select('id, store_id, inventory_item_id, quantity, threshold, updated_at, updated_by, stores(name, code), inventory_items!inner(sku, name, category, unit, sort_order, is_active)')
+    .select('id, store_id, inventory_item_id, quantity, threshold, is_active, is_deleted, updated_at, updated_by, stores(name, code), inventory_items!inner(sku, name, category, unit, sort_order, is_active)')
     .eq('id', storeInventoryId)
+    .eq('is_deleted', false)
     .single();
 
   if (error || !data) {
@@ -330,9 +382,10 @@ const loadInventoryItemByStoreAndInventoryItemId = async (
 ) => {
   const { data, error } = await db
     .from('store_inventory')
-    .select('id, store_id, inventory_item_id, quantity, threshold, updated_at, updated_by, stores(name, code), inventory_items!inner(sku, name, category, unit, sort_order, is_active)')
+    .select('id, store_id, inventory_item_id, quantity, threshold, is_active, is_deleted, updated_at, updated_by, stores(name, code), inventory_items!inner(sku, name, category, unit, sort_order, is_active)')
     .eq('store_id', storeId)
     .eq('inventory_item_id', inventoryItemId)
+    .eq('is_deleted', false)
     .single();
 
   if (error || !data) {
@@ -376,9 +429,17 @@ const adjustInventory = async (
     && body.adjustmentType !== 'receive'
     && body.adjustmentType !== 'manual_correction'
     && body.adjustmentType !== 'out_of_stock'
-    && body.adjustmentType !== 'opening_balance'
   ) {
     return { status: 400, payload: { error: 'adjustmentType is invalid.' } };
+  }
+
+  if (requiresAdjustmentNotes(body.adjustmentType) && !normalizeText(body.notes)) {
+    return {
+      status: 400,
+      payload: {
+        error: 'Reason/notes are required for this inventory adjustment.',
+      },
+    };
   }
 
   const storeResult = await resolveStoreIds(db, session, body.storeId);
@@ -390,6 +451,36 @@ const adjustInventory = async (
   const amount = parseNumeric(body.amount);
   const quantity = parseNumeric(body.quantity);
   const threshold = parseNumeric(body.threshold);
+
+  if (body.adjustmentType === 'reduce') {
+    if (amount === null || amount <= 0) {
+      return {
+        status: 400,
+        payload: {
+          error: 'quantity_delta must be greater than 0 for reduce adjustments.',
+        },
+      };
+    }
+
+    const currentItem = await loadInventoryItemByStoreAndInventoryItemId(db, storeId, body.inventoryItemId);
+    if (!currentItem) {
+      return {
+        status: 404,
+        payload: {
+          error: 'Inventory item not found for this store.',
+        },
+      };
+    }
+
+    if (amount > currentItem.quantity) {
+      return {
+        status: 400,
+        payload: {
+          error: `Cannot reduce inventory below zero. Available quantity: ${currentItem.quantity}, requested reduction: ${amount}.`,
+        },
+      };
+    }
+  }
 
   const { data: mutationRow, error: mutationError } = await db
     .rpc('apply_inventory_adjustment', {
@@ -405,10 +496,11 @@ const adjustInventory = async (
     .single();
 
   if (mutationError || !mutationRow) {
+    const mutationMessage = mutationError?.message ?? 'Could not update inventory.';
     return {
-      status: 500,
+      status: mutationError?.message && isInventoryValidationError(mutationError.message) ? 400 : 500,
       payload: {
-        error: mutationError?.message ?? 'Could not update inventory.',
+        error: mutationMessage,
       },
     };
   }
@@ -468,12 +560,17 @@ const createInventoryItem = async (
     return { status: 400, payload: { error: 'initialQuantity must be a non-negative number.' } };
   }
 
-  const storeResult = await resolveStoreIds(db, session, body.storeId);
+  const requestedStore = requireExplicitStoreId(body);
+  if (!requestedStore.storeId) {
+    return { status: 400, payload: { error: requestedStore.error } };
+  }
+
+  const storeResult = await resolveStoreIds(db, session, requestedStore.storeId);
   if (storeResult.error || !storeResult.storeIds?.length) {
     return { status: storeResult.status ?? 400, payload: { error: storeResult.error ?? 'No store scope available.' } };
   }
 
-  const storeId = storeResult.storeIds[0];
+  const storeId = requestedStore.storeId;
   const skuBase = slugify(normalizedName) || 'inventory_item';
   const sku = `${skuBase}_${crypto.randomUUID().slice(0, 8)}`;
 
@@ -487,6 +584,7 @@ const createInventoryItem = async (
       default_threshold: threshold,
       sort_order: 9999,
       is_active: true,
+      auto_provision_all_stores: false,
       updated_at: new Date().toISOString(),
     })
     .select('id')
@@ -503,6 +601,8 @@ const createInventoryItem = async (
       inventory_item_id: inventoryItemRow.id,
       quantity: 0,
       threshold,
+      is_active: true,
+      is_deleted: false,
       updated_by: session.internal_user_id,
       updated_at: new Date().toISOString(),
     });
@@ -550,25 +650,65 @@ const createInventoryItem = async (
 
 const archiveInventoryItem = async (
   db: ReturnType<typeof createClient>,
+  session: InternalAccessSessionRow,
   body: InternalInventoryRequest,
 ) => {
   if (!body.inventoryItemId || !isUuid(body.inventoryItemId)) {
     return { status: 400, payload: { error: 'inventoryItemId is required and must be a valid UUID.' } };
   }
 
+  const requestedStore = requireExplicitStoreId(body);
+  if (!requestedStore.storeId) {
+    return { status: 400, payload: { error: requestedStore.error } };
+  }
+
+  const storeResult = await resolveStoreIds(db, session, requestedStore.storeId);
+  if (storeResult.error || !storeResult.storeIds?.length) {
+    return { status: storeResult.status ?? 400, payload: { error: storeResult.error ?? 'No store scope available.' } };
+  }
+
+  const storeId = requestedStore.storeId;
+  const { data: matchingRows, error: lookupError } = await db
+    .from('store_inventory')
+    .select('id, is_active, is_deleted')
+    .eq('store_id', storeId)
+    .eq('inventory_item_id', body.inventoryItemId);
+
+  if (lookupError) {
+    return { status: 500, payload: { error: 'Could not verify inventory item for this store.' } };
+  }
+
+  if (!matchingRows || matchingRows.length !== 1) {
+    return {
+      status: 409,
+      payload: {
+        error: matchingRows?.length
+          ? 'Inventory archive target is ambiguous for this store.'
+          : 'Inventory item not found for this store.',
+      },
+    };
+  }
+
+  if (matchingRows[0].is_deleted) {
+    return { status: 409, payload: { error: 'Inventory item has been deleted for this store.' } };
+  }
+
+  if (!matchingRows[0].is_active) {
+    return { status: 409, payload: { error: 'Inventory item is already archived for this store.' } };
+  }
+
   const { data, error } = await db
-    .from('inventory_items')
+    .from('store_inventory')
     .update({
       is_active: false,
       updated_at: new Date().toISOString(),
     })
-    .eq('id', body.inventoryItemId)
-    .eq('is_active', true)
-    .select('id')
+    .eq('id', matchingRows[0].id)
+    .select('inventory_item_id, store_id')
     .single();
 
   if (error || !data) {
-    return { status: 404, payload: { error: 'Inventory item not found.' } };
+    return { status: 500, payload: { error: 'Could not archive inventory item for this store.' } };
   }
 
   return {
@@ -576,7 +716,162 @@ const archiveInventoryItem = async (
     payload: {
       success: true,
       mode: 'archived',
-      inventoryItemId: data.id,
+      inventoryItemId: data.inventory_item_id,
+      storeId: data.store_id,
+    },
+  };
+};
+
+const unarchiveInventoryItem = async (
+  db: ReturnType<typeof createClient>,
+  session: InternalAccessSessionRow,
+  body: InternalInventoryRequest,
+) => {
+  if (!body.inventoryItemId || !isUuid(body.inventoryItemId)) {
+    return { status: 400, payload: { error: 'inventoryItemId is required and must be a valid UUID.' } };
+  }
+
+  const requestedStore = requireExplicitStoreId(body);
+  if (!requestedStore.storeId) {
+    return { status: 400, payload: { error: requestedStore.error } };
+  }
+
+  const storeResult = await resolveStoreIds(db, session, requestedStore.storeId);
+  if (storeResult.error || !storeResult.storeIds?.length) {
+    return { status: storeResult.status ?? 400, payload: { error: storeResult.error ?? 'No store scope available.' } };
+  }
+
+  const storeId = requestedStore.storeId;
+  const { data: matchingRows, error: lookupError } = await db
+    .from('store_inventory')
+    .select('id, is_active, is_deleted')
+    .eq('store_id', storeId)
+    .eq('inventory_item_id', body.inventoryItemId);
+
+  if (lookupError) {
+    return { status: 500, payload: { error: 'Could not verify archived inventory item for this store.' } };
+  }
+
+  if (!matchingRows || matchingRows.length !== 1) {
+    return {
+      status: 409,
+      payload: {
+        error: matchingRows?.length
+          ? 'Archived inventory target is ambiguous for this store.'
+          : 'Archived inventory item not found for this store.',
+      },
+    };
+  }
+
+  if (matchingRows[0].is_deleted) {
+    return { status: 409, payload: { error: 'Deleted inventory items cannot be restored from this view.' } };
+  }
+
+  if (matchingRows[0].is_active) {
+    return { status: 409, payload: { error: 'Inventory item is already active for this store.' } };
+  }
+
+  const { data, error } = await db
+    .from('store_inventory')
+    .update({
+      is_active: true,
+      is_deleted: false,
+      deleted_at: null,
+      deleted_by: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', matchingRows[0].id)
+    .select('inventory_item_id, store_id')
+    .single();
+
+  if (error || !data) {
+    return { status: 500, payload: { error: 'Could not restore inventory item for this store.' } };
+  }
+
+  return {
+    status: 200,
+    payload: {
+      success: true,
+      mode: 'unarchived',
+      inventoryItemId: data.inventory_item_id,
+      storeId: data.store_id,
+    },
+  };
+};
+
+const deleteInventoryItem = async (
+  db: ReturnType<typeof createClient>,
+  session: InternalAccessSessionRow,
+  body: InternalInventoryRequest,
+) => {
+  if (!body.inventoryItemId || !isUuid(body.inventoryItemId)) {
+    return { status: 400, payload: { error: 'inventoryItemId is required and must be a valid UUID.' } };
+  }
+
+  const requestedStore = requireExplicitStoreId(body);
+  if (!requestedStore.storeId) {
+    return { status: 400, payload: { error: requestedStore.error } };
+  }
+
+  const storeResult = await resolveStoreIds(db, session, requestedStore.storeId);
+  if (storeResult.error || !storeResult.storeIds?.length) {
+    return { status: storeResult.status ?? 400, payload: { error: storeResult.error ?? 'No store scope available.' } };
+  }
+
+  const storeId = requestedStore.storeId;
+  const { data: matchingRows, error: lookupError } = await db
+    .from('store_inventory')
+    .select('id, is_active, is_deleted')
+    .eq('store_id', storeId)
+    .eq('inventory_item_id', body.inventoryItemId);
+
+  if (lookupError) {
+    return { status: 500, payload: { error: 'Could not verify inventory item for deletion.' } };
+  }
+
+  if (!matchingRows || matchingRows.length !== 1) {
+    return {
+      status: 409,
+      payload: {
+        error: matchingRows?.length
+          ? 'Inventory delete target is ambiguous for this store.'
+          : 'Inventory item not found for this store.',
+      },
+    };
+  }
+
+  if (matchingRows[0].is_deleted) {
+    return { status: 409, payload: { error: 'Inventory item is already deleted for this store.' } };
+  }
+
+  if (matchingRows[0].is_active) {
+    return { status: 409, payload: { error: 'Archive the item before deleting it from this store.' } };
+  }
+
+  const { data, error } = await db
+    .from('store_inventory')
+    .update({
+      is_active: false,
+      is_deleted: true,
+      deleted_at: new Date().toISOString(),
+      deleted_by: session.internal_user_id,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', matchingRows[0].id)
+    .select('inventory_item_id, store_id')
+    .single();
+
+  if (error || !data) {
+    return { status: 500, payload: { error: 'Could not delete inventory item for this store.' } };
+  }
+
+  return {
+    status: 200,
+    payload: {
+      success: true,
+      mode: 'deleted',
+      inventoryItemId: data.inventory_item_id,
+      storeId: data.store_id,
     },
   };
 };
@@ -648,8 +943,18 @@ Deno.serve(async (req) => {
   }
 
   if (action.value === 'archive_item') {
-    const archive = await archiveInventoryItem(db, body);
+    const archive = await archiveInventoryItem(db, sessionResult.session, body);
     return json(archive.status, archive.payload);
+  }
+
+  if (action.value === 'unarchive_item') {
+    const unarchive = await unarchiveInventoryItem(db, sessionResult.session, body);
+    return json(unarchive.status, unarchive.payload);
+  }
+
+  if (action.value === 'delete_item') {
+    const deletion = await deleteInventoryItem(db, sessionResult.session, body);
+    return json(deletion.status, deletion.payload);
   }
 
   const mutation = await adjustInventory(db, sessionResult.session, body);

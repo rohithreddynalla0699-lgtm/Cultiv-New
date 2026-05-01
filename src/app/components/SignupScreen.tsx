@@ -53,7 +53,7 @@ export function SignupScreen() {
   const emailRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
   const confirmPasswordRef = useRef<HTMLInputElement>(null);
-  const agreeRef = useRef<HTMLButtonElement>(null);
+  const agreeRef = useRef<HTMLDivElement>(null);
 
   const inputBaseClass =
     'w-full rounded-2xl border bg-white/85 px-3.5 py-2.5 text-[14px] outline-none transition-all placeholder:text-foreground/35';
@@ -231,6 +231,8 @@ export function SignupScreen() {
             </label>
             <input
               id="signup-full-name"
+              name="fullName"
+              autoComplete="name"
               ref={fullNameRef}
               className={resolveInputClass('fullName')}
               placeholder="Full name"
@@ -255,6 +257,8 @@ export function SignupScreen() {
             </label>
             <input
               id="signup-phone"
+              name="phone"
+              autoComplete="tel"
               ref={phoneRef}
               className={resolveInputClass('phone')}
               placeholder="Phone number"
@@ -284,6 +288,8 @@ export function SignupScreen() {
             </label>
             <input
               id="signup-email"
+              name="email"
+              autoComplete="email"
               ref={emailRef}
               className={resolveInputClass('email')}
               placeholder="Email address"
@@ -310,6 +316,8 @@ export function SignupScreen() {
             <div className="relative">
               <input
                 id="signup-password"
+                name="password"
+                autoComplete="new-password"
                 ref={passwordRef}
                 className={`${resolveInputClass('password')} pr-12`}
                 placeholder="Create password"
@@ -357,6 +365,8 @@ export function SignupScreen() {
             <div className="relative">
               <input
                 id="signup-confirm-password"
+                name="confirmPassword"
+                autoComplete="new-password"
                 ref={confirmPasswordRef}
                 className={`${resolveInputClass('confirmPassword')} pr-12`}
                 placeholder="Confirm password"
@@ -384,14 +394,29 @@ export function SignupScreen() {
             {renderFieldMessage(fieldErrors.confirmPassword)}
           </motion.div>
 
-          <motion.button
+          <motion.div
             variants={{
               hidden: { opacity: 0, y: 8 },
               visible: { opacity: 1, y: 0, transition: { duration: 0.3 } },
             }}
             ref={agreeRef}
-            type="button"
+            role="button"
+            tabIndex={0}
             onClick={() => {
+              setAgreed(!agreed);
+              if (error) setError('');
+              if (fieldErrors.agreeToTerms) {
+                setFieldErrors((previous) => ({
+                  ...previous,
+                  agreeToTerms: '',
+                }));
+              }
+            }}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' && event.key !== ' ') {
+                return;
+              }
+              event.preventDefault();
               setAgreed(!agreed);
               if (error) setError('');
               if (fieldErrors.agreeToTerms) {
@@ -443,7 +468,7 @@ export function SignupScreen() {
               </button>{' '}
               <span className="text-red-400">*</span>
             </span>
-          </motion.button>
+          </motion.div>
 
           <p
             className={`-mt-1 min-h-[0.9rem] text-[11px] ${

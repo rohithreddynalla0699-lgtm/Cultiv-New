@@ -1,6 +1,5 @@
-// menuData.ts — centralized menu data: categories, food items, and bowl builder steps with nutrition.
+// menuData.ts — centralized menu data: categories, food items, and customization steps with nutrition.
 
-import { TABLE_BUILD_OPTIONS_BY_TYPE } from './buildYourOwnTableData';
 import { DRINK_ITEMS, hydrateDrinksCatalog, type DrinkItem, type DrinkSection } from './drinksData';
 import { fetchMenuRepositoryPayload } from './menuRepository';
 
@@ -27,7 +26,7 @@ export interface MenuCategoryData {
   items: FoodItem[];
 }
 
-// ─── Bowl builder ────────────────────────────────────────────────────────────
+// ─── Item customization ──────────────────────────────────────────────────────
 
 export interface BuilderIngredient {
   id: string;
@@ -319,44 +318,6 @@ export const BREAKFAST_CUSTOMIZE_STEPS: BuilderStep[] = [
 
 export const MENU_CATEGORIES: MenuCategoryData[] = [
   {
-    slug: 'build-your-own-bowl',
-    name: 'Build Your Own Bowl',
-    description: 'Build a shareable table bowl for 4-5 people — your choice of protein, veggies, and sauce.',
-    image: 'https://images.unsplash.com/photo-1543332164-6e82f355badc?w=1080',
-    items: [
-      {
-        id: 'veg-table-bowl',
-        name: TABLE_BUILD_OPTIONS_BY_TYPE.veg.title,
-        description: 'Serves 4-5 people. Rajma and Channa with rice, fresh toppings, and salsa.',
-        calories: 1600,
-        protein: 72,
-        price: TABLE_BUILD_OPTIONS_BY_TYPE.veg.basePrice,
-        image: 'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=1080',
-        badge: 'Serves 4-5',
-      },
-      {
-        id: 'chicken-table-bowl',
-        name: TABLE_BUILD_OPTIONS_BY_TYPE.chicken.title,
-        description: 'Serves 4-5 people. Classic and Spicy Chicken with rice, fresh toppings, and salsa.',
-        calories: 2000,
-        protein: 110,
-        price: TABLE_BUILD_OPTIONS_BY_TYPE.chicken.basePrice,
-        image: 'https://images.unsplash.com/photo-1543332164-6e82f355badc?w=1080',
-        badge: 'Serves 4-5',
-      },
-      {
-        id: 'power-table-bowl',
-        name: TABLE_BUILD_OPTIONS_BY_TYPE.both.title,
-        description: 'Serves 4-5 people. All four proteins — Rajma, Channa, Classic and Spicy Chicken.',
-        calories: 2400,
-        protein: 140,
-        price: TABLE_BUILD_OPTIONS_BY_TYPE.both.basePrice,
-        image: 'https://images.unsplash.com/photo-1547592166-23ac45744acd?w=1080',
-        badge: 'Best Value',
-      },
-    ],
-  },
-  {
     slug: 'breakfast-bowls',
     name: 'Breakfast Bowls',
     description: 'Preset breakfast bowls with optional customization paths.',
@@ -587,7 +548,6 @@ export const MENU_CATEGORIES: MenuCategoryData[] = [
 ];
 
 const DEFAULT_OPTION_GROUPS_BY_CATEGORY_SLUG: Record<string, string[]> = {
-  'build-your-own-bowl': ['base', 'protein', 'toppings', 'sauce', 'extras'],
   'signature-bowls': ['base', 'protein', 'toppings', 'sauce', 'extras'],
   'salad-bowls': ['protein', 'toppings', 'sauce', 'extras'],
   'breakfast-bowls': ['fruits', 'crunch', 'add-ons'],
@@ -599,20 +559,12 @@ const DEFAULT_ITEM_OPTION_GROUPS_BY_ITEM_ID: Record<string, string[]> = Object.f
   ),
 );
 
-const TABLE_ITEM_ID_ALIAS_TO_MENU_ITEM_ID: Record<string, string> = {
-  'table-veg': 'veg-table-bowl',
-  'table-chicken': 'chicken-table-bowl',
-  'table-both': 'power-table-bowl',
-  'table-power': 'power-table-bowl',
-};
-
 export const ITEM_OPTION_GROUPS_BY_ITEM_ID: Record<string, string[]> = {
   ...DEFAULT_ITEM_OPTION_GROUPS_BY_ITEM_ID,
 };
 
 export function getAllowedOptionGroupIdsForItem(itemId: string): string[] | null {
-  const normalizedItemId = TABLE_ITEM_ID_ALIAS_TO_MENU_ITEM_ID[itemId] ?? itemId;
-  const groups = ITEM_OPTION_GROUPS_BY_ITEM_ID[normalizedItemId];
+  const groups = ITEM_OPTION_GROUPS_BY_ITEM_ID[itemId];
   if (!groups || groups.length === 0) return null;
   return [...groups];
 }
@@ -621,11 +573,9 @@ export function getAllowedOptionGroupIdsForItem(itemId: string): string[] | null
 export const CATEGORY_BY_SLUG: Record<string, MenuCategoryData> =
   Object.fromEntries(MENU_CATEGORIES.map((cat) => [cat.slug, cat]));
 
-// ─── Bowl builder steps ───────────────────────────────────────────────────────
+// ─── Customization steps ──────────────────────────────────────────────────────
 
-export const BOWL_BASE_PRICE = 169;
-
-export const BOWL_BUILDER_STEPS: BuilderStep[] = [
+export const BOWL_CUSTOMIZATION_STEPS: BuilderStep[] = [
   {
     id: 'base',
     title: 'Choose your base',
@@ -708,7 +658,6 @@ function replaceObject<T extends Record<string, unknown>>(target: T, next: T) {
 }
 
 const CATEGORY_ORDER = [
-  'build-your-own-bowl',
   'breakfast-bowls',
   'signature-bowls',
   'high-protein-cups',
@@ -744,7 +693,7 @@ const ITEM_META_FALLBACK = Object.fromEntries(
 ) as Record<string, { description: string; calories: number; protein: number; image: string; badge?: string }>;
 
 const INGREDIENT_META_FALLBACK = Object.fromEntries(
-  [...BOWL_BUILDER_STEPS, ...BREAKFAST_CUSTOMIZE_STEPS].flatMap((step) =>
+  [...BOWL_CUSTOMIZATION_STEPS, ...BREAKFAST_CUSTOMIZE_STEPS].flatMap((step) =>
     step.ingredients.map((ingredient) => [
       ingredient.id,
       {
@@ -787,7 +736,9 @@ export async function hydrateMenuCatalogFromSupabase() {
     throw new Error('menu_items is empty in Supabase.');
   }
 
-  const visibleMenuItems = payload.menuItems.filter((item) => item.is_available !== false);
+  const visibleMenuItems = payload.menuItems.filter(
+    (item) => item.is_available !== false && item.category_slug !== 'build-your-own-bowl',
+  );
   const groupedByCategory = new Map<string, typeof visibleMenuItems>();
   for (const item of visibleMenuItems) {
     const list = groupedByCategory.get(item.category_slug) ?? [];
@@ -929,7 +880,7 @@ export async function hydrateMenuCatalogFromSupabase() {
   ].filter(Boolean) as BuilderStep[];
 
   if (nextBowlSteps.length >= 4) {
-    replaceArray(BOWL_BUILDER_STEPS, nextBowlSteps);
+    replaceArray(BOWL_CUSTOMIZATION_STEPS, nextBowlSteps);
   }
 
   const nextBreakfastSteps = [

@@ -1,4 +1,3 @@
-import { DEFAULT_ORDER_STORE_ID } from '../constants/admin';
 import { getAdminOrderBoardStatus, getOrderItemsSummary, getOrderStoreId } from '../utils/adminOrders';
 import { getDisplayOrderNumber } from '../utils/orderDisplay';
 import type { AdminOrderBoardStatus } from '../types/admin';

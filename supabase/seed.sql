@@ -443,14 +443,6 @@ insert into public.menu_items (
   updated_at
 )
 values
-  ('table-veg', 'build-your-own-bowl', 'table-bowls', 'Veg Table Bowl', 'Legacy local alias for the veg table bowl.', 599, true, 11, null, 1600, 70, null, now(), now()),
-  ('table-chicken', 'build-your-own-bowl', 'table-bowls', 'Chicken Table Bowl', 'Legacy local alias for the chicken table bowl.', 699, true, 21, null, 2100, 115, null, now(), now()),
-  ('table-both', 'build-your-own-bowl', 'table-bowls', 'Power Table Bowl', 'Legacy local alias for the power table bowl.', 799, true, 31, null, 2400, 140, 'Power Pick', now(), now()),
-  ('table-power', 'build-your-own-bowl', 'table-bowls', 'Power Table Bowl', 'Legacy local alias for the power table bowl.', 799, true, 32, null, 2400, 140, 'Power Pick', now(), now()),
-  ('veg-table-bowl', 'build-your-own-bowl', 'table-bowls', 'Veg Table Bowl', 'Shareable plant-forward table bowl for 4-5 people.', 599, true, 10, null, 1600, 70, null, now(), now()),
-  ('chicken-table-bowl', 'build-your-own-bowl', 'table-bowls', 'Chicken Table Bowl', 'Shareable chicken-led table bowl for 4-5 people.', 699, true, 20, null, 2100, 115, null, now(), now()),
-  ('power-table-bowl', 'build-your-own-bowl', 'table-bowls', 'Power Table Bowl', 'All-protein table bowl for 4-5 people.', 799, true, 30, null, 2400, 140, 'Power Pick', now(), now()),
-
   ('banana-chia-yogurt-bowl', 'breakfast-bowls', 'chia-yogurt', 'Banana Chia Yogurt Bowl', 'Yogurt + chia + banana + honey + granola.', 119, true, 110, null, 250, 10, null, now(), now()),
   ('apple-chia-yogurt-bowl', 'breakfast-bowls', 'chia-yogurt', 'Apple Chia Yogurt Bowl', 'Yogurt + chia + apple + honey + granola.', 119, true, 120, null, 250, 10, null, now(), now()),
   ('mango-chia-yogurt-bowl', 'breakfast-bowls', 'chia-yogurt', 'Mango Chia Yogurt Bowl', 'Yogurt + chia + mango + honey + granola.', 129, true, 130, null, 260, 10, 'Seasonal', now(), now()),
@@ -516,42 +508,6 @@ insert into public.item_option_group_map (
   sort_order
 )
 values
-  ('table-veg', 'base', 10),
-  ('table-veg', 'protein', 20),
-  ('table-veg', 'toppings', 30),
-  ('table-veg', 'sauce', 40),
-  ('table-veg', 'extras', 50),
-  ('table-chicken', 'base', 10),
-  ('table-chicken', 'protein', 20),
-  ('table-chicken', 'toppings', 30),
-  ('table-chicken', 'sauce', 40),
-  ('table-chicken', 'extras', 50),
-  ('table-both', 'base', 10),
-  ('table-both', 'protein', 20),
-  ('table-both', 'toppings', 30),
-  ('table-both', 'sauce', 40),
-  ('table-both', 'extras', 50),
-  ('table-power', 'base', 10),
-  ('table-power', 'protein', 20),
-  ('table-power', 'toppings', 30),
-  ('table-power', 'sauce', 40),
-  ('table-power', 'extras', 50),
-  ('veg-table-bowl', 'base', 10),
-  ('veg-table-bowl', 'protein', 20),
-  ('veg-table-bowl', 'toppings', 30),
-  ('veg-table-bowl', 'sauce', 40),
-  ('veg-table-bowl', 'extras', 50),
-  ('chicken-table-bowl', 'base', 10),
-  ('chicken-table-bowl', 'protein', 20),
-  ('chicken-table-bowl', 'toppings', 30),
-  ('chicken-table-bowl', 'sauce', 40),
-  ('chicken-table-bowl', 'extras', 50),
-  ('power-table-bowl', 'base', 10),
-  ('power-table-bowl', 'protein', 20),
-  ('power-table-bowl', 'toppings', 30),
-  ('power-table-bowl', 'sauce', 40),
-  ('power-table-bowl', 'extras', 50),
-
   ('everyday-veg-bowl', 'base', 10),
   ('everyday-veg-bowl', 'protein', 20),
   ('everyday-veg-bowl', 'toppings', 30),
@@ -626,26 +582,27 @@ insert into public.inventory_items (
   unit,
   default_threshold,
   is_active,
+  auto_provision_all_stores,
   sort_order,
   created_at,
   updated_at
 )
 values
-  ('white_basmati_rice', 'White Basmati Rice', 'rice', 'kg', 5, true, 10, now(), now()),
-  ('brown_rice', 'Brown Rice', 'rice', 'kg', 3, true, 20, now(), now()),
-  ('classic_chicken', 'Classic Chicken', 'proteins', 'kg', 3, true, 30, now(), now()),
-  ('spicy_chicken', 'Spicy Chicken', 'proteins', 'kg', 3, true, 40, now(), now()),
-  ('rajma', 'Rajma', 'proteins', 'kg', 2, true, 50, now(), now()),
-  ('channa', 'Channa', 'proteins', 'kg', 2, true, 60, now(), now()),
-  ('eggs', 'Eggs', 'proteins', 'trays', 2, true, 70, now(), now()),
-  ('cheese', 'Cheese', 'proteins', 'bags', 2, true, 80, now(), now()),
-  ('onion', 'Onion', 'veggies', 'bags', 2, true, 90, now(), now()),
-  ('cucumber', 'Cucumber', 'veggies', 'bags', 2, true, 100, now(), now()),
-  ('lettuce', 'Lettuce', 'veggies', 'bags', 2, true, 110, now(), now()),
-  ('water_bottles', 'Water Bottles', 'drinks', 'cases', 2, true, 120, now(), now()),
-  ('regular_bowl', 'Regular Bowl', 'packaging', 'pcs', 50, true, 130, now(), now()),
-  ('paper_bag', 'Paper Bag', 'packaging', 'pcs', 50, true, 140, now(), now()),
-  ('tissue_pack', 'Tissue Pack', 'packaging', 'packs', 20, true, 150, now(), now())
+  ('white_basmati_rice', 'White Basmati Rice', 'rice', 'kg', 5, true, true, 10, now(), now()),
+  ('brown_rice', 'Brown Rice', 'rice', 'kg', 3, true, true, 20, now(), now()),
+  ('classic_chicken', 'Classic Chicken', 'proteins', 'kg', 3, true, true, 30, now(), now()),
+  ('spicy_chicken', 'Spicy Chicken', 'proteins', 'kg', 3, true, true, 40, now(), now()),
+  ('rajma', 'Rajma', 'proteins', 'kg', 2, true, true, 50, now(), now()),
+  ('channa', 'Channa', 'proteins', 'kg', 2, true, true, 60, now(), now()),
+  ('eggs', 'Eggs', 'proteins', 'trays', 2, true, true, 70, now(), now()),
+  ('cheese', 'Cheese', 'proteins', 'bags', 2, true, true, 80, now(), now()),
+  ('onion', 'Onion', 'veggies', 'bags', 2, true, true, 90, now(), now()),
+  ('cucumber', 'Cucumber', 'veggies', 'bags', 2, true, true, 100, now(), now()),
+  ('lettuce', 'Lettuce', 'veggies', 'bags', 2, true, true, 110, now(), now()),
+  ('water_bottles', 'Water Bottles', 'drinks', 'cases', 2, true, true, 120, now(), now()),
+  ('regular_bowl', 'Regular Bowl', 'packaging', 'pcs', 50, true, true, 130, now(), now()),
+  ('paper_bag', 'Paper Bag', 'packaging', 'pcs', 50, true, true, 140, now(), now()),
+  ('tissue_pack', 'Tissue Pack', 'packaging', 'packs', 20, true, true, 150, now(), now())
 on conflict (sku) do update
 set
   name = excluded.name,
@@ -653,6 +610,7 @@ set
   unit = excluded.unit,
   default_threshold = excluded.default_threshold,
   is_active = excluded.is_active,
+  auto_provision_all_stores = excluded.auto_provision_all_stores,
   sort_order = excluded.sort_order,
   updated_at = now();
 
