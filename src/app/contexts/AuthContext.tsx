@@ -1610,7 +1610,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         },
       });
 
-      const message = data?.message || (error ? 'Could not send verification code right now. Please try again later.' : 'Could not send verification code right now. Please try again later.');
+      const message = data?.message ?? data?.error ?? (error ? 'Could not send verification code right now. Please try again later.' : 'Could not send verification code right now. Please try again later.');
 
       if (error || data?.success === false) {
         return { success: false, message };
@@ -1649,7 +1649,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         },
       });
 
-      const message = data?.message || (error ? 'Could not verify your code right now. Please try again later.' : 'Could not verify your code right now. Please try again later.');
+      const message = data?.message ?? data?.error ?? (error ? 'Could not verify your code right now. Please try again later.' : 'Could not verify your code right now. Please try again later.');
 
       if (error || data?.success === false) {
         return { success: false, message };

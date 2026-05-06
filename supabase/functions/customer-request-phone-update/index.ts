@@ -2,7 +2,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { verifyAndLoadCustomerSession } from '../_shared/customer-session.ts';
-import { normalizePhone, generateOtpCode, hashOtp, sendSms } from '../_shared/phone-update.ts';
+import { normalizePhone, isValidPhone, generateOtpCode, hashOtp, sendSms } from '../_shared/phone-update.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -57,8 +57,8 @@ Deno.serve(async (req) => {
   }
 
   const normalizedNewPhone = normalizePhone(newPhone);
-  if (normalizedNewPhone.length !== 10) {
-    return jsonResponse(400, { success: false, error: 'Phone number must be 10 digits.' });
+  if (!isValidPhone(normalizedNewPhone)) {
+    return jsonResponse(400, { success: false, error: 'Phone number must be exactly 10 digits.' });
   }
 
   const db = createClient(supabaseUrl, serviceRoleKey, {

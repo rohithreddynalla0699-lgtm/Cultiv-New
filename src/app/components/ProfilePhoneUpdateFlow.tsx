@@ -20,6 +20,19 @@ export function ProfilePhoneUpdateFlow({ currentPhone, phoneVerified, onPhoneUpd
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isRequesting, setIsRequesting] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(Date.now());
+
+  const normalizedPhone = newPhone.replace(/\D/g, '');
+  const isPhoneValid = PHONE_PATTERN.test(normalizedPhone);
+  const isPhoneDifferent = normalizedPhone !== currentPhone.replace(/\D/g, '');
+  const canSendCode = isPhoneValid && isPhoneDifferent && !isRequesting;
+
+  useEffect(() => {
+    if (!expiresAt) return undefined;
+
+    const interval = window.setInterval(() => setCurrentTime(Date.now()), 1000);
+    return () => window.clearInterval(interval);
+  }, [expiresAt]);
 
   const requestStateLabel = useMemo(() => {
     if (!requestId) return 'Start by entering a new phone number to receive a verification code.';
@@ -30,11 +43,11 @@ export function ProfilePhoneUpdateFlow({ currentPhone, phoneVerified, onPhoneUpd
     if (!expiresAt) return null;
     const expiresAtDate = new Date(expiresAt);
     if (Number.isNaN(expiresAtDate.getTime())) return null;
-    const delta = Math.max(0, expiresAtDate.getTime() - Date.now());
+    const delta = Math.max(0, expiresAtDate.getTime() - currentTime);
     const minutes = Math.floor(delta / 60000);
     const seconds = Math.floor((delta % 60000) / 1000);
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  }, [expiresAt]);
+  }, [expiresAt, currentTime]);
 
   useEffect(() => {
     if (!requestId) {
@@ -46,14 +59,19 @@ export function ProfilePhoneUpdateFlow({ currentPhone, phoneVerified, onPhoneUpd
     setStatusMessage(null);
     setErrorMessage(null);
 
-    const normalizedPhone = newPhone.replace(/\D/g, '');
-    if (!PHONE_PATTERN.test(normalizedPhone)) {
+    const cleanedPhone = newPhone.replace(/\D/g, '');
+    if (!PHONE_PATTERN.test(cleanedPhone)) {
       setErrorMessage('Enter a valid 10-digit phone number.');
       return;
     }
 
+    if (cleanedPhone === currentPhone.replace(/\D/g, '')) {
+      setErrorMessage('New phone number must be different from your current phone.');
+      return;
+    }
+
     setIsRequesting(true);
-    const result: CustomerPhoneUpdateRequestResult = await requestCustomerPhoneUpdate(normalizedPhone);
+    const result: CustomerPhoneUpdateRequestResult = await requestCustomerPhoneUpdate(cleanedPhone);
     setIsRequesting(false);
 
     if (!result.success) {
@@ -120,18 +138,28 @@ export function ProfilePhoneUpdateFlow({ currentPhone, phoneVerified, onPhoneUpd
           <input
             type="tel"
             value={newPhone}
-            onChange={(event) => setNewPhone(event.target.value)}
+            maxLength={10}
+            onChange={(event) => {
+              const digits = event.target.value.replace(/\D/g, '').slice(0, 10);
+              setNewPhone(digits);
+            }}
             placeholder="Enter 10-digit phone number"
             className="w-full rounded-2xl border border-border bg-background/80 px-4 py-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10"
           />
           <button
             type="button"
             onClick={handleRequestCode}
-            disabled={isRequesting}
+            disabled={!canSendCode}
             className="inline-flex items-center justify-center rounded-2xl bg-primary px-5 py-3 text-sm font-semibold text-white transition hover:bg-primary-600 disabled:cursor-not-allowed disabled:bg-primary/50"
           >
             {isRequesting ? 'Sending code...' : 'Send verification code'}
           </button>
+          {!isPhoneValid && newPhone.length > 0 ? (
+            <p className="text-sm text-red-700">Enter a valid 10-digit phone number.</p>
+          ) : null}
+          {isPhoneValid && !isPhoneDifferent ? (
+            <p className="text-sm text-red-700">New phone number must be different from your current phone.</p>
+          ) : null}
         </div>
 
         {requestId ? (

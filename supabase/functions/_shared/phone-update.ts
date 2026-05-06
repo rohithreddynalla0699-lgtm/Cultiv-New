@@ -2,7 +2,11 @@
 
 const normalizePhone = (phone: string): string => {
   const cleaned = (phone ?? '').replace(/\D/g, '');
-  return cleaned.slice(-10);
+  return cleaned;
+};
+
+const isValidPhone = (phone: string): boolean => {
+  return /^\d{10}$/.test(phone);
 };
 
 const formatSmsDestination = (normalizedPhone: string): string => `+91${normalizedPhone}`;
@@ -84,6 +88,7 @@ const sendSms = async (normalizedPhone: string, message: string): Promise<void> 
 
 export {
   normalizePhone,
+  isValidPhone,
   formatSmsDestination,
   generateOtpCode,
   hashOtp,
