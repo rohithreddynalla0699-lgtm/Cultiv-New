@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
+    "typecheck": "tsc --noEmit",
     "dev": "vite",
     "sync": "node server/sync-server.mjs",
     "dev:all": "concurrently -k -n SYNC,WEB -c green,cyan \"npm run sync\" \"npm run dev\""
