@@ -593,6 +593,9 @@ const invokeConfirmCheckoutPayment = async (input: ConfirmCheckoutPaymentInput):
 };
 
 const loadPendingGuestOrderClaims = async (customerSessionToken: string): Promise<PendingGuestOrderClaim[]> => {
+  void customerSessionToken;
+  return [];
+
   const { data, error } = await supabase.functions.invoke('customer-claim-orders', {
     body: {
       customerSessionToken,
@@ -613,6 +616,9 @@ const loadPendingGuestOrderClaims = async (customerSessionToken: string): Promis
 };
 
 const claimGuestOrders = async (customerSessionToken: string): Promise<number> => {
+  void customerSessionToken;
+  throw new Error('Guest order claiming is currently disabled.');
+
   const { data, error } = await supabase.functions.invoke('customer-claim-orders', {
     body: {
       customerSessionToken,

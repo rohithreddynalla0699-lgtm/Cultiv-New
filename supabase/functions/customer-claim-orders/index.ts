@@ -79,6 +79,11 @@ Deno.serve(async (req) => {
     return json(405, { success: false, error: 'Method not allowed.' });
   }
 
+  return json(200, {
+    success: false,
+    message: 'Guest order claiming is currently disabled.',
+  });
+
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (!supabaseUrl || !serviceRoleKey) {
