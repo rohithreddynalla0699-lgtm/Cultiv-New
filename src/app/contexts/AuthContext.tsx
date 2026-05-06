@@ -1214,22 +1214,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, [refreshSharedOrdersFromSupabase, supabaseRefreshTick]);
 
   useEffect(() => {
-    if (!customerSessionToken) {
+    if (!customerSessionToken || authRestoring || !customerAccount?.id) {
       setAllOrders([]);
       return;
     }
 
     void refreshCustomerOrdersFromSupabase();
-  }, [customerSessionToken, refreshCustomerOrdersFromSupabase, supabaseRefreshTick]);
+  }, [authRestoring, customerAccount?.id, customerSessionToken, refreshCustomerOrdersFromSupabase, supabaseRefreshTick]);
 
   useEffect(() => {
-    if (!customerSessionToken) {
+    if (!customerSessionToken || authRestoring || !customerAccount?.id) {
       setLoyaltySummary(null);
       return;
     }
 
     void refreshLoyalty();
-  }, [customerSessionToken, refreshLoyalty, supabaseRefreshTick]);
+  }, [authRestoring, customerAccount?.id, customerSessionToken, refreshLoyalty, supabaseRefreshTick]);
 
   const userRecord = customerSessionToken
     ? users.find((entry) => entry.id === currentUserId) ?? null
