@@ -71,9 +71,13 @@ function LegacyAdminRedirect() {
 }
 
 function CustomerProtectedRoute() {
-  const { user } = useAuth();
+  const { isAuthenticated, authRestoring } = useAuth();
 
-  if (!user) {
+  if (authRestoring) {
+    return null;
+  }
+
+  if (!isAuthenticated) {
     return <Navigate to="/" replace />;
   }
 

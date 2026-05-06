@@ -1,3 +1,4 @@
+// TODO: This script uses legacy customer auth storage and must be updated to cultiv_customer_session_token_v1 before being trusted.
 import { spawn } from 'node:child_process';
 import process from 'node:process';
 import { chromium } from 'playwright';

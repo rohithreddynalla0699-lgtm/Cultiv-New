@@ -35,7 +35,6 @@ import {
   SIGNATURE_BASE_PRICE_BY_BLEND,
   resolveProteinBlend,
 } from '../data/menuItemPresets';
-import { AuthPromptBeforeCheckout } from './AuthPromptBeforeCheckout';
 import { OrderReviewModal } from './OrderReviewModal';
 import { useAuth } from '../contexts/AuthContext';
 import { DISCOUNT_REWARD_VALUES, FREE_ITEM_REWARD_DETAILS, normalizeRewardId } from '../config/rewardsCatalog';
@@ -43,11 +42,7 @@ import type { OrderPageLocationState } from '../types/navigation';
 import type { CustomerCheckoutPaymentMethod, PlaceOrderInput, SelectedRewardEntitlementInput } from '../types/platform';
 import { resolveCheckoutPaymentProvider, type CheckoutPaymentIntent } from '../services/checkoutPaymentProvider';
 import { getSelectedStore, loadSelectedStoreId, loadStores, requestOpenStoreSelector, subscribeSelectedStore, type StoreLocatorStore } from '../data/storeLocator';
-import {
-  CHECKOUT_CONTACT_STORAGE_KEY,
-  GUEST_AUTH_PROMPT_DISMISSED_KEY,
-  GUEST_CONFIRMATION_STORAGE_KEY,
-} from '../data/shoppingSession';
+import { CHECKOUT_CONTACT_STORAGE_KEY } from '../data/shoppingSession';
 import {
   DEFAULT_ACTIVE_ORDER_CATEGORY_SLUG,
   POS_TAX_RATE,
@@ -65,12 +60,6 @@ interface CustomerState {
   fullName: string;
   phone: string;
   email: string;
-}
-
-interface GuestOrderConfirmation {
-  orderId: string;
-  fulfillmentWindow?: string;
-  createdAt: number;
 }
 
 interface GatewaySuccessPayload {
@@ -342,14 +331,12 @@ export function OrderPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
-  const [guestOrderConfirmation, setGuestOrderConfirmation] = useState<GuestOrderConfirmation | null>(null);
   const [customizing, setCustomizing] = useState<CustomizeState | null>(null);
   const [pendingCategorySlug, setPendingCategorySlug] = useState<string | null>(null);
   const [recentlyAddedItemId, setRecentlyAddedItemId] = useState<string | null>(null);
   const [editingLineKey, setEditingLineKey] = useState<string | null>(null);
   const [editingLineQuantity, setEditingLineQuantity] = useState<number>(1);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
-  const [showGuestAuthPrompt, setShowGuestAuthPrompt] = useState(true);
   const [selectedRewardIds, setSelectedRewardIds] = useState<string[]>([]);
   const [selectedTipOption, setSelectedTipOption] = useState<TipOption>('none');
   const [customTipInput, setCustomTipInput] = useState('');
@@ -392,20 +379,6 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
           email: current.email || (parsed.email ?? ''),
         }));
       }
-
-      const rawGuestConfirmation = localStorage.getItem(GUEST_CONFIRMATION_STORAGE_KEY);
-      if (rawGuestConfirmation) {
-        const parsed = JSON.parse(rawGuestConfirmation) as GuestOrderConfirmation;
-        const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
-        if (parsed?.orderId && (!parsed.createdAt || Date.now() - parsed.createdAt < TWENTY_FOUR_HOURS)) {
-          setGuestOrderConfirmation(parsed);
-        } else {
-          localStorage.removeItem(GUEST_CONFIRMATION_STORAGE_KEY);
-        }
-      }
-
-      const promptDismissed = localStorage.getItem(GUEST_AUTH_PROMPT_DISMISSED_KEY) === '1';
-      setShowGuestAuthPrompt(!promptDismissed);
     } catch {
       // Ignore malformed local storage payloads.
     }
@@ -424,19 +397,6 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
     localStorage.setItem(CHECKOUT_CONTACT_STORAGE_KEY, JSON.stringify(customer));
   }, [customer]);
 
-  useEffect(() => {
-    if (!isBrowser()) return;
-    if (guestOrderConfirmation) {
-      localStorage.setItem(GUEST_CONFIRMATION_STORAGE_KEY, JSON.stringify(guestOrderConfirmation));
-    } else {
-      localStorage.removeItem(GUEST_CONFIRMATION_STORAGE_KEY);
-    }
-  }, [guestOrderConfirmation]);
-
-  useEffect(() => {
-    if (!user || !guestOrderConfirmation) return;
-    setGuestOrderConfirmation(null);
-  }, [guestOrderConfirmation, user]);
 
   useEffect(() => {
   const syncStores = async () => {
@@ -977,6 +937,10 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
       setErrors((previous) => ({ ...previous, submit: ONLINE_CHECKOUT_DISABLED_MESSAGE }));
       return;
     }
+    if (!user) {
+      setErrors((previous) => ({ ...previous, submit: 'Please sign in or create an account to place your order.' }));
+      return;
+    }
     if (!validateOrder()) return;
 
     // Show review modal instead of immediately placing order
@@ -1110,9 +1074,13 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
       return;
     }
 
+    if (!user) {
+      setErrors((previous) => ({ ...previous, submit: 'Please sign in or create an account to place your order.' }));
+      return;
+    }
+
     submissionLockRef.current = true;
     setIsSubmitting(true);
-    setGuestOrderConfirmation(null);
     try {
       const orderInput: PlaceOrderInput = {
         category: 'Central Ordering',
@@ -1876,39 +1844,25 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
                     </div>
                   ) : null}
                   {errors.submit ? <p className="mt-1.5 text-xs text-red-600">{errors.submit}</p> : null}
-
-                  {guestOrderConfirmation ? (
-                    <div className="mt-3 rounded-xl border border-primary/15 bg-primary/5 px-3 py-2 text-xs text-foreground/75">
-                      <p className="font-semibold text-primary">Order placed successfully.</p>
-                      <p className="mt-1">Order number: #{guestOrderConfirmation.orderId.slice(-6)}</p>
-                      <p className="mt-1">Pickup window: {guestOrderConfirmation.fulfillmentWindow ?? PICKUP_ESTIMATE_WINDOW}</p>
+                  {!user ? (
+                    <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm leading-5 text-amber-800">
+                      Please sign in or create an account to place your order.
                     </div>
                   ) : null}
                 </div>
 
-                {/* ── Sticky footer: Place Order + optional sign-in nudge ── */}
+                {/* ── Sticky footer: Place Order ── */}
                 <div className="flex-none border-t border-primary/8 px-4 pb-4 pt-3 pb-[calc(env(safe-area-inset-bottom)+1rem)] md:px-5 md:pb-5">
                   <button
                     type="button"
                     onClick={placeFromCart}
-                    disabled={!CUSTOMER_ONLINE_CHECKOUT_ENABLED || isSubmitting || Boolean(customizing)}
+                    disabled={!user || !CUSTOMER_ONLINE_CHECKOUT_ENABLED || isSubmitting || Boolean(customizing)}
                     className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-full bg-primary py-3 text-sm font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
                   >
                     <ShoppingBag className="h-4 w-4" />
                     {!CUSTOMER_ONLINE_CHECKOUT_ENABLED ? 'Order at store for now' : isSubmitting ? 'Processing Payment...' : customizing ? 'Finish customization to continue' : `Pay & Place Order · ₹${payableTotal.toFixed(2)}`}
                   </button>
 
-                  {!user && showGuestAuthPrompt && cartCount > 0 ? (
-                    <AuthPromptBeforeCheckout
-                      fromPath="/order"
-                      onDismiss={() => {
-                        setShowGuestAuthPrompt(false);
-                        if (isBrowser()) {
-                          localStorage.setItem(GUEST_AUTH_PROMPT_DISMISSED_KEY, '1');
-                        }
-                      }}
-                    />
-                  ) : null}
                 </div>
               </div>
             </aside>

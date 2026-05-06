@@ -1,3 +1,4 @@
+// TODO: This script uses legacy customer auth storage and must be updated to cultiv_customer_session_token_v1 before being trusted.
 import { chromium } from 'playwright';
 
 const baseURL = process.env.CULTIV_BASE_URL || 'http://127.0.0.1:4173';

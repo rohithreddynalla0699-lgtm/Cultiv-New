@@ -188,7 +188,7 @@ export function OrderDetailScreen() {
               </div>
 
               {/* Show cancellation reason only if cancelled and reason is non-empty */}
-              {isCancelled && !!order.cancellation_reason && (
+              {order && isCancelled && !!order.cancellation_reason && (
                 <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
                   <div className="text-[12px] font-semibold uppercase tracking-[0.14em] text-rose-700 mb-1">Cancellation reason</div>
                   <div className="text-[13px] text-rose-700">{order.cancellation_reason}</div>
@@ -224,7 +224,7 @@ export function OrderDetailScreen() {
                       <div className="mt-3 flex flex-wrap gap-2">
                         {item.modifiers.map((mod, modIndex) => (
                           <span
-                            key={mod.id ?? mod.label ?? modIndex}
+                            key={('id' in mod ? mod.id : undefined) ?? mod.label ?? modIndex}
                             className="rounded-full border border-[#d7dec9] bg-[#eef3e5] px-2.5 py-1 text-[11px] font-medium text-[#556446]"
                           >
                             {mod.label ?? 'Modifier'}

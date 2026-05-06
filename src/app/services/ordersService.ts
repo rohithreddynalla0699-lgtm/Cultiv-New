@@ -175,7 +175,7 @@ export const ordersService = {
         customerPhone: order.phone,
         itemsSummary: getOrderItemsSummary(order),
         totalAmount: order.total,
-        storeId: getOrderStoreId(order),
+        storeId: getOrderStoreId(order) ?? '',
         sourceLabel: toSourceLabel(orderType),
         placedAt: order.createdAt,
         waitingMinutes: getWaitingMinutes(order.createdAt),

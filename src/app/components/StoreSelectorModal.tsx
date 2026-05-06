@@ -207,7 +207,7 @@ const filteredStores = useMemo(() => {
                 transition={{ delay: 0.06, duration: 0.32 }}
                 className="pr-10"
               >
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary/80">Delivery Store</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary/80">Pickup Location</p>
                 <h2 className="mt-1 text-xl font-semibold text-foreground sm:text-2xl">Select your nearest CULTIV store</h2>
                 <p className="mt-1 text-sm text-foreground/65">Use your location or search with zip code. You can switch anytime before checkout.</p>
               </motion.div>

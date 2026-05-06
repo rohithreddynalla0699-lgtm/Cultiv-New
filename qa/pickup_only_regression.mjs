@@ -1,3 +1,4 @@
+// TODO: This script uses legacy customer auth storage and must be updated to cultiv_customer_session_token_v1 before being trusted.
 /**
  * pickup_only_regression.mjs
  * Final QA regression — verifies pickup-only pricing model.

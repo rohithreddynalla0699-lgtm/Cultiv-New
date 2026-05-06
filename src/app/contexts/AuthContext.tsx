@@ -64,6 +64,7 @@ interface AuthContextType {
   user: User | null;
   customerAccount: CustomerAccountSummary | null;
   isAuthenticated: boolean;
+  authRestoring: boolean;
   orders: Order[];
   sharedOrders: Order[];
   activeOrders: Order[];
@@ -861,6 +862,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [internalOrdersSession, setInternalOrdersSession] = useState<InternalAccessSessionSnapshot | null>(() => readInternalAccessSessionSnapshot());
   const [customerAccount, setCustomerAccount] = useState<CustomerAccountSummary | null>(null);
   const [customerSessionToken, setCustomerSessionToken] = useState<string | null>(() => readCustomerSessionTokenFromStorage());
+  const [authRestoring, setAuthRestoring] = useState<boolean>(() => Boolean(readCustomerSessionTokenFromStorage()));
   const [loyaltySummary, setLoyaltySummary] = useState<LoyaltySummary | null>(null);
   const [loyaltyLoading, setLoyaltyLoading] = useState(false);
 
@@ -1269,16 +1271,33 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   useEffect(() => {
     const requestToken = normalizeCustomerSessionToken(customerSessionToken);
     if (!requestToken) {
+      setAuthRestoring(false);
       return;
     }
 
-    void syncCanonicalCustomerProfile(requestToken).catch((error) => {
-      console.error('Customer profile sync failed.', error);
-      const message = error instanceof Error ? error.message : String(error ?? '');
-      if (message.includes('Customer session token is invalid or expired.')) {
-        clearInvalidCustomerSession(requestToken);
+    let active = true;
+    const restore = async () => {
+      try {
+        await syncCanonicalCustomerProfile(requestToken);
+      } catch (error) {
+        console.error('Customer profile sync failed.', error);
+        const message = error instanceof Error ? error.message : String(error ?? '');
+        if (message.includes('Customer session token is invalid or expired.')) {
+          clearInvalidCustomerSession(requestToken);
+        }
+      } finally {
+        if (active) {
+          setAuthRestoring(false);
+        }
       }
-    });
+    };
+
+    setAuthRestoring(true);
+    void restore();
+
+    return () => {
+      active = false;
+    };
   }, [clearInvalidCustomerSession, customerSessionToken, syncCanonicalCustomerProfile]);
 
   const refreshPendingGuestOrderClaims = useCallback(async (sessionToken: string) => {
@@ -1933,6 +1952,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     user,
     customerAccount,
     isAuthenticated: Boolean(customerSessionToken),
+    authRestoring,
     orders,
     sharedOrders,
     activeOrders,

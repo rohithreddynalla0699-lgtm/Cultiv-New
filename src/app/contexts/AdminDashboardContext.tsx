@@ -401,7 +401,7 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
   const [session, setSession] = useState<InternalAccessSession | null>(() => normalizeSession(readStorage(STORAGE_KEYS.session, null), []));
 
   const refreshStores = useCallback(async () => {
-    const loadedStores = await loadStores(false);
+    const loadedStores = await loadStores();
     setCanonicalStores(loadedStores);
     setStores(loadedStores.map((store) => ({
       id: store.id,
