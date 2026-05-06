@@ -533,8 +533,25 @@ const invokeCreateCheckoutPaymentIntent = async (
     body: payload,
   });
 
+  let edgeErrorPayload: { success?: boolean; message?: string; error?: string; code?: string } | null = null;
+  if (error?.context && typeof error.context.json === 'function') {
+    try {
+      edgeErrorPayload = await error.context.json();
+    } catch {
+      edgeErrorPayload = null;
+    }
+  }
+
   if (error || !data?.success || !data?.paymentId || !data?.gateway) {
-    throw new Error(data?.message || error?.message || 'Payment is temporarily unavailable. Please try again.');
+    throw new Error(
+      data?.message
+      || data?.error
+      || edgeErrorPayload?.message
+      || edgeErrorPayload?.error
+      || edgeErrorPayload?.code
+      || error?.message
+      || 'Payment is temporarily unavailable. Please try again.',
+    );
   }
 
   const gateway = String(data.gateway).trim().toLowerCase();
