@@ -11,7 +11,7 @@ import { PrivacyPolicy } from './components/PrivacyPolicy';
 import { TermsOfUse } from './components/TermsOfUse';
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ShoppingBag, ChevronUp, ChevronRight } from 'lucide-react';
+import { ShoppingBag, ChevronUp, ChevronRight, Check } from 'lucide-react';
 import { HomeQuickActions } from './components/HomeQuickActions';
 import { HomeTimeSuggestions } from './components/HomeTimeSuggestions';
 import { HomeRewardsSnapshot } from './components/HomeRewardsSnapshot';
@@ -117,6 +117,7 @@ function AppShell() {
   } = useAuth();
   const [isCartPanelOpen, setIsCartPanelOpen] = useState(false);
   const [draftCartLines, setDraftCartLines] = useState(() => loadDraftCart());
+  const [flashMessage, setFlashMessage] = useState<string | null>(null);
   const previouslyAuthenticatedRef = useRef(Boolean(user));
 
   // Scroll to top on route change
@@ -136,6 +137,37 @@ function AppShell() {
       });
     }
   }, [location.pathname, location.state, navigate]);
+
+  useEffect(() => {
+    const state = (location.state ?? null) as Record<string, unknown> | null;
+    const nextFlashMessage = typeof state?.flashMessage === 'string' ? state.flashMessage : null;
+
+    if (!nextFlashMessage) {
+      return;
+    }
+
+    setFlashMessage(nextFlashMessage);
+
+    const nextState = { ...state };
+    delete nextState.flashMessage;
+
+    navigate(location.pathname, {
+      replace: true,
+      state: Object.keys(nextState).length > 0 ? nextState : null,
+    });
+  }, [location.pathname, location.state, navigate]);
+
+  useEffect(() => {
+    if (!flashMessage) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setFlashMessage(null);
+    }, 2600);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [flashMessage]);
 
   useEffect(() => {
     const state = location.state as HomeScrollLocationState | null;
@@ -210,6 +242,20 @@ function AppShell() {
   return (
     <div className="size-full">
       {!hideGlobalShell ? <Header /> : null}
+      {!hideGlobalShell && flashMessage ? (
+        <div className="pointer-events-none fixed inset-x-0 top-28 z-[100] flex justify-center px-4">
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+            className="inline-flex items-center gap-2 rounded-xl border border-green-200 bg-white px-4 py-2 text-sm font-medium text-green-800 shadow-[0_12px_24px_rgba(20,35,10,0.12)]"
+          >
+            <Check className="h-4 w-4 shrink-0" />
+            {flashMessage}
+          </motion.div>
+        </div>
+      ) : null}
       <main>
         <Suspense fallback={<div className="min-h-[35vh]" />}>
           <Routes>

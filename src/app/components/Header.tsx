@@ -21,7 +21,7 @@ import {
 import { requestOpenAppWaitlist, subscribeOpenAppWaitlist } from '../data/appLaunch';
 
 export function Header() {
-  const { user, logout } = useAuth();
+  const { user, logout, authRestoring } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -326,7 +326,10 @@ export function Header() {
                     <button
                       onClick={() => {
                         logout();
-                        navigate('/', { replace: true });
+                        navigate('/', {
+                          replace: true,
+                          state: { flashMessage: "You've been signed out successfully." },
+                        });
                         setShowUserMenu(false);
                       }}
                       className="block w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
@@ -337,6 +340,18 @@ export function Header() {
                 )}
               </AnimatePresence>
             </div>
+          ) : authRestoring ? (
+            <button
+              type="button"
+              disabled
+              aria-disabled="true"
+              className="inline-flex items-center gap-2 rounded-full border border-primary/12 bg-white/78 px-3 py-2 text-sm font-medium text-foreground/55 opacity-80"
+            >
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
+                <User className="h-4 w-4 text-primary" />
+              </div>
+              <span className="hidden sm:block">Loading…</span>
+            </button>
           ) : (
             <Link to="/login" className="inline-flex items-center gap-2 rounded-full border border-primary/12 bg-white/78 px-3 py-2 text-sm font-medium text-foreground/78 transition-colors hover:text-primary">
               <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center">

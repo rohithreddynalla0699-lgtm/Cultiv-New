@@ -21,11 +21,23 @@ export function ProfilePhoneUpdateFlow({ currentPhone, phoneVerified, onPhoneUpd
   const [isRequesting, setIsRequesting] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [currentTime, setCurrentTime] = useState(Date.now());
+  const [hasBlurredPhone, setHasBlurredPhone] = useState(false);
+  const [hasAttemptedPhoneSubmit, setHasAttemptedPhoneSubmit] = useState(false);
 
   const normalizedPhone = newPhone.replace(/\D/g, '');
   const isPhoneValid = PHONE_PATTERN.test(normalizedPhone);
   const isPhoneDifferent = normalizedPhone !== currentPhone.replace(/\D/g, '');
   const canSendCode = isPhoneValid && isPhoneDifferent && !isRequesting;
+  const shouldShowPhoneValidation = hasBlurredPhone || hasAttemptedPhoneSubmit;
+  const phoneValidationMessage = !shouldShowPhoneValidation
+    ? null
+    : !newPhone.length
+      ? null
+      : !isPhoneValid
+        ? 'Enter a valid 10-digit phone number.'
+        : !isPhoneDifferent
+          ? 'New phone number must be different from your current phone.'
+          : null;
 
   useEffect(() => {
     if (!expiresAt) return undefined;
@@ -65,6 +77,7 @@ export function ProfilePhoneUpdateFlow({ currentPhone, phoneVerified, onPhoneUpd
   const handleRequestCode = async () => {
     setStatusMessage(null);
     setErrorMessage(null);
+    setHasAttemptedPhoneSubmit(true);
 
     const cleanedPhone = newPhone.replace(/\D/g, '');
     if (!PHONE_PATTERN.test(cleanedPhone)) {
@@ -117,13 +130,15 @@ export function ProfilePhoneUpdateFlow({ currentPhone, phoneVerified, onPhoneUpd
       return;
     }
 
-    setStatusMessage(result.message);
+    setStatusMessage('Phone number updated successfully.');
     setErrorMessage(null);
     setRequestId(null);
     setExpiresAt(null);
     setOtpCode('');
     setNewPhone('');
-    onPhoneUpdated();
+    window.setTimeout(() => {
+      onPhoneUpdated();
+    }, 700);
   };
 
   return (
@@ -154,7 +169,10 @@ export function ProfilePhoneUpdateFlow({ currentPhone, phoneVerified, onPhoneUpd
             onChange={(event) => {
               const digits = event.target.value.replace(/\D/g, '').slice(0, 10);
               setNewPhone(digits);
+              setStatusMessage(null);
+              setErrorMessage(null);
             }}
+            onBlur={() => setHasBlurredPhone(true)}
             placeholder="Enter 10-digit phone number"
             className="w-full rounded-2xl border border-border bg-background/80 px-4 py-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/10"
           />
@@ -166,12 +184,11 @@ export function ProfilePhoneUpdateFlow({ currentPhone, phoneVerified, onPhoneUpd
           >
             {isRequesting ? 'Sending code...' : 'Send verification code'}
           </button>
-          {!isPhoneValid && newPhone.length > 0 ? (
-            <p className="text-sm text-red-700">Enter a valid 10-digit phone number.</p>
-          ) : null}
-          {isPhoneValid && !isPhoneDifferent ? (
-            <p className="text-sm text-red-700">New phone number must be different from your current phone.</p>
-          ) : null}
+          <div className="min-h-[20px]">
+            {phoneValidationMessage ? (
+              <p className="text-sm text-red-700">{phoneValidationMessage}</p>
+            ) : null}
+          </div>
         </div>
 
         {requestId ? (
@@ -199,14 +216,18 @@ export function ProfilePhoneUpdateFlow({ currentPhone, phoneVerified, onPhoneUpd
                 <p className="text-sm text-foreground/60">Expires in {requestExpiresAt}</p>
               ) : null}
             </div>
-            {isCodeExpired ? (
-              <p className="text-sm text-red-700">Code expired. Please request a new code.</p>
-            ) : null}
+            <div className="min-h-[20px]">
+              {isCodeExpired ? (
+                <p className="text-sm text-red-700">Code expired. Please request a new code.</p>
+              ) : null}
+            </div>
           </div>
         ) : null}
 
-        {statusMessage ? <p className="text-sm text-green-700">{statusMessage}</p> : null}
-        {errorMessage ? <p className="text-sm text-red-700">{errorMessage}</p> : null}
+        <div className="min-h-[24px]">
+          {statusMessage ? <p className="text-sm text-green-700">{statusMessage}</p> : null}
+          {!statusMessage && errorMessage ? <p className="text-sm text-red-700">{errorMessage}</p> : null}
+        </div>
       </div>
     </div>
   );

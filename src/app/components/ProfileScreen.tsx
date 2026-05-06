@@ -15,6 +15,10 @@ export function ProfileScreen() {
   const navigate = useNavigate();
   const [isEditingName, setIsEditingName] = useState(false);
   const [tempName, setTempName] = useState('');
+  const [isSavingName, setIsSavingName] = useState(false);
+  const [nameSuccessMessage, setNameSuccessMessage] = useState<string | null>(null);
+  const [nameErrorMessage, setNameErrorMessage] = useState<string | null>(null);
+  const [profileStatusMessage, setProfileStatusMessage] = useState<string | null>(null);
   const [isPhoneModalOpen, setIsPhoneModalOpen] = useState(false);
 
   if (!user) {
@@ -51,6 +55,14 @@ export function ProfileScreen() {
                 </div>
               </div>
 
+              <div className="mb-4 min-h-[24px]">
+                {profileStatusMessage ? (
+                  <p className="rounded-2xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+                    {profileStatusMessage}
+                  </p>
+                ) : null}
+              </div>
+
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div className="flex items-start gap-3 rounded-2xl bg-background/60 p-5">
                   <User className="mt-0.5 h-5 w-5 text-foreground/50" />
@@ -61,6 +73,8 @@ export function ProfileScreen() {
                         onClick={() => {
                           setIsEditingName(true);
                           setTempName(user.fullName);
+                          setNameSuccessMessage(null);
+                          setNameErrorMessage(null);
                         }}
                         className="rounded-full p-1 text-foreground/40 hover:bg-primary/10 hover:text-primary transition-colors"
                         aria-label="Edit name"
@@ -74,22 +88,58 @@ export function ProfileScreen() {
                           type="text"
                           value={tempName}
                           onChange={(e) => setTempName(e.target.value)}
+                          disabled={isSavingName}
                           className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
                         />
+                        <div className="min-h-[20px]">
+                          {nameErrorMessage ? (
+                            <p className="text-xs text-red-700">{nameErrorMessage}</p>
+                          ) : nameSuccessMessage ? (
+                            <p className="text-xs text-green-700">{nameSuccessMessage}</p>
+                          ) : null}
+                        </div>
                         <div className="flex gap-2">
                           <button
                             onClick={async () => {
-                              if (tempName.trim() && tempName.trim() !== user.fullName) {
-                                await updateCustomerProfile({ fullName: tempName.trim() });
+                              const trimmedName = tempName.trim();
+                              setNameSuccessMessage(null);
+                              setNameErrorMessage(null);
+
+                              if (!trimmedName) {
+                                setNameErrorMessage('Full name is required.');
+                                return;
                               }
+
+                              if (trimmedName === user.fullName) {
+                                setIsEditingName(false);
+                                return;
+                              }
+
+                              setIsSavingName(true);
+                              const result = await updateCustomerProfile({ fullName: trimmedName });
+                              setIsSavingName(false);
+
+                              if (!result.success) {
+                                setNameErrorMessage(result.message);
+                                return;
+                              }
+
+                              setNameSuccessMessage('Name updated.');
+                              setProfileStatusMessage('Name updated.');
                               setIsEditingName(false);
                             }}
+                            disabled={isSavingName}
                             className="rounded-lg bg-primary px-3 py-1 text-xs font-medium text-white hover:bg-primary/90"
                           >
-                            Save
+                            {isSavingName ? 'Saving...' : 'Save'}
                           </button>
                           <button
-                            onClick={() => setIsEditingName(false)}
+                            onClick={() => {
+                              setIsEditingName(false);
+                              setNameErrorMessage(null);
+                              setNameSuccessMessage(null);
+                            }}
+                            disabled={isSavingName}
                             className="rounded-lg border border-border px-3 py-1 text-xs font-medium hover:bg-background"
                           >
                             Cancel
@@ -184,7 +234,10 @@ export function ProfileScreen() {
                   <motion.button
                     onClick={() => {
                       logout();
-                      navigate('/', { replace: true });
+                      navigate('/', {
+                        replace: true,
+                        state: { flashMessage: "You've been signed out successfully." },
+                      });
                     }}
                     className="flex items-center justify-between rounded-2xl border border-red-100 bg-red-50 px-5 py-4 text-red-700"
                     whileHover={HoverLift.whileHover}
@@ -209,7 +262,7 @@ export function ProfileScreen() {
           phoneVerified={customerAccount?.phone_verified ?? false}
           onPhoneUpdated={() => {
             setIsPhoneModalOpen(false);
-            // Profile refresh is handled by auth context after confirmation.
+            setProfileStatusMessage('Phone number updated successfully.');
           }}
         />
       </Modal>
