@@ -219,6 +219,11 @@ export interface AuthActionResult {
 	userExists?: boolean;
 }
 
+export interface CustomerPhoneUpdateRequestResult extends AuthActionResult {
+	requestId?: string;
+	expiresAt?: string;
+}
+
 export interface WalkInLinkInput {
 	phone: string;
 	reference?: string;

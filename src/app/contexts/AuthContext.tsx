@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type {
   AuthActionResult,
+  CustomerPhoneUpdateRequestResult,
   LoyaltyProfile,
   PointsActivityItem,
   PointsBatch,
@@ -77,6 +78,9 @@ interface AuthContextType {
   signup: (input: SignupInput) => Promise<AuthActionResult>;
   requestPasswordReset: (identifier: string) => Promise<AuthActionResult>;
   resetPassword: (token: string, password: string) => Promise<AuthActionResult>;
+  updateCustomerProfile: (input: { fullName: string }) => Promise<AuthActionResult>;
+  requestCustomerPhoneUpdate: (newPhone: string) => Promise<CustomerPhoneUpdateRequestResult>;
+  confirmCustomerPhoneUpdate: (requestId: string, otpCode: string) => Promise<AuthActionResult>;
   logout: () => void;
   placeOrder: (input: PlaceOrderInput) => Promise<Order>;
   createCheckoutPaymentIntent: (input: PlaceOrderInput) => Promise<CheckoutPaymentIntent>;
@@ -1552,6 +1556,120 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const updateCustomerProfile = async ({ fullName }: { fullName: string }): Promise<AuthActionResult> => {
+    const trimmedName = fullName.trim();
+    if (!trimmedName) {
+      return { success: false, message: 'Full name is required.' };
+    }
+
+    if (!customerSessionTokenRef.current) {
+      return { success: false, message: 'Customer session is required.' };
+    }
+
+    try {
+      const { data, error } = await supabase.functions.invoke('customer-update-profile', {
+        body: {
+          customerSessionToken: customerSessionTokenRef.current,
+          fullName: trimmedName,
+        },
+      });
+
+      const message = data?.message || (error ? 'Could not update your profile right now. Please try again later.' : 'Could not update your profile right now. Please try again later.');
+
+      if (error || data?.success === false) {
+        return { success: false, message };
+      }
+
+      const customer = data.customer as { id: string; full_name: string; phone: string; email: string } | undefined;
+      if (customer) {
+        setUsers((previous) => upsertBackendCustomerUser(previous, customer));
+      }
+
+      return { success: true, message };
+    } catch (err) {
+      console.error('[updateCustomerProfile] unexpected error calling edge function', err);
+      return { success: false, message: 'Could not update your profile right now. Please try again later.' };
+    }
+  };
+
+  const requestCustomerPhoneUpdate = async (newPhone: string): Promise<CustomerPhoneUpdateRequestResult> => {
+    const trimmedPhone = newPhone.trim();
+    if (!trimmedPhone) {
+      return { success: false, message: 'Enter a valid phone number.' };
+    }
+
+    if (!customerSessionTokenRef.current) {
+      return { success: false, message: 'Customer session is required.' };
+    }
+
+    try {
+      const { data, error } = await supabase.functions.invoke('customer-request-phone-update', {
+        body: {
+          customerSessionToken: customerSessionTokenRef.current,
+          newPhone: trimmedPhone,
+        },
+      });
+
+      const message = data?.message || (error ? 'Could not send verification code right now. Please try again later.' : 'Could not send verification code right now. Please try again later.');
+
+      if (error || data?.success === false) {
+        return { success: false, message };
+      }
+
+      return {
+        success: true,
+        message,
+        requestId: typeof data?.requestId === 'string' ? data.requestId : undefined,
+        expiresAt: typeof data?.expiresAt === 'string' ? data.expiresAt : undefined,
+      };
+    } catch (err) {
+      console.error('[requestCustomerPhoneUpdate] unexpected error calling edge function', err);
+      return { success: false, message: 'Could not send verification code right now. Please try again later.' };
+    }
+  };
+
+  const confirmCustomerPhoneUpdate = async (requestId: string, otpCode: string): Promise<AuthActionResult> => {
+    const trimmedRequestId = requestId.trim();
+    const trimmedOtpCode = otpCode.trim();
+
+    if (!trimmedRequestId || !trimmedOtpCode) {
+      return { success: false, message: 'Request ID and code are required.' };
+    }
+
+    if (!customerSessionTokenRef.current) {
+      return { success: false, message: 'Customer session is required.' };
+    }
+
+    try {
+      const { data, error } = await supabase.functions.invoke('customer-confirm-phone-update', {
+        body: {
+          customerSessionToken: customerSessionTokenRef.current,
+          requestId: trimmedRequestId,
+          otpCode: trimmedOtpCode,
+        },
+      });
+
+      const message = data?.message || (error ? 'Could not verify your code right now. Please try again later.' : 'Could not verify your code right now. Please try again later.');
+
+      if (error || data?.success === false) {
+        return { success: false, message };
+      }
+
+      try {
+        if (customerSessionTokenRef.current) {
+          await syncCanonicalCustomerProfile(customerSessionTokenRef.current);
+        }
+      } catch (syncError) {
+        console.error('[confirmCustomerPhoneUpdate] profile sync failed', syncError);
+      }
+
+      return { success: true, message };
+    } catch (err) {
+      console.error('[confirmCustomerPhoneUpdate] unexpected error calling edge function', err);
+      return { success: false, message: 'Could not verify your code right now. Please try again later.' };
+    }
+  };
+
   const prepareCheckoutOrder = (input: PlaceOrderInput): { order: Order; linkedCustomerId?: string; usedRewardIds: string[] } => {
     const normalizedStoreId = input.storeId.trim();
     if (!normalizedStoreId) {
@@ -1965,6 +2083,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     signup,
     requestPasswordReset,
     resetPassword,
+    updateCustomerProfile,
+    requestCustomerPhoneUpdate,
+    confirmCustomerPhoneUpdate,
     logout,
     placeOrder,
     createCheckoutPaymentIntent,

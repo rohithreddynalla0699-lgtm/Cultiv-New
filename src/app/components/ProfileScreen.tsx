@@ -2,15 +2,20 @@
 
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowLeft, LockKeyhole, LogOut, Mail, Phone, ShieldCheck, User } from 'lucide-react';
+import { ArrowLeft, LockKeyhole, LogOut, Mail, Pencil, Phone, ShieldCheck, User } from 'lucide-react';
+import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Logo } from './Logo';
+import { ProfilePhoneUpdateFlow } from './ProfilePhoneUpdateFlow';
+import { Modal } from './Modal';
 import { CardStagger, CardStaggerItem, HoverLift, PageReveal } from '../core/motion/cultivMotion';
-import { WalkInLinkPrompt } from './WalkInLinkPrompt';
 
 export function ProfileScreen() {
-  const { user, customerAccount, loyaltySummary, logout } = useAuth();
+  const { user, customerAccount, loyaltySummary, logout, updateCustomerProfile } = useAuth();
   const navigate = useNavigate();
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [tempName, setTempName] = useState('');
+  const [isPhoneModalOpen, setIsPhoneModalOpen] = useState(false);
 
   if (!user) {
     return <Navigate to="/" replace />;
@@ -40,7 +45,7 @@ export function ProfileScreen() {
                   <div>
                     <p className="text-xs uppercase tracking-[0.24em] text-primary/62">Account summary</p>
                     <h1 className="text-3xl font-semibold tracking-tight">Your CULTIV Profile</h1>
-                    <p className="text-foreground/70 max-w-xl">This page shows backend-backed account identity and live rewards status.</p>
+                    <p className="text-foreground/70 max-w-xl">Manage your account details and view your rewards progress.</p>
                     <p className="mt-2 text-xs text-foreground/55">Member since {memberSince}</p>
                   </div>
                 </div>
@@ -49,22 +54,73 @@ export function ProfileScreen() {
               <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
                 <div className="flex items-start gap-3 rounded-2xl bg-background/60 p-5">
                   <User className="mt-0.5 h-5 w-5 text-foreground/50" />
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.18em] text-foreground/48">Full name</p>
-                    <p className="mt-2 font-medium">{user.fullName}</p>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs uppercase tracking-[0.18em] text-foreground/48">Full name</p>
+                      <button
+                        onClick={() => {
+                          setIsEditingName(true);
+                          setTempName(user.fullName);
+                        }}
+                        className="rounded-full p-1 text-foreground/40 hover:bg-primary/10 hover:text-primary transition-colors"
+                        aria-label="Edit name"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                    {isEditingName ? (
+                      <div className="mt-2 space-y-2">
+                        <input
+                          type="text"
+                          value={tempName}
+                          onChange={(e) => setTempName(e.target.value)}
+                          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            onClick={async () => {
+                              if (tempName.trim() && tempName.trim() !== user.fullName) {
+                                await updateCustomerProfile({ fullName: tempName.trim() });
+                              }
+                              setIsEditingName(false);
+                            }}
+                            className="rounded-lg bg-primary px-3 py-1 text-xs font-medium text-white hover:bg-primary/90"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => setIsEditingName(false)}
+                            className="rounded-lg border border-border px-3 py-1 text-xs font-medium hover:bg-background"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="mt-2 font-medium">{user.fullName}</p>
+                    )}
                   </div>
                 </div>
 
                 <div className="flex items-start gap-3 rounded-2xl bg-background/60 p-5">
                   <Phone className="mt-0.5 h-5 w-5 text-foreground/50" />
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <p className="text-xs uppercase tracking-[0.18em] text-foreground/48">Phone</p>
-                      {customerAccount?.phone_verified ? (
-                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">
-                          Verified
-                        </span>
-                      ) : null}
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <p className="text-xs uppercase tracking-[0.18em] text-foreground/48">Phone</p>
+                        {customerAccount?.phone_verified ? (
+                          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">
+                            Verified
+                          </span>
+                        ) : null}
+                      </div>
+                      <button
+                        onClick={() => setIsPhoneModalOpen(true)}
+                        className="rounded-full p-1 text-foreground/40 hover:bg-primary/10 hover:text-primary transition-colors"
+                        aria-label="Edit phone"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
                     </div>
                     <p className="mt-2 font-medium">{user.phone}</p>
                   </div>
@@ -83,6 +139,7 @@ export function ProfileScreen() {
                       ) : null}
                     </div>
                     <p className="mt-2 font-medium">{user.email || 'No email on file'}</p>
+                    <p className="mt-2 text-xs text-foreground/60">Email is locked and cannot be changed from this profile screen.</p>
                   </div>
                 </div>
               </div>
@@ -110,22 +167,9 @@ export function ProfileScreen() {
                   </div>
                 </div>
               </div>
-
-              <WalkInLinkPrompt defaultPhone={user.phone} />
             </div>
 
             <div className="space-y-6">
-              <div className="rounded-[28px] border border-primary/10 bg-white/85 p-6 shadow-[0_16px_48px_rgba(45,80,22,0.07)]">
-                <p className="text-xs uppercase tracking-[0.22em] text-primary/60">Account editing</p>
-                <h2 className="mt-2 text-2xl font-semibold tracking-[-0.03em]">Read-only for now.</h2>
-                <p className="mt-2 text-sm leading-6 text-foreground/62">
-                  You can view your account details, rewards, and linked orders here. Profile editing and advanced account tools are limited right now.
-                </p>
-                <div className="mt-5 rounded-2xl border border-border bg-background/78 px-4 py-4 text-sm leading-6 text-foreground/60">
-                  Online customer payment is not available yet, and payment details are not saved to your profile.
-                </div>
-              </div>
-
               <div className="rounded-3xl border border-border bg-card p-8 shadow-xl">
                 <p className="text-xs uppercase tracking-[0.22em] text-primary/60">Account actions</p>
                 <div className="mt-5 grid gap-3">
@@ -158,6 +202,17 @@ export function ProfileScreen() {
           </motion.div>
         </CardStagger>
       </div>
+
+      <Modal open={isPhoneModalOpen} onClose={() => setIsPhoneModalOpen(false)} ariaLabel="Update Phone Number">
+        <ProfilePhoneUpdateFlow
+          currentPhone={user.phone}
+          phoneVerified={customerAccount?.phone_verified ?? false}
+          onPhoneUpdated={() => {
+            setIsPhoneModalOpen(false);
+            // Profile refresh is handled by auth context after confirmation.
+          }}
+        />
+      </Modal>
     </PageReveal>
   );
 }
