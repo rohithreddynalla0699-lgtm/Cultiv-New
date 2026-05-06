@@ -1610,7 +1610,20 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         },
       });
 
-      const message = data?.message ?? data?.error ?? (error ? 'Could not send verification code right now. Please try again later.' : 'Could not send verification code right now. Please try again later.');
+      let edgeErrorPayload: { success?: boolean; message?: string; error?: string } | null = null;
+      if (error?.context && typeof error.context.json === 'function') {
+        try {
+          edgeErrorPayload = await error.context.json();
+        } catch {
+          edgeErrorPayload = null;
+        }
+      }
+
+      const message = data?.message
+        ?? data?.error
+        ?? edgeErrorPayload?.message
+        ?? edgeErrorPayload?.error
+        ?? 'Could not send verification code right now. Please try again later.';
 
       if (error || data?.success === false) {
         return { success: false, message };

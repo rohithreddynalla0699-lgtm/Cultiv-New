@@ -21,6 +21,9 @@ const jsonResponse = (status: number, payload: Record<string, unknown>) =>
 
 const OTP_EXPIRY_MS = 2 * 60 * 1000;
 const RESEND_COOLDOWN_MS = 90 * 1000;
+const MAX_RESEND_ATTEMPTS = 3;
+const MAX_TOTAL_SENDS_PER_WINDOW = 4;
+const REQUEST_WINDOW_MS = 30 * 60 * 1000;
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -71,6 +74,9 @@ Deno.serve(async (req) => {
   }
 
   const customerId = verifiedSession.session.customer_id;
+  const nowIso = new Date().toISOString();
+  const nowTs = Date.now();
+  const requestWindowStartIso = new Date(nowTs - REQUEST_WINDOW_MS).toISOString();
 
   const { data: customer, error: customerError } = await db
     .from('customers')
@@ -102,8 +108,29 @@ Deno.serve(async (req) => {
     return jsonResponse(409, { success: false, error: 'This phone number is already in use.' });
   }
 
-  const nowIso = new Date().toISOString();
-  const nowTs = Date.now();
+  const { data: recentRequests, error: recentRequestsError } = await db
+    .from('customer_phone_update_requests')
+    .select('id, resend_attempts')
+    .eq('customer_id', customerId)
+    .eq('new_phone_normalized', normalizedNewPhone)
+    .gte('requested_at', requestWindowStartIso);
+
+  if (recentRequestsError) {
+    console.error('[customer-request-phone-update] recent request lookup failed', recentRequestsError);
+    return jsonResponse(500, { success: false, error: 'Could not process your request.' });
+  }
+
+  const totalRecentSends = (recentRequests ?? []).reduce((sum, row) => (
+    sum + 1 + Number(row.resend_attempts ?? 0)
+  ), 0);
+
+  if (totalRecentSends >= MAX_TOTAL_SENDS_PER_WINDOW) {
+    return jsonResponse(429, {
+      success: false,
+      error: 'You have reached the maximum number of verification code requests. Please try again later.',
+    });
+  }
+
   const { data: existingRequest, error: existingRequestError } = await db
     .from('customer_phone_update_requests')
     .select('*')
@@ -134,6 +161,13 @@ Deno.serve(async (req) => {
   }
 
   if (isExistingActive && existingRequest) {
+    if ((existingRequest.resend_attempts ?? 0) >= MAX_RESEND_ATTEMPTS) {
+      return jsonResponse(429, {
+        success: false,
+        error: 'You have reached the maximum number of resend attempts for this code. Please start again.',
+      });
+    }
+
     const lastSentAt = new Date(existingRequest.last_otp_sent_at).getTime();
     if (lastSentAt + RESEND_COOLDOWN_MS > nowTs) {
       return jsonResponse(429, { success: false, error: 'Please wait before requesting a new code.' });

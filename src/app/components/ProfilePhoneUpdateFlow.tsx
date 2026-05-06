@@ -49,6 +49,13 @@ export function ProfilePhoneUpdateFlow({ currentPhone, phoneVerified, onPhoneUpd
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   }, [expiresAt, currentTime]);
 
+  const isCodeExpired = useMemo(() => {
+    if (!expiresAt) return false;
+    const expiresAtDate = new Date(expiresAt);
+    if (Number.isNaN(expiresAtDate.getTime())) return false;
+    return expiresAtDate.getTime() <= currentTime;
+  }, [expiresAt, currentTime]);
+
   useEffect(() => {
     if (!requestId) {
       setOtpCode('');
@@ -93,6 +100,11 @@ export function ProfilePhoneUpdateFlow({ currentPhone, phoneVerified, onPhoneUpd
 
     if (!otpCode.trim()) {
       setErrorMessage('Enter the verification code.');
+      return;
+    }
+
+    if (isCodeExpired) {
+      setErrorMessage('Code expired. Please request a new code.');
       return;
     }
 
@@ -178,7 +190,7 @@ export function ProfilePhoneUpdateFlow({ currentPhone, phoneVerified, onPhoneUpd
               <button
                 type="button"
                 onClick={handleVerifyCode}
-                disabled={isVerifying}
+                disabled={isVerifying || isCodeExpired}
                 className="inline-flex items-center justify-center rounded-2xl bg-foreground text-sm font-semibold text-white transition hover:bg-foreground/80 disabled:cursor-not-allowed disabled:bg-foreground/40 px-5 py-3"
               >
                 {isVerifying ? 'Verifying...' : 'Verify code'}
@@ -187,6 +199,9 @@ export function ProfilePhoneUpdateFlow({ currentPhone, phoneVerified, onPhoneUpd
                 <p className="text-sm text-foreground/60">Expires in {requestExpiresAt}</p>
               ) : null}
             </div>
+            {isCodeExpired ? (
+              <p className="text-sm text-red-700">Code expired. Please request a new code.</p>
+            ) : null}
           </div>
         ) : null}
 
