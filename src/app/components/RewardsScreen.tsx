@@ -26,11 +26,6 @@ const messageMotion = {
   transition: { duration: 0.22 },
 };
 
-const subtleCardMotion = {
-  whileHover: { y: -2 },
-  whileTap: { scale: 0.995 },
-};
-
 export function RewardsScreen() {
   const { user, loyaltyProfile, loyaltySummary, offers, redeemReward } = useAuth();
 

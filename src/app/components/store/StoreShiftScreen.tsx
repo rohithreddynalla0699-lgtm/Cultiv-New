@@ -3,7 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import { SectionHeader } from '../admin/SectionHeader';
 import { useAdminDashboard } from '../../contexts/AdminDashboardContext';
-import { employeeShiftService, type ShiftDashboardEmployee, type ShiftToggleResult } from '../../services/employeeShiftService.ts';
+import { employeeShiftService, type ShiftDashboardEmployee } from '../../services/employeeShiftService.ts';
 
 type CardFeedback = {
   tone: 'success' | 'error';

@@ -79,11 +79,6 @@ const toSourceLabel = (orderType: OrdersBoardOrder['orderType']): OrdersBoardOrd
   }
 };
 
-const toDisplayId = (orderId: string) => {
-  if (!orderId) return 'N/A';
-  return orderId.length > 8 ? orderId.slice(-8).toUpperCase() : orderId.toUpperCase();
-};
-
 const getWaitingMinutes = (createdAt: string) => {
   const createdAtMs = new Date(createdAt).getTime();
   if (Number.isNaN(createdAtMs)) return 0;

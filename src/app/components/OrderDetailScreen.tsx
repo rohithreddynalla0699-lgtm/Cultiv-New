@@ -7,7 +7,6 @@ import { CardStagger, CardStaggerItem, PageReveal } from '../core/motion/cultivM
 import { Receipt } from '../receipts/components/Receipt';
 import { useReceiptData } from '../receipts/hooks/useReceiptData';
 import { printReceiptElement } from '../receipts/utils/printReceiptElement';
-import { getDisplayOrderNumber } from '../utils/orderDisplay';
 import { loadStores, type StoreLocatorStore } from '../data/storeLocator';
 
 type OrderItemModifier = {

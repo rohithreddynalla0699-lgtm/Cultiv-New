@@ -26,7 +26,6 @@ export function StoreRouteGuard({ children }: StoreRouteGuardProps) {
 
   const hasStoreLogin = Boolean(internalSession && internalSession.scopeType === 'store' && internalSession.scopeStoreId);
   const hasShiftSession = Boolean(isSessionActive && session);
-  const isShiftRoute = location.pathname === '/store/shift';
   const isOperationalRoute = (
     location.pathname === '/store/pos'
     || location.pathname === '/store/orders'

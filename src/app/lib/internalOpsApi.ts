@@ -783,7 +783,6 @@ export async function listInternalOrders(params: {
   };
 
   const cleanedFilters = cleanFilters(params.filters ?? {});
-  const sessionToken = params.internalSessionToken;
 
   try {
     const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
