@@ -1274,10 +1274,10 @@ function NoticeBanner({
 }
 
 function getReceiptSuccessMessage(option: PosReceiptDeliveryOption) {
-  if (option === 'all') return 'Receipt printed and digital delivery was attempted.';
+  if (option === 'all') return 'Receipt printed. Manual digital delivery was attempted.';
   if (option === 'email') return 'Email receipt sent.';
   if (option === 'text') return 'Text receipt sent.';
-  return 'Print dialog opened. You can print again if needed.';
+  return 'Print dialog was requested. If nothing opened, check browser pop-up settings and try again.';
 }
 
 function getReceiptDeliveryMessage(
@@ -1299,10 +1299,10 @@ function getReceiptDeliveryMessage(
   if (option === 'all') {
     if (!deliveryResult.success) {
       if (deliveryResult.code === 'DIGITAL_RECEIPT_PROVIDER_NOT_CONFIGURED') {
-        return 'Receipt printed. Digital receipt delivery is not configured yet. Please print the receipt.';
+        return 'Receipt printed. Manual digital receipt sending is not configured for this environment yet.';
       }
       return printedLocally
-        ? 'Receipt printed. Digital delivery could not be completed right now.'
+        ? 'Receipt printed. Manual digital delivery could not be completed right now.'
         : deliveryResult.message;
     }
 
@@ -1319,7 +1319,7 @@ function getReceiptDeliveryMessage(
 
   if (!deliveryResult.success) {
     if (deliveryResult.code === 'DIGITAL_RECEIPT_PROVIDER_NOT_CONFIGURED') {
-      return 'Digital receipt delivery is not configured yet. Please print the receipt.';
+      return 'Manual digital receipt sending is not configured for this environment yet.';
     }
     return deliveryResult.message || 'Receipt could not be sent. Payment is safe. Try again.';
   }

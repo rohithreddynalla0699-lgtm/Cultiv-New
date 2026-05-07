@@ -16,7 +16,7 @@ const fadeUp = {
 const nextSteps = [
   'Your order is queued in the kitchen',
   'Kitchen staff starts preparing your food',
-  "You'll get a notification when ready",
+  'Check your order status before heading to the store',
   'Pickup at counter with your order number',
 ];
 
@@ -135,7 +135,9 @@ export function OrderSuccessScreen() {
 
               {order?.email ? (
                 <div className="mt-4 text-center text-xs text-foreground/55 sm:text-sm">
-                  Receipt email available for{' '}
+                  You can view or print your receipt anytime from this order.
+                  {` `}
+                  Order email:{' '}
                   <span className="font-medium text-foreground/70">
                     {order.email}
                   </span>

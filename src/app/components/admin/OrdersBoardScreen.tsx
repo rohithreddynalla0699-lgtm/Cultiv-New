@@ -394,13 +394,13 @@ export function OrdersBoardScreen() {
 
         if (!result.success && receiptDeliveryOption !== 'all') {
           setReceiptActionError(result.code === 'DIGITAL_RECEIPT_PROVIDER_NOT_CONFIGURED'
-            ? 'Digital receipt delivery is not configured yet. Please print the receipt.'
+            ? 'Manual digital receipt sending is not configured for this environment yet.'
             : result.message);
           return;
         }
 
         if (!result.success && receiptDeliveryOption === 'all') {
-          setReceiptActionSuccess('Receipt printed. Digital receipt delivery is not configured yet. Please print the receipt.');
+          setReceiptActionSuccess('Receipt printed. Manual digital receipt sending is not configured for this environment yet.');
           return;
         }
 
@@ -419,7 +419,7 @@ export function OrdersBoardScreen() {
         return;
       }
 
-      setReceiptActionSuccess('Print dialog opened. You can print again if needed.');
+      setReceiptActionSuccess('Print dialog was requested. If nothing opened, check browser pop-up settings and try again.');
     } catch (error) {
       setReceiptActionError(error instanceof Error ? error.message : 'Receipt could not be sent right now.');
     } finally {

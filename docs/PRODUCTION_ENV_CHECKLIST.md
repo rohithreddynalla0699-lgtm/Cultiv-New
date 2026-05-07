@@ -421,6 +421,12 @@ Required:
 - receipt retrieval works
 - receipt send function works
 
+### Pilot rollout rule
+
+- customer-facing receipt rollout should remain view/print only until digital delivery is separately validated
+- internal email/SMS receipt sending is optional and provider-dependent
+- do not promise automatic email receipts, SMS receipts, or order-ready notifications yet
+
 ## 7. Deployment Checklist
 
 ## Frontend Deployment

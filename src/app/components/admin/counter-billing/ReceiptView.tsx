@@ -73,23 +73,16 @@ export function ReceiptView({
           <SummaryCard label="Paid" value={`Rs ${createdOrder.total.toFixed(2)}`} />
         </div>
 
-        <div className="mt-4 flex min-h-0 flex-1 flex-col items-center">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#7A8B6E]">
-            Receipt Preview
-          </p>
+          <div className="mt-4 flex min-h-0 flex-1 flex-col items-center">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#7A8B6E]">
+              Receipt Preview
+            </p>
 
           <div className="mt-3 w-full max-w-[352px] rounded-[24px] bg-white p-3 shadow-[0_16px_40px_rgba(26,39,17,0.08)] ring-1 ring-[#ECF1E6]">
             <div className="max-h-[320px] overflow-y-auto rounded-[18px] bg-[#FBFCF8] p-2">
               {receiptData ? <Receipt data={receiptData} variant="screen" showActions={false} /> : null}
             </div>
           </div>
-
-          <button
-            type="button"
-            className="mt-3 text-[11px] font-medium text-[#667085] underline-offset-2 transition hover:text-primary hover:underline"
-          >
-            View larger preview
-          </button>
         </div>
 
         <div className="mt-4 space-y-3">
@@ -115,6 +108,10 @@ export function ReceiptView({
                 </button>
               );
             })}
+          </div>
+
+          <div className="rounded-2xl border border-[#E7EDE0] bg-[#FAFBF8] px-3 py-2 text-[11px] text-[#667085]">
+            Digital receipt sending is manual and only works when providers are configured.
           </div>
 
           {requirements.needsPhone || requirements.needsEmail ? (
