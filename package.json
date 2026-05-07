@@ -9,7 +9,8 @@
     "dev": "vite",
     "sync": "node server/sync-server.mjs",
     "dev:all": "concurrently -k -n SYNC,WEB -c green,cyan \"npm run sync\" \"npm run dev\"",
-    "qa:store-operator": "node qa/local_store_operator_regression.mjs"
+    "qa:store-operator": "node qa/local_store_operator_regression.mjs",
+    "qa:customer-checkout": "node qa/local_customer_checkout_mock.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.101.1",
