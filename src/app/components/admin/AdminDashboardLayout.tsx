@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { NavLink, Navigate, Outlet } from 'react-router-dom';
 import { useLocation } from 'react-router-dom';
 import { useAdminDashboard } from '../../contexts/AdminDashboardContext';
+import { useStoreSession } from '../../hooks/useStoreSession';
 import { Logo } from '../Logo';
 
 export function AdminDashboardLayout() {
@@ -15,6 +16,7 @@ export function AdminDashboardLayout() {
     logoutInternalAccess,
     hasPermission,
   } = useAdminDashboard();
+  const { session: operatorSession, endSession: endOperatorSession, isSessionLoading: isOperatorSessionLoading } = useStoreSession();
   const location = useLocation();
 
   if (!session) {
@@ -47,6 +49,11 @@ export function AdminDashboardLayout() {
   const currentNav = navItems.find((item) => location.pathname.startsWith(item.to));
   const currentPage = currentNav?.label ?? 'Dashboard';
   const roleLabel = session.roleName;
+  const isStoreOperationalRoute = (
+    location.pathname === '/store/orders'
+    || location.pathname === '/store/pos'
+    || location.pathname === '/store/inventory'
+  );
 
   return (
     <>
@@ -85,34 +92,71 @@ export function AdminDashboardLayout() {
 
         <div className="rounded-[32px] border border-primary/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.94),rgba(247,250,243,0.88))] p-4 shadow-[0_20px_58px_rgba(45,80,22,0.1)] md:p-6 lg:p-7">
           <div className="mb-6 rounded-[26px] border border-primary/10 bg-white/76 px-4 py-3.5">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="flex min-h-[38px] flex-wrap items-center gap-2 text-sm">
-                <span className="rounded-full bg-[#F7FAF3] px-3 py-1.5 font-medium text-foreground/72">Store: {scopeLabel}</span>
-                <span className="rounded-full bg-[#F7FAF3] px-3 py-1.5 font-medium text-foreground/72">Role: {roleLabel}</span>
-                <span className="rounded-full bg-[#F7FAF3] px-3 py-1.5 font-medium text-foreground/72">Page: {currentPage}</span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <div className="inline-flex h-[38px] min-w-[190px] items-center gap-2 rounded-xl border border-primary/12 bg-background/70 px-2.5">
-                  <span className="shrink-0 text-[10px] font-medium uppercase tracking-[0.14em] text-foreground/48">Scope</span>
-                  {hasPermission('can_switch_stores') ? (
-                    <select id="admin-store-scope" name="storeScope" aria-label="Store scope" data-testid="admin-store-scope" value={activeStoreScope} onChange={(event) => setActiveStoreScope(event.target.value)} className="h-8 w-full rounded-lg bg-transparent px-2 text-sm text-foreground/78 outline-none transition-colors focus:bg-white/70">
-                      <option value="all">All stores</option>
-                      {stores.map((store) => (
-                        <option key={store.id} value={store.id}>{store.name} · {store.city}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <span className="truncate px-2 text-sm font-medium text-foreground/74">{scopeLabel}</span>
-                  )}
+            {isStoreWorkspace ? (
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-primary/58">Store Workspace</p>
+                  <h1 className="mt-1 text-xl font-semibold tracking-[-0.03em] text-foreground">
+                    {scopeLabel} · {currentPage}
+                  </h1>
+                  <p className="mt-1 text-sm text-foreground/58">Store access</p>
                 </div>
 
-                <button data-testid="admin-signout" type="button" onClick={logoutInternalAccess} className="inline-flex h-[38px] items-center justify-center gap-2 rounded-xl border border-primary/14 bg-white/86 px-3.5 text-sm font-medium text-foreground/72 transition-all duration-200 hover:-translate-y-0.5 hover:bg-white hover:text-foreground hover:shadow-[0_10px_22px_rgba(45,80,22,0.08)]">
-                  <LogOut className="h-4 w-4" />
-                  Sign Out
-                </button>
+                <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+                  {isStoreOperationalRoute && operatorSession ? (
+                    <span className="inline-flex items-center gap-2 rounded-2xl border border-[#7FB58B] bg-[#DDF1E4] px-3.5 py-2 text-sm font-semibold text-[#175A35] shadow-[0_8px_20px_rgba(45,80,22,0.08)]">
+                      <span className="h-2.5 w-2.5 rounded-full bg-[#2D804B]" />
+                      Operator: {operatorSession.employee_name}
+                    </span>
+                  ) : null}
+
+                  {isStoreOperationalRoute && operatorSession ? (
+                    <button
+                      type="button"
+                      onClick={() => void endOperatorSession('manual')}
+                      disabled={isOperatorSessionLoading}
+                      className="inline-flex h-[38px] items-center justify-center rounded-xl border border-[#D9A9A9] bg-[#FFF3F3] px-3.5 text-sm font-semibold text-[#8B2E2E] transition-all duration-200 hover:-translate-y-0.5 hover:border-[#C98F8F] hover:bg-[#FFE8E8] hover:shadow-[0_10px_22px_rgba(139,46,46,0.12)] disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      End Session
+                    </button>
+                  ) : null}
+
+                  <button data-testid="admin-signout" type="button" onClick={logoutInternalAccess} className="inline-flex h-[38px] items-center justify-center gap-2 rounded-xl border border-[#BFC7B9] bg-[#F7F8F5] px-3.5 text-sm font-medium text-foreground/78 transition-all duration-200 hover:-translate-y-0.5 hover:border-[#AAB4A3] hover:bg-white hover:text-foreground hover:shadow-[0_10px_22px_rgba(45,80,22,0.08)]">
+                    <LogOut className="h-4 w-4" />
+                    Sign Out
+                  </button>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div className="flex min-h-[38px] flex-wrap items-center gap-2 text-sm">
+                  <span className="rounded-full bg-[#F7FAF3] px-3 py-1.5 font-medium text-foreground/72">Store: {scopeLabel}</span>
+                  <span className="rounded-full bg-[#F7FAF3] px-3 py-1.5 font-medium text-foreground/72">Role: {roleLabel}</span>
+                  <span className="rounded-full bg-[#F7FAF3] px-3 py-1.5 font-medium text-foreground/72">Page: {currentPage}</span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="inline-flex h-[38px] min-w-[190px] items-center gap-2 rounded-xl border border-primary/12 bg-background/70 px-2.5">
+                    <span className="shrink-0 text-[10px] font-medium uppercase tracking-[0.14em] text-foreground/48">Scope</span>
+                    {hasPermission('can_switch_stores') ? (
+                      <select id="admin-store-scope" name="storeScope" aria-label="Store scope" data-testid="admin-store-scope" value={activeStoreScope} onChange={(event) => setActiveStoreScope(event.target.value)} className="h-8 w-full rounded-lg bg-transparent px-2 text-sm text-foreground/78 outline-none transition-colors focus:bg-white/70">
+                        <option value="all">All stores</option>
+                        {stores.map((store) => (
+                          <option key={store.id} value={store.id}>{store.name} · {store.city}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="truncate px-2 text-sm font-medium text-foreground/74">{scopeLabel}</span>
+                    )}
+                  </div>
+
+                  <button data-testid="admin-signout" type="button" onClick={logoutInternalAccess} className="inline-flex h-[38px] items-center justify-center gap-2 rounded-xl border border-[#BFC7B9] bg-[#F7F8F5] px-3.5 text-sm font-medium text-foreground/78 transition-all duration-200 hover:-translate-y-0.5 hover:border-[#AAB4A3] hover:bg-white hover:text-foreground hover:shadow-[0_10px_22px_rgba(45,80,22,0.08)]">
+                    <LogOut className="h-4 w-4" />
+                    Sign Out
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <Outlet />

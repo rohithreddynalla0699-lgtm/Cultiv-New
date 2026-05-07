@@ -1,7 +1,8 @@
 import type { ReactNode } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useStoreSession } from '../../hooks/useStoreSession';
 import { useAdminDashboard } from '../../contexts/AdminDashboardContext';
+import { StoreOperatorUnlockGate } from './StoreOperatorUnlockGate';
 
 interface StoreRouteGuardProps {
   children: ReactNode;
@@ -20,26 +21,39 @@ function SessionExpiringSoonModal() {
 
 export function StoreRouteGuard({ children }: StoreRouteGuardProps) {
   const { session: internalSession, activeStoreScope } = useAdminDashboard();
-  const { session, isSessionActive, isExpiringSoon } = useStoreSession();
+  const { session, isSessionActive, isExpiringSoon, isSessionInitializing } = useStoreSession();
+  const location = useLocation();
 
   const hasStoreLogin = Boolean(internalSession && internalSession.scopeType === 'store' && internalSession.scopeStoreId);
   const hasShiftSession = Boolean(isSessionActive && session);
+  const isShiftRoute = location.pathname === '/store/shift';
+  const isOperationalRoute = (
+    location.pathname === '/store/pos'
+    || location.pathname === '/store/orders'
+    || location.pathname === '/store/inventory'
+  );
+  const requiresOperatorSession = isOperationalRoute;
 
   if (internalSession && internalSession.scopeType === 'global') {
     return <Navigate to="/operations/summary" replace />;
   }
 
-  if (!hasStoreLogin && !hasShiftSession) {
+  if (!hasStoreLogin) {
     return <Navigate to="/operations/access" replace />;
   }
 
+  if (isSessionInitializing) {
+    return null;
+  }
+
   if (activeStoreScope !== 'all' && session && activeStoreScope !== session.store_id) {
-    return <Navigate to="/shift" replace />;
+    return <Navigate to="/store/shift" replace />;
   }
 
   return (
     <>
       {children}
+      {requiresOperatorSession && !hasShiftSession ? <StoreOperatorUnlockGate currentPath={location.pathname} /> : null}
       {isExpiringSoon ? <SessionExpiringSoonModal /> : null}
     </>
   );

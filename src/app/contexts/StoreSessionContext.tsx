@@ -1,8 +1,8 @@
 /**
  * CULTIV Store Session Context
- * 
- * Provides store employee session state and actions to all components.
- * Single source of truth for "who is currently operating in this store"
+ *
+ * Backend-backed source of truth for "who is currently operating in this store".
+ * sessionStorage is kept only as a UX cache and is never trusted as the active source of truth.
  */
 
 import React, { createContext, useCallback, useEffect, useRef, useState } from 'react';
@@ -12,38 +12,121 @@ import {
   CreateEmployeeSessionResult,
   EndEmployeeSessionResult,
   STORE_SESSION_STORAGE_KEY,
-  SESSION_EXPIRY_DURATION_MS,
   SESSION_INACTIVITY_TIMEOUT_MS,
   SESSION_EXPIRING_WARNING_MS,
 } from '../types/storeSession';
+import {
+  endStoreOperatorSession,
+  getStoreOperatorSession,
+  startStoreOperatorSession,
+  touchStoreOperatorSession,
+  type InternalStoreOperatorSession,
+} from '../lib/internalOpsApi';
 
-// Create context
+const ADMIN_ACCESS_SESSION_STORAGE_KEY = 'cultiv_admin_access_session_v1';
+const INTERNAL_ACCESS_SESSION_UPDATED_EVENT = 'cultiv:internal-access-session-updated';
+const TOUCH_THROTTLE_MS = 30 * 1000;
+
+interface InternalAccessSessionSnapshot {
+  internalSessionToken: string;
+  roleKey: 'owner' | 'admin' | 'store';
+  scopeType: 'global' | 'store';
+  scopeStoreId: string | null;
+}
+
 export const StoreSessionContext = createContext<StoreSessionContextValue | undefined>(
   undefined
 );
 
 interface StoreSessionProviderProps {
   children: React.ReactNode;
-  sessionRepository?: any; // For future Supabase integration
 }
 
-/**
- * Provider component that wraps store operations (POS, Orders, Inventory)
- * Manages employee session state during shift
- */
+const normalizeInternalAccessSession = (value: unknown): InternalAccessSessionSnapshot | null => {
+  if (!value || typeof value !== 'object') return null;
+  const candidate = value as Record<string, unknown>;
+  const internalSessionToken = typeof candidate.internalSessionToken === 'string'
+    ? candidate.internalSessionToken.trim()
+    : '';
+  const roleKey = candidate.roleKey;
+  const scopeType = candidate.scopeType;
+  const scopeStoreId = typeof candidate.scopeStoreId === 'string' ? candidate.scopeStoreId : null;
+
+  if (!internalSessionToken) return null;
+  if (roleKey !== 'owner' && roleKey !== 'admin' && roleKey !== 'store') return null;
+  if (scopeType !== 'global' && scopeType !== 'store') return null;
+
+  return {
+    internalSessionToken,
+    roleKey,
+    scopeType,
+    scopeStoreId,
+  };
+};
+
+const readInternalAccessSessionSnapshot = (): InternalAccessSessionSnapshot | null => {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const raw = localStorage.getItem(ADMIN_ACCESS_SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    return normalizeInternalAccessSession(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+};
+
+const readStoredSessionCache = (): StoreEmployeeSession | null => {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const raw = sessionStorage.getItem(STORE_SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as StoreEmployeeSession;
+  } catch {
+    return null;
+  }
+};
+
+const mapBackendRoleToStoreSessionRole = (
+  role: InternalStoreOperatorSession['employeeRole'],
+): 'staff' | 'store_manager' => (role === 'manager' ? 'store_manager' : 'staff');
+
+const mapOperatorSessionToStoreEmployeeSession = (
+  operatorSession: InternalStoreOperatorSession,
+  previousSession: StoreEmployeeSession | null,
+): StoreEmployeeSession => ({
+  session_id: operatorSession.id,
+  employee_id: operatorSession.employeeId,
+  employee_name: operatorSession.employeeName ?? previousSession?.employee_name ?? 'Store Employee',
+  employee_role: mapBackendRoleToStoreSessionRole(operatorSession.employeeRole),
+  store_id: operatorSession.storeId,
+  store_name: previousSession?.store_name ?? 'Active Store',
+  shift_id: operatorSession.shiftId,
+  clocked_in_at: operatorSession.startedAt,
+  clocked_out_at: null,
+  session_started_at: operatorSession.startedAt,
+  session_expires_at: operatorSession.expiresAt,
+  last_activity_at: operatorSession.lastActivityAt,
+  is_active: true,
+  is_locked: operatorSession.isLocked,
+  device_id: operatorSession.deviceId ?? undefined,
+  device_name: operatorSession.deviceName ?? undefined,
+});
+
 export const StoreSessionProvider: React.FC<StoreSessionProviderProps> = ({
   children,
-  sessionRepository: _sessionRepository,
 }) => {
-  // State
   const [session, setSession] = useState<StoreEmployeeSession | null>(null);
+  const [isSessionInitializing, setIsSessionInitializing] = useState(true);
   const [isSessionLoading, setIsSessionLoading] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [isExpiringSoon, setIsExpiringSoon] = useState(false);
 
-  // Refs
   const inactivityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const warningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTouchSentAtRef = useRef(0);
+  const sessionRef = useRef<StoreEmployeeSession | null>(null);
 
   const clearSessionTimers = useCallback(() => {
     if (inactivityTimerRef.current) {
@@ -56,148 +139,47 @@ export const StoreSessionProvider: React.FC<StoreSessionProviderProps> = ({
     }
   }, []);
 
-  const scheduleSessionTimers = useCallback(
-    (lastActivityAtIso: string) => {
-      clearSessionTimers();
+  const clearLocalSession = useCallback(() => {
+    sessionStorage.removeItem(STORE_SESSION_STORAGE_KEY);
+    setSession(null);
+    sessionRef.current = null;
+    setSessionError(null);
+    setIsExpiringSoon(false);
+    clearSessionTimers();
+    lastTouchSentAtRef.current = 0;
+  }, [clearSessionTimers]);
 
-      const now = Date.now();
-      const lastActivity = new Date(lastActivityAtIso).getTime();
-      const elapsedMs = Math.max(0, now - lastActivity);
-      const timeUntilExpireMs = Math.max(0, SESSION_INACTIVITY_TIMEOUT_MS - elapsedMs);
-      const timeUntilWarningMs = Math.max(0, timeUntilExpireMs - SESSION_EXPIRING_WARNING_MS);
-
-      setIsExpiringSoon(timeUntilExpireMs <= SESSION_EXPIRING_WARNING_MS);
-
-      warningTimerRef.current = setTimeout(() => {
-        setIsExpiringSoon(true);
-      }, timeUntilWarningMs);
-
-      inactivityTimerRef.current = setTimeout(() => {
-        setSessionError('Session expired due to inactivity. Please clock in again.');
-        void endSession();
-      }, timeUntilExpireMs);
-    },
-    [clearSessionTimers]
-  );
-
-  // Initialize session from storage on mount
-  const initializeSession = useCallback(async () => {
-    setIsSessionLoading(true);
-    try {
-      // Try to restore from sessionStorage (device memory)
-      const stored = sessionStorage.getItem(STORE_SESSION_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored) as StoreEmployeeSession;
-
-        // Verify session is still valid (not expired, employee still exists)
-        // In production, verify with server
-        const expiresAt = new Date(parsed.session_expires_at).getTime();
-        if (expiresAt > Date.now()) {
-          setSession(parsed);
-          setSessionError(null);
-          scheduleSessionTimers(parsed.last_activity_at);
-          return;
-        } else {
-          // Session expired, clear it
-          sessionStorage.removeItem(STORE_SESSION_STORAGE_KEY);
-        }
-      }
-
-      // No valid session found
-      setSession(null);
-      setIsExpiringSoon(false);
-    } catch {
-      // Storage read error, ignore silently
-      console.warn('Failed to restore session from storage.');
-    } finally {
-      setIsSessionLoading(false);
-    }
-  }, [scheduleSessionTimers]);
-
-  // Create new session (called after successful shift start)
-  const createSession = useCallback(
-    async (
-      employeeId: string,
-      employeeName: string,
-      employeeRole: 'staff' | 'store_manager',
-      storeId: string,
-      storeName: string,
-      shiftId: string
-    ): Promise<CreateEmployeeSessionResult> => {
-      setIsSessionLoading(true);
-      setSessionError(null);
-
-      try {
-        const now = new Date();
-        const expiresAt = new Date(now.getTime() + SESSION_EXPIRY_DURATION_MS);
-
-        const newSession: StoreEmployeeSession = {
-          session_id: `session-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`,
-          employee_id: employeeId,
-          employee_name: employeeName,
-          employee_role: employeeRole,
-          store_id: storeId,
-          store_name: storeName,
-          shift_id: shiftId,
-          clocked_in_at: now.toISOString(),
-          clocked_out_at: null,
-          session_started_at: now.toISOString(),
-          session_expires_at: expiresAt.toISOString(),
-          last_activity_at: now.toISOString(),
-          is_active: true,
-          is_locked: false,
-        };
-
-        // Store in sessionStorage for device persistence
-        sessionStorage.setItem(STORE_SESSION_STORAGE_KEY, JSON.stringify(newSession));
-
-        // TODO: In production, also persist to server/database for audit
-        // await sessionRepository.createSession(newSession);
-
-        setSession(newSession);
-        setSessionError(null);
-        setIsExpiringSoon(false);
-        scheduleSessionTimers(newSession.last_activity_at);
-
-        return { success: true, session: newSession };
-      } catch (err) {
-        const error = err instanceof Error ? err.message : 'Failed to create session';
-        setSessionError(error);
-        return { success: false, error };
-      } finally {
-        setIsSessionLoading(false);
-      }
-    },
-    []
-  );
-
-  // End session (called after shift end or manual logout)
-  const endSession = useCallback(async (): Promise<EndEmployeeSessionResult> => {
+  const endSessionWithReason = useCallback(async (
+    reason: 'clock_out' | 'logout' | 'expired' | 'manual' | 'replaced',
+  ): Promise<EndEmployeeSessionResult> => {
     setIsSessionLoading(true);
 
     try {
-      if (!session) {
-        return { success: false, error: 'No active session' };
+      const activeSession = sessionRef.current;
+      if (!activeSession) {
+        clearLocalSession();
+        return { success: true };
       }
 
       const endedSession: StoreEmployeeSession = {
-        ...session,
+        ...activeSession,
         clocked_out_at: new Date().toISOString(),
         is_active: false,
       };
 
-      // TODO: In production, persist to server/database for audit
-      // await sessionRepository.endSession(endedSession.session_id);
+      const internalSession = readInternalAccessSessionSnapshot();
+      if (internalSession?.internalSessionToken && internalSession.scopeType === 'store') {
+        const { error } = await endStoreOperatorSession({
+          internalSessionToken: internalSession.internalSessionToken,
+          reason,
+        });
 
-      // Clear from storage
-      sessionStorage.removeItem(STORE_SESSION_STORAGE_KEY);
+        if (error) {
+          throw new Error(error);
+        }
+      }
 
-      // Clear state
-      setSession(null);
-      setSessionError(null);
-      setIsExpiringSoon(false);
-      clearSessionTimers();
-
+      clearLocalSession();
       return { success: true, session: endedSession };
     } catch (err) {
       const error = err instanceof Error ? err.message : 'Failed to end session';
@@ -206,73 +188,212 @@ export const StoreSessionProvider: React.FC<StoreSessionProviderProps> = ({
     } finally {
       setIsSessionLoading(false);
     }
-  }, [clearSessionTimers, session]);
+  }, [clearLocalSession]);
 
-  // Touch session (update last activity on user interaction)
-  const touchSession = useCallback(async () => {
-    if (!session) return;
+  const scheduleSessionTimers = useCallback((lastActivityAtIso: string) => {
+    clearSessionTimers();
+
+    const now = Date.now();
+    const lastActivity = new Date(lastActivityAtIso).getTime();
+    const elapsedMs = Math.max(0, now - lastActivity);
+    const timeUntilExpireMs = Math.max(0, SESSION_INACTIVITY_TIMEOUT_MS - elapsedMs);
+    const timeUntilWarningMs = Math.max(0, timeUntilExpireMs - SESSION_EXPIRING_WARNING_MS);
+
+    setIsExpiringSoon(timeUntilExpireMs <= SESSION_EXPIRING_WARNING_MS);
+
+    warningTimerRef.current = setTimeout(() => {
+      setIsExpiringSoon(true);
+    }, timeUntilWarningMs);
+
+    inactivityTimerRef.current = setTimeout(() => {
+      setSessionError('Session expired due to inactivity. Please clock in again.');
+      void endSessionWithReason('expired');
+    }, timeUntilExpireMs);
+  }, [clearSessionTimers, endSessionWithReason]);
+
+  const initializeSession = useCallback(async () => {
+    setIsSessionInitializing(true);
+    try {
+      const internalSession = readInternalAccessSessionSnapshot();
+      if (!internalSession || internalSession.scopeType !== 'store' || !internalSession.scopeStoreId) {
+        clearLocalSession();
+        return;
+      }
+
+      const cachedSession = readStoredSessionCache();
+      const { data, error } = await getStoreOperatorSession({
+        internalSessionToken: internalSession.internalSessionToken,
+      });
+
+      if (error || !data?.success) {
+        clearLocalSession();
+        setSessionError(error ?? 'Could not restore store operator session.');
+        return;
+      }
+
+      if (!data.session) {
+        clearLocalSession();
+        return;
+      }
+
+      const restoredSession = mapOperatorSessionToStoreEmployeeSession(data.session, cachedSession);
+      sessionStorage.setItem(STORE_SESSION_STORAGE_KEY, JSON.stringify(restoredSession));
+      setSession(restoredSession);
+      sessionRef.current = restoredSession;
+      setSessionError(null);
+      scheduleSessionTimers(restoredSession.last_activity_at);
+      lastTouchSentAtRef.current = Date.now();
+    } catch {
+      clearLocalSession();
+      setSessionError('Could not restore store operator session.');
+    } finally {
+      setIsSessionInitializing(false);
+    }
+  }, [clearLocalSession, scheduleSessionTimers]);
+
+  const createSession = useCallback(async (
+    employeeId: string,
+    employeeName: string,
+    employeeRole: 'staff' | 'store_manager',
+    storeId: string,
+    storeName: string,
+    shiftId: string,
+  ): Promise<CreateEmployeeSessionResult> => {
+    setIsSessionLoading(true);
+    setSessionError(null);
 
     try {
-      const now = new Date().toISOString();
+      void employeeName;
+      void employeeRole;
+      void storeId;
+      void shiftId;
+
+      const internalSession = readInternalAccessSessionSnapshot();
+      if (!internalSession || internalSession.scopeType !== 'store' || !internalSession.scopeStoreId) {
+        throw new Error('Store login is required before starting an operator session.');
+      }
+
+      const { data, error } = await startStoreOperatorSession({
+        internalSessionToken: internalSession.internalSessionToken,
+        employeeId,
+        deviceName: typeof window !== 'undefined' ? window.location.hostname : undefined,
+      });
+
+      if (error || !data?.success || !data.session) {
+        throw new Error(error ?? 'Failed to create store operator session');
+      }
+
+      const createdSession = mapOperatorSessionToStoreEmployeeSession(data.session, {
+        session_id: '',
+        employee_id: employeeId,
+        employee_name: employeeName,
+        employee_role: employeeRole,
+        store_id: internalSession.scopeStoreId,
+        store_name: storeName,
+        shift_id: shiftId,
+        clocked_in_at: data.session.startedAt,
+        clocked_out_at: null,
+        session_started_at: data.session.startedAt,
+        session_expires_at: data.session.expiresAt,
+        last_activity_at: data.session.lastActivityAt,
+        is_active: true,
+        is_locked: data.session.isLocked,
+      });
+
+      sessionStorage.setItem(STORE_SESSION_STORAGE_KEY, JSON.stringify(createdSession));
+      setSession(createdSession);
+      sessionRef.current = createdSession;
+      setSessionError(null);
+      setIsExpiringSoon(false);
+      scheduleSessionTimers(createdSession.last_activity_at);
+      lastTouchSentAtRef.current = Date.now();
+
+      return { success: true, session: createdSession };
+    } catch (err) {
+      const error = err instanceof Error ? err.message : 'Failed to create session';
+      setSessionError(error);
+      return { success: false, error };
+    } finally {
+      setIsSessionLoading(false);
+    }
+  }, [scheduleSessionTimers]);
+
+  const endSession = useCallback(async (
+    reason: 'clock_out' | 'logout' | 'expired' | 'manual' | 'replaced' = 'manual',
+  ): Promise<EndEmployeeSessionResult> => {
+    return endSessionWithReason(reason);
+  }, [endSessionWithReason]);
+
+  const touchSession = useCallback(async () => {
+    const activeSession = sessionRef.current;
+    if (!activeSession) return;
+
+    try {
+      const nowMs = Date.now();
+      if (nowMs - lastTouchSentAtRef.current < TOUCH_THROTTLE_MS) {
+        return;
+      }
+
+      const internalSession = readInternalAccessSessionSnapshot();
+      if (!internalSession || internalSession.scopeType !== 'store') {
+        return;
+      }
+
+      const { data, error } = await touchStoreOperatorSession({
+        internalSessionToken: internalSession.internalSessionToken,
+      });
+
+      if (error || !data?.success) {
+        console.warn('Failed to touch session.');
+        return;
+      }
 
       const updatedSession: StoreEmployeeSession = {
-        ...session,
-        last_activity_at: now,
+        ...activeSession,
+        last_activity_at: data.lastActivityAt,
+        session_expires_at: data.expiresAt,
       };
 
-      // Update in memory
       setSession(updatedSession);
+      sessionRef.current = updatedSession;
       setIsExpiringSoon(false);
-
-      // Update in storage
       sessionStorage.setItem(STORE_SESSION_STORAGE_KEY, JSON.stringify(updatedSession));
-
-      // TODO: In production, update server/database
-      // await sessionRepository.touchSession(updatedSession.session_id, now);
-
       scheduleSessionTimers(updatedSession.last_activity_at);
+      lastTouchSentAtRef.current = nowMs;
     } catch {
       console.warn('Failed to touch session.');
     }
-  }, [scheduleSessionTimers, session]);
+  }, [scheduleSessionTimers]);
 
-  // Clear session synchronously (e.g., on logout/force-close)
   const clearSession = useCallback(() => {
-    sessionStorage.removeItem(STORE_SESSION_STORAGE_KEY);
-    setSession(null);
-    setSessionError(null);
-    setIsExpiringSoon(false);
-    clearSessionTimers();
-  }, [clearSessionTimers]);
+    clearLocalSession();
+  }, [clearLocalSession]);
 
-  // Compute derived state
   const hasActiveSession = !!(session && session.is_active && !session.is_locked);
 
-  const isOperatingInStore = useCallback(
-    (storeId: string): boolean => {
-      return !!(hasActiveSession && session && session.store_id === storeId);
-    },
-    [hasActiveSession, session]
-  );
+  const isOperatingInStore = useCallback((storeId: string): boolean => {
+    return !!(hasActiveSession && session && session.store_id === storeId);
+  }, [hasActiveSession, session]);
 
   const canPerformAction = useCallback((): boolean => {
     return !!(hasActiveSession && !session?.is_locked);
   }, [hasActiveSession, session]);
 
-  // Initialize on mount
   useEffect(() => {
-    initializeSession();
+    sessionRef.current = session;
+  }, [session]);
+
+  useEffect(() => {
+    void initializeSession();
   }, [initializeSession]);
 
-  // Listen for user activity (click, keypress, touch)
   useEffect(() => {
-    if (!session) return;
+    if (!session) return undefined;
 
     const handleActivity = () => {
-      touchSession();
+      void touchSession();
     };
 
-    // Add activity listeners
     document.addEventListener('click', handleActivity);
     document.addEventListener('keypress', handleActivity);
     document.addEventListener('touchstart', handleActivity);
@@ -284,20 +405,23 @@ export const StoreSessionProvider: React.FC<StoreSessionProviderProps> = ({
     };
   }, [session, touchSession]);
 
-  // Sync session changes across tabs/windows
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
-      if (event.key !== STORE_SESSION_STORAGE_KEY) return;
+      if (event.key !== STORE_SESSION_STORAGE_KEY && event.key !== ADMIN_ACCESS_SESSION_STORAGE_KEY) {
+        return;
+      }
       void initializeSession();
     };
 
     window.addEventListener('storage', onStorage);
+    window.addEventListener(INTERNAL_ACCESS_SESSION_UPDATED_EVENT, initializeSession);
+
     return () => {
       window.removeEventListener('storage', onStorage);
+      window.removeEventListener(INTERNAL_ACCESS_SESSION_UPDATED_EVENT, initializeSession);
     };
   }, [initializeSession]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       clearSessionTimers();
@@ -306,6 +430,7 @@ export const StoreSessionProvider: React.FC<StoreSessionProviderProps> = ({
 
   const value: StoreSessionContextValue = {
     session,
+    isSessionInitializing,
     isSessionLoading,
     sessionError,
     isExpiringSoon,
@@ -324,10 +449,6 @@ export const StoreSessionProvider: React.FC<StoreSessionProviderProps> = ({
   );
 };
 
-/**
- * Hook to use store employee session
- * Throws if used outside StoreSessionProvider
- */
 export const useStoreSession = (): StoreSessionContextValue => {
   const context = React.useContext(StoreSessionContext);
   if (!context) {

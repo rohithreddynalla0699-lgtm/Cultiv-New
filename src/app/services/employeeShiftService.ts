@@ -1,13 +1,14 @@
 import {
   loadInternalShiftDashboard,
   submitInternalShiftPin,
+  verifyInternalShiftResume,
   type InternalShiftDashboardEmployee,
   type InternalShiftDashboardResponse,
   type InternalShiftToggleResponse,
 } from '../lib/internalOpsApi';
 import type { EmployeeRole, InternalAccessSession } from '../types/admin';
 
-export type ShiftAction = 'clock_in' | 'clock_out';
+export type ShiftAction = 'clock_in' | 'clock_out' | 'resume_operator';
 
 export interface ShiftDashboardEmployee extends InternalShiftDashboardEmployee {}
 
@@ -51,6 +52,23 @@ export const employeeShiftService = {
 
     if (error || !data) {
       throw new Error(error ?? 'Could not submit employee PIN.');
+    }
+
+    return data;
+  },
+
+  async verifyResume(session: InternalAccessSession, employeeId: string, pin: string): Promise<ShiftToggleResult> {
+    const { data, error } = await verifyInternalShiftResume({
+      internalSessionToken: session.internalSessionToken,
+      roleKey: session.roleKey,
+      scopeType: toShiftScopeType(session.scopeType),
+      scopeStoreId: session.scopeStoreId,
+      employeeId,
+      pin,
+    });
+
+    if (error || !data) {
+      throw new Error(error ?? 'Could not resume store operator session.');
     }
 
     return data;

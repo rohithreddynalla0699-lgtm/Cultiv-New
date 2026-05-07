@@ -6,11 +6,50 @@ export interface InternalOrderStatusUpdateResponse {
 }
 
 export interface InternalShiftToggleResponse {
-  action: 'clock_in' | 'clock_out';
+  action: 'clock_in' | 'clock_out' | 'resume_operator';
   shiftId: string;
   employeeId: string;
   employeeName: string;
   employeeRole: 'manager' | 'kitchen' | 'counter';
+}
+
+export interface InternalStoreOperatorSession {
+  id: string;
+  sessionToken: string;
+  internalAccessSessionId: string;
+  internalUserId: string;
+  employeeId: string;
+  employeeName: string | null;
+  employeeRole: 'manager' | 'kitchen' | 'counter' | null;
+  shiftId: string;
+  storeId: string;
+  deviceId: string | null;
+  deviceName: string | null;
+  startedAt: string;
+  lastActivityAt: string;
+  expiresAt: string;
+  isLocked: boolean;
+}
+
+export interface InternalStoreOperatorSessionStartResponse {
+  success: boolean;
+  session: InternalStoreOperatorSession;
+}
+
+export interface InternalStoreOperatorSessionGetResponse {
+  success: boolean;
+  session: InternalStoreOperatorSession | null;
+}
+
+export interface InternalStoreOperatorSessionTouchResponse {
+  success: boolean;
+  lastActivityAt: string;
+  expiresAt: string;
+}
+
+export interface InternalStoreOperatorSessionEndResponse {
+  success: boolean;
+  ended: boolean;
 }
 /// <reference types="vite/client" />
 
@@ -18,6 +57,10 @@ const INTERNAL_LOGIN_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/in
 const INTERNAL_ORDERS_LIST_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-orders-list`;
 const INTERNAL_ORDER_STATUS_UPDATE_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-order-status-update`;
 const INTERNAL_SHIFT_CONTROL_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-shift-control`;
+const STORE_OPERATOR_SESSION_START_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/store-operator-session-start`;
+const STORE_OPERATOR_SESSION_GET_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/store-operator-session-get`;
+const STORE_OPERATOR_SESSION_TOUCH_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/store-operator-session-touch`;
+const STORE_OPERATOR_SESSION_END_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/store-operator-session-end`;
 const INTERNAL_EMPLOYEES_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-employees`;
 const INTERNAL_INVENTORY_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-inventory`;
 const INTERNAL_MENU_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-menu`;
@@ -764,6 +807,65 @@ export async function submitInternalShiftPin(params: {
     INTERNAL_SHIFT_CONTROL_URL,
     { ...params, action: 'submit_pin' },
     'Could not submit employee PIN.'
+  );
+}
+
+export async function verifyInternalShiftResume(params: {
+  internalSessionToken: string;
+  roleKey: 'owner' | 'admin' | 'store';
+  scopeType: 'global' | 'store';
+  scopeStoreId: string | null;
+  employeeId: string;
+  pin: string;
+}): Promise<{ data: InternalShiftToggleResponse | null; error: string | null }> {
+  return postInternal<InternalShiftToggleResponse>(
+    INTERNAL_SHIFT_CONTROL_URL,
+    { ...params, action: 'resume_operator' },
+    'Could not resume store operator session.'
+  );
+}
+
+export async function startStoreOperatorSession(params: {
+  internalSessionToken: string;
+  employeeId: string;
+  deviceId?: string;
+  deviceName?: string;
+}): Promise<{ data: InternalStoreOperatorSessionStartResponse | null; error: string | null }> {
+  return postInternal<InternalStoreOperatorSessionStartResponse>(
+    STORE_OPERATOR_SESSION_START_URL,
+    params,
+    'Could not start store operator session.'
+  );
+}
+
+export async function getStoreOperatorSession(params: {
+  internalSessionToken: string;
+}): Promise<{ data: InternalStoreOperatorSessionGetResponse | null; error: string | null }> {
+  return postInternal<InternalStoreOperatorSessionGetResponse>(
+    STORE_OPERATOR_SESSION_GET_URL,
+    params,
+    'Could not load store operator session.'
+  );
+}
+
+export async function touchStoreOperatorSession(params: {
+  internalSessionToken: string;
+}): Promise<{ data: InternalStoreOperatorSessionTouchResponse | null; error: string | null }> {
+  return postInternal<InternalStoreOperatorSessionTouchResponse>(
+    STORE_OPERATOR_SESSION_TOUCH_URL,
+    params,
+    'Could not update store operator session activity.'
+  );
+}
+
+export async function endStoreOperatorSession(params: {
+  internalSessionToken: string;
+  reason: 'clock_out' | 'logout' | 'expired' | 'manual' | 'replaced';
+}): Promise<{ data: InternalStoreOperatorSessionEndResponse | null; error: string | null }> {
+  return postInternal<InternalStoreOperatorSessionEndResponse>(
+    STORE_OPERATOR_SESSION_END_URL,
+    params,
+    'Could not end store operator session.'
   );
 }
 

@@ -3,7 +3,6 @@ import { Navigate } from 'react-router-dom';
 import { Eye, EyeOff } from 'lucide-react';
 import { SectionHeader } from '../admin/SectionHeader';
 import { useAdminDashboard } from '../../contexts/AdminDashboardContext';
-import { useStoreSession } from '../../hooks/useStoreSession';
 import { employeeShiftService, type ShiftDashboardEmployee, type ShiftToggleResult } from '../../services/employeeShiftService.ts';
 
 type CardFeedback = {
@@ -33,7 +32,6 @@ const formatHours = (value: number) => `${value.toFixed(2)} hrs`;
 
 export function StoreShiftScreen() {
   const { session, activeStoreScope, activeStore } = useAdminDashboard();
-  const { session: storeSession, startSession, endSession } = useStoreSession();
   const [dashboard, setDashboard] = useState<ShiftDashboardEmployee[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -97,24 +95,6 @@ export function StoreShiftScreen() {
   const onShiftEmployees = dashboard.filter((employee) => employee.status === 'on_shift');
   const compactSummary = `${activeStore.name} · ${formatDisplayDate(new Date())} · ${onShiftEmployees.length} on shift`;
 
-  const handleSessionState = useCallback(async (result: ShiftToggleResult) => {
-    if (result.action === 'clock_in') {
-      await startSession(
-        result.employeeId,
-        result.employeeName,
-        employeeShiftService.getRoleForSession(result.employeeRole),
-        activeStoreScope,
-        activeStore.name,
-        result.shiftId,
-      );
-      return;
-    }
-
-    if (storeSession?.employee_id === result.employeeId) {
-      await endSession();
-    }
-  }, [activeStore.name, activeStoreScope, endSession, startSession, storeSession?.employee_id]);
-
   const handleSubmit = useCallback(async (employee: ShiftDashboardEmployee) => {
     const pin = (pinInputs[employee.employeeId] ?? '').trim();
     if (!/^\d{6}$/.test(pin)) {
@@ -127,7 +107,6 @@ export function StoreShiftScreen() {
     setActiveSubmitEmployeeId(employee.employeeId);
     try {
       const result = await employeeShiftService.submitPin(session, employee.employeeId, pin);
-      await handleSessionState(result);
       setPinInputs((previous) => ({ ...previous, [employee.employeeId]: '' }));
       setScopedCardFeedback(employee.employeeId, {
         tone: 'success',
@@ -146,7 +125,7 @@ export function StoreShiftScreen() {
       setIsSubmitting(false);
       setActiveSubmitEmployeeId(null);
     }
-  }, [handleSessionState, loadDashboard, pinInputs, session, setScopedCardFeedback]);
+  }, [loadDashboard, pinInputs, session, setScopedCardFeedback]);
 
   return (
     <div className="space-y-6">
@@ -179,6 +158,7 @@ export function StoreShiftScreen() {
           {dashboard.map((employee) => {
             const pinInputId = `store-shift-pin-${employee.employeeId}`;
             const pinInputName = `storeShiftPin-${employee.employeeId}`;
+            const actionLabel = employee.status === 'on_shift' ? 'Clock Out' : 'Clock In';
 
             return (
             <article key={employee.employeeId} className="rounded-[24px] border border-primary/12 bg-white/92 p-4 shadow-[0_12px_30px_rgba(45,80,22,0.08)]">
@@ -186,9 +166,9 @@ export function StoreShiftScreen() {
                 <div>
                   <p className="text-base font-semibold tracking-[-0.02em] text-foreground">{employee.name}</p>
                   <p className="mt-1 text-sm text-foreground/58">{ROLE_LABELS[employee.role]}</p>
-                    <p className={`mt-2 inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.08em] transition-all duration-300 ${employee.status === 'on_shift' ? 'border border-[#B7DCCB] bg-[#DDF1E8] text-[#1F6A49]' : 'border border-[#D6D9DE] bg-[#F1F3F5] text-[#5C6470]'}`}>
-                      {employee.status === 'on_shift' ? `ON SHIFT${employee.clockInAt ? ` since ${formatDisplayTime(employee.clockInAt)}` : ''}` : 'OFF SHIFT'}
-                    </p>
+                  <p className={`mt-2 inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.08em] transition-all duration-300 ${employee.status === 'on_shift' ? 'border border-[#B7DCCB] bg-[#DDF1E8] text-[#1F6A49]' : 'border border-[#D6D9DE] bg-[#F1F3F5] text-[#5C6470]'}`}>
+                    {employee.status === 'on_shift' ? `ON SHIFT${employee.clockInAt ? ` since ${formatDisplayTime(employee.clockInAt)}` : ''}` : 'OFF SHIFT'}
+                  </p>
                 </div>
               </div>
 
@@ -206,13 +186,11 @@ export function StoreShiftScreen() {
                 data-testid={`store-shift-submit-${employee.employeeId}`}
                 onClick={() => void handleSubmit(employee)}
                 disabled={isSubmitting || isLoading}
-                  className={`mt-4 w-full rounded-2xl px-4 py-3 text-sm font-semibold text-white transition-all duration-150 hover:-translate-y-0.5 hover:brightness-95 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 ${employee.status === 'on_shift' ? 'bg-[#B43A3A]' : 'bg-[#2D804B]'}`}
+                className={`mt-4 w-full rounded-2xl px-4 py-3 text-sm font-semibold text-white transition-all duration-150 hover:-translate-y-0.5 hover:brightness-95 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 ${actionLabel === 'Clock Out' ? 'bg-[#B43A3A]' : 'bg-[#2D804B]'}`}
               >
                 {isSubmitting && activeSubmitEmployeeId === employee.employeeId
                   ? 'Submitting...'
-                  : employee.status === 'on_shift'
-                    ? 'Clock Out'
-                    : 'Clock In'}
+                  : actionLabel}
               </button>
 
               <div className="mt-3">

@@ -281,7 +281,7 @@ function AppShell() {
               <Route path="/rewards" element={<RewardsScreen />} />
             </Route>
             <Route path="/careers" element={<CareersScreen />} />
-            <Route path="/operations/access" element={<AdminDashboardProvider><AdminAccessScreen adminSuccessPath="/operations/summary" storeSuccessPath="/store/orders" /></AdminDashboardProvider>} />
+            <Route path="/operations/access" element={<AdminDashboardProvider><AdminAccessScreen adminSuccessPath="/operations/summary" storeSuccessPath="/store/shift" /></AdminDashboardProvider>} />
             <Route path="/shift" element={<Navigate to="/store/shift" replace />} />
             <Route
               path="/store"
@@ -293,7 +293,7 @@ function AppShell() {
                 </AdminDashboardProvider>
               )}
             >
-              <Route index element={<Navigate to="orders" replace />} />
+              <Route index element={<Navigate to="shift" replace />} />
               <Route path="orders" element={<OrdersBoardScreen />} />
               <Route path="pos" element={<CounterBillingScreen />} />
               <Route path="inventory" element={<InventoryScreen />} />

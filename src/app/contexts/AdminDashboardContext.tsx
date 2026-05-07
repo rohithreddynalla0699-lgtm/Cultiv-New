@@ -558,6 +558,7 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
 
   const logoutInternalAccess = async () => {
     const sessionToken = session?.internalSessionToken;
+    const sessionScopeType = session?.scopeType;
     localStorage.removeItem(STORAGE_KEYS.session);
     writeStorage(STORAGE_KEYS.activeStoreScope, 'all');
     setSession(null);
@@ -566,7 +567,20 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
 
     try {
       if (sessionToken) {
-        await import('../lib/internalOpsApi').then(({ internalLogout }) => internalLogout(sessionToken));
+        const { endStoreOperatorSession, internalLogout } = await import('../lib/internalOpsApi');
+
+        if (sessionScopeType === 'store') {
+          try {
+            await endStoreOperatorSession({
+              internalSessionToken: sessionToken,
+              reason: 'logout',
+            });
+          } catch {
+            // Ignore operator-session end errors; access revocation still proceeds below.
+          }
+        }
+
+        await internalLogout(sessionToken);
       }
     } catch {
       // Ignore revoke errors; local logout has already completed.

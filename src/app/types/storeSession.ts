@@ -5,8 +5,8 @@
  * This session is created when an employee successfully clocks in via ShiftTerminal,
  * and cleared when they clock out or log out.
  * 
- * The session is the source of truth for "who is performing operations right now"
- * and flows into POS (placed_by), Orders Board (updated_by), Inventory (performed_by).
+ * The backend operator session is the source of truth for "who is performing operations right now".
+ * This client model mirrors that backend state and is kept as a local runtime/cache representation.
  */
 
 // Core employee session identity
@@ -76,6 +76,7 @@ export interface StoreSessionContextValue {
   session: StoreEmployeeSession | null;
 
   // State
+  isSessionInitializing: boolean;
   isSessionLoading: boolean;
   sessionError: string | null;
   isExpiringSoon: boolean;
@@ -91,7 +92,7 @@ export interface StoreSessionContextValue {
     shiftId: string
   ) => Promise<CreateEmployeeSessionResult>;
 
-  endSession: () => Promise<EndEmployeeSessionResult>;
+  endSession: (reason?: 'clock_out' | 'logout' | 'expired' | 'manual' | 'replaced') => Promise<EndEmployeeSessionResult>;
 
   touchSession: () => Promise<void>; // Update last_activity_at on user interaction
 

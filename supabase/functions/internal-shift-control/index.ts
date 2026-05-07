@@ -6,7 +6,7 @@ type RoleKey = 'owner' | 'admin' | 'store';
 type ScopeType = 'global' | 'store' | 'owner' | 'admin';
 type EmployeeRole = 'manager' | 'kitchen' | 'counter';
 
-type ShiftAction = 'dashboard' | 'submit_pin';
+type ShiftAction = 'dashboard' | 'submit_pin' | 'resume_operator';
 
 interface InternalShiftControlRequest {
   internalSessionToken?: string;
@@ -70,8 +70,8 @@ const extractSessionToken = (body: InternalShiftControlRequest): { value?: strin
 };
 
 const normalizeAction = (body: InternalShiftControlRequest): { value?: ShiftAction; error?: string } => {
-  if (body.action !== 'dashboard' && body.action !== 'submit_pin') {
-    return { error: 'action must be one of dashboard or submit_pin.' };
+  if (body.action !== 'dashboard' && body.action !== 'submit_pin' && body.action !== 'resume_operator') {
+    return { error: 'action must be one of dashboard, submit_pin, or resume_operator.' };
   }
   return { value: body.action };
 };
@@ -305,6 +305,28 @@ const loadDashboard = async (db: ReturnType<typeof createClient>, storeId: strin
   };
 };
 
+const endActiveOperatorSessionsForShift = async (
+  db: ReturnType<typeof createClient>,
+  shiftId: string,
+) => {
+  const nowIso = new Date().toISOString();
+  const { error } = await db
+    .from('store_operator_sessions')
+    .update({
+      ended_at: nowIso,
+      ended_reason: 'clock_out',
+      updated_at: nowIso,
+    })
+    .eq('shift_id', shiftId)
+    .is('ended_at', null);
+
+  if (error) {
+    return { error: 'Could not end active operator sessions for this shift.' };
+  }
+
+  return { endedAt: nowIso };
+};
+
 const toggleByPin = async (db: ReturnType<typeof createClient>, storeId: string, employeeId: string, pin: string, clientIp: string) => {
   if (!employeeId.trim()) {
     return { status: 400, error: 'employeeId is required.' };
@@ -356,7 +378,7 @@ const toggleByPin = async (db: ReturnType<typeof createClient>, storeId: string,
     .from('employee_shifts')
     .select('shift_id, employee_id, store_id, shift_date, clock_in_at, clock_out_at, total_hours')
     .eq('employee_id', employee.id)
-    .eq('shift_date', today)
+    .eq('store_id', storeId)
     .is('clock_out_at', null)
     .order('clock_in_at', { ascending: false })
     .limit(1);
@@ -388,6 +410,11 @@ const toggleByPin = async (db: ReturnType<typeof createClient>, storeId: string,
       .update({ shift_status: 'off_shift', updated_at: nowIso })
       .eq('id', employee.id);
 
+    const endOperatorResult = await endActiveOperatorSessionsForShift(db, openShift.shift_id);
+    if ('error' in endOperatorResult) {
+      return { status: 500, error: endOperatorResult.error };
+    }
+
     return {
       data: {
         action: 'clock_out',
@@ -415,7 +442,7 @@ const toggleByPin = async (db: ReturnType<typeof createClient>, storeId: string,
 
   if (insertShiftError) {
     if (insertShiftError.code === '23505') {
-      return { status: 409, error: 'An open shift already exists for this employee today.' };
+      return { status: 409, error: 'An open shift already exists for this employee.' };
     }
     return { status: 500, error: 'Could not clock in this employee.' };
   }
@@ -429,6 +456,78 @@ const toggleByPin = async (db: ReturnType<typeof createClient>, storeId: string,
     data: {
       action: 'clock_in',
       shiftId: insertedShift.shift_id,
+      employeeId: employee.id,
+      employeeName: employee.full_name,
+      employeeRole: employee.employee_role,
+    },
+  };
+};
+
+const resumeOperatorByPin = async (db: ReturnType<typeof createClient>, storeId: string, employeeId: string, pin: string, clientIp: string) => {
+  if (!employeeId.trim()) {
+    return { status: 400, error: 'employeeId is required.' };
+  }
+
+  if (!/^\d{6}$/.test(pin.trim())) {
+    return { status: 400, error: 'pin must be a valid 6-digit string.' };
+  }
+
+  const attemptKey = `shift:${storeId}:${employeeId}:${clientIp}`;
+  const attemptState = await loadAttemptState(db, attemptKey);
+  if (attemptState?.locked_until && new Date(attemptState.locked_until) > new Date()) {
+    return { status: 429, error: 'Too many incorrect PIN attempts. Try again later.' };
+  }
+
+  const { data: employee, error: employeeError } = await db
+    .from('employees')
+    .select('id, full_name, employee_role, pin_hash')
+    .eq('id', employeeId)
+    .eq('store_id', storeId)
+    .eq('is_active', true)
+    .eq('is_deleted', false)
+    .single();
+
+  if (employeeError) {
+    if (employeeError.code === 'PGRST116') {
+      return { status: 403, error: 'Employee is not active in this store.' };
+    }
+    return { status: 500, error: 'Could not validate selected employee.' };
+  }
+
+  if (!employee) {
+    return { status: 403, error: 'Employee is not active in this store.' };
+  }
+
+  const pinMatched = await verifyPin(pin.trim(), employee.pin_hash);
+  if (!pinMatched) {
+    await registerFailedAttempt(db, attemptKey);
+    return { status: 401, error: 'Incorrect PIN' };
+  }
+
+  await clearFailedAttempts(db, attemptKey);
+
+  const { data: openShiftRows, error: openShiftError } = await db
+    .from('employee_shifts')
+    .select('shift_id, employee_id, store_id, shift_date, clock_in_at, clock_out_at, total_hours')
+    .eq('employee_id', employee.id)
+    .eq('store_id', storeId)
+    .is('clock_out_at', null)
+    .order('clock_in_at', { ascending: false })
+    .limit(1);
+
+  if (openShiftError) {
+    return { status: 500, error: 'Could not inspect the current shift state.' };
+  }
+
+  const openShift = ((openShiftRows ?? []) as EmployeeShiftRow[])[0] ?? null;
+  if (!openShift) {
+    return { status: 409, error: 'No open shift found. Please clock in again.' };
+  }
+
+  return {
+    data: {
+      action: 'resume_operator',
+      shiftId: openShift.shift_id,
       employeeId: employee.id,
       employeeName: employee.full_name,
       employeeRole: employee.employee_role,
@@ -492,6 +591,14 @@ Deno.serve(async (req) => {
     const result = await loadDashboard(db, scopeResult.storeId);
     if ('error' in result) {
       return json(500, { error: result.error });
+    }
+    return json(200, result.data);
+  }
+
+  if (actionResult.value === 'resume_operator') {
+    const result = await resumeOperatorByPin(db, scopeResult.storeId, body.employeeId ?? '', body.pin ?? '', clientIp);
+    if ('error' in result) {
+      return json(result.status, { error: result.error });
     }
     return json(200, result.data);
   }

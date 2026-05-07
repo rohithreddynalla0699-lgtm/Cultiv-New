@@ -8,6 +8,7 @@ export interface UseStoreSessionResult {
   touchActivity: () => Promise<void>;
   isSessionActive: boolean;
   requiresShift: boolean;
+  isSessionInitializing: boolean;
   isSessionLoading: boolean;
   isExpiringSoon: boolean;
   sessionError: string | null;
@@ -30,6 +31,7 @@ export function useStoreSession(): UseStoreSessionResult {
     touchActivity,
     isSessionActive: context.hasActiveSession,
     requiresShift: !context.hasActiveSession,
+    isSessionInitializing: context.isSessionInitializing,
     isSessionLoading: context.isSessionLoading,
     isExpiringSoon: context.isExpiringSoon,
     sessionError: context.sessionError,
