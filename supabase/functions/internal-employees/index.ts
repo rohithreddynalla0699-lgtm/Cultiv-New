@@ -273,6 +273,23 @@ const buildDashboard = async (db: ReturnType<typeof createClient>, storeIds: str
     shiftRows = (shifts ?? []) as EmployeeShiftRow[];
   }
 
+  let activeOpenShiftRows: EmployeeShiftRow[] = [];
+  if (employeeIds.length > 0) {
+    const { data: activeOpenShifts, error: activeOpenShiftsError } = await db
+      .from('employee_shifts')
+      .select('shift_id, employee_id, store_id, shift_date, clock_in_at, clock_out_at, total_hours')
+      .in('store_id', storeIds)
+      .in('employee_id', employeeIds)
+      .is('clock_out_at', null)
+      .order('clock_in_at', { ascending: false });
+
+    if (activeOpenShiftsError) {
+      return { error: 'Could not load active employee shifts.' };
+    }
+
+    activeOpenShiftRows = (activeOpenShifts ?? []) as EmployeeShiftRow[];
+  }
+
   const shiftsByEmployeeId = new Map<string, EmployeeShiftRow[]>();
   for (const shift of shiftRows) {
     const existing = shiftsByEmployeeId.get(shift.employee_id) ?? [];
@@ -280,10 +297,18 @@ const buildDashboard = async (db: ReturnType<typeof createClient>, storeIds: str
     shiftsByEmployeeId.set(shift.employee_id, existing);
   }
 
+  const activeOpenShiftByEmployeeId = new Map<string, EmployeeShiftRow>();
+  for (const shift of activeOpenShiftRows) {
+    if (!activeOpenShiftByEmployeeId.has(shift.employee_id)) {
+      activeOpenShiftByEmployeeId.set(shift.employee_id, shift);
+    }
+  }
+
   return {
     employees: employeeRows.map((employee) => {
       const employeeShifts = shiftsByEmployeeId.get(employee.id) ?? [];
       const selectedPeriodShifts = employeeShifts.filter((shift) => shift.shift_date >= periodRange.start && shift.shift_date <= periodRange.end);
+      const activeOpenShift = activeOpenShiftByEmployeeId.get(employee.id) ?? null;
 
       const todayHours = roundHours(
         employeeShifts
@@ -315,7 +340,7 @@ const buildDashboard = async (db: ReturnType<typeof createClient>, storeIds: str
         storeCode: employee.stores?.code ?? '',
         isActive: employee.is_active,
         phone: employee.phone,
-        shiftStatus: employee.shift_status,
+        shiftStatus: activeOpenShift ? 'on_shift' : 'off_shift',
         summaryLabel: periodRange.label,
         summaryHours,
         todayHours,
@@ -336,6 +361,98 @@ const buildDashboard = async (db: ReturnType<typeof createClient>, storeIds: str
 const ROLE_SET = new Set<EmployeeRole>(['manager', 'kitchen', 'counter']);
 
 const generateEmployeeCode = () => `EMP-${crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()}`;
+
+const endActiveOperatorSessionsForShiftIds = async (
+  db: ReturnType<typeof createClient>,
+  shiftIds: string[],
+  endedAtIso: string,
+) => {
+  if (shiftIds.length === 0) {
+    return { success: true as const };
+  }
+
+  const { error } = await db
+    .from('store_operator_sessions')
+    .update({
+      ended_at: endedAtIso,
+      ended_reason: 'clock_out',
+      updated_at: endedAtIso,
+    })
+    .in('shift_id', shiftIds)
+    .is('ended_at', null);
+
+  if (error) {
+    return { success: false as const, error: 'Could not end active operator sessions for the closed shift.' };
+  }
+
+  return { success: true as const };
+};
+
+const loadOpenShiftsForEmployeeStore = async (
+  db: ReturnType<typeof createClient>,
+  employeeId: string,
+  storeId: string,
+) => {
+  const { data, error } = await db
+    .from('employee_shifts')
+    .select('shift_id, employee_id, store_id, shift_date, clock_in_at, clock_out_at, total_hours')
+    .eq('employee_id', employeeId)
+    .eq('store_id', storeId)
+    .is('clock_out_at', null)
+    .order('clock_in_at', { ascending: false });
+
+  if (error) {
+    return { error: 'Could not inspect the active shift before deactivation.' };
+  }
+
+  return { shifts: (data ?? []) as EmployeeShiftRow[] };
+};
+
+const closeOpenShiftsForEmployeeStore = async (
+  db: ReturnType<typeof createClient>,
+  employeeId: string,
+  storeId: string,
+  nowIso: string,
+) => {
+  const openShiftsResult = await loadOpenShiftsForEmployeeStore(db, employeeId, storeId);
+  if ('error' in openShiftsResult) {
+    return { success: false as const, error: openShiftsResult.error };
+  }
+
+  const openShifts = openShiftsResult.shifts;
+  if (openShifts.length === 0) {
+    return { success: true as const };
+  }
+
+  for (const shift of openShifts) {
+    const totalHours = roundHours((Date.parse(nowIso) - Date.parse(shift.clock_in_at)) / HOURS_MS);
+    const { error: closeShiftError } = await db
+      .from('employee_shifts')
+      .update({
+        clock_out_at: nowIso,
+        total_hours: totalHours,
+        updated_at: nowIso,
+      })
+      .eq('shift_id', shift.shift_id)
+      .is('clock_out_at', null);
+
+    if (closeShiftError) {
+      return { success: false as const, error: 'Could not close the active shift before deactivation.' };
+    }
+  }
+
+  const endSessionsResult = await endActiveOperatorSessionsForShiftIds(
+    db,
+    openShifts.map((shift) => shift.shift_id),
+    nowIso,
+  );
+
+  if (!endSessionsResult.success) {
+    return { success: false as const, error: endSessionsResult.error };
+  }
+
+  return { success: true as const };
+};
 
 const deactivateEmployee = async (db: ReturnType<typeof createClient>, session: InternalAccessSessionRow, employeeId: string) => {
   if (!employeeId || typeof employeeId !== 'string') {
@@ -367,33 +484,9 @@ const deactivateEmployee = async (db: ReturnType<typeof createClient>, session: 
   }
 
   const nowIso = new Date().toISOString();
-  const { data: openShiftRows, error: openShiftError } = await db
-    .from('employee_shifts')
-    .select('shift_id, clock_in_at')
-    .eq('employee_id', employeeId)
-    .is('clock_out_at', null)
-    .order('clock_in_at', { ascending: false })
-    .limit(1);
-
-  if (openShiftError) {
-    return { status: 500, payload: { error: 'Could not close the active shift before deactivation.' } };
-  }
-
-  const openShift = (openShiftRows ?? [])[0] ?? null;
-  if (openShift) {
-    const totalHours = roundHours((Date.parse(nowIso) - Date.parse(openShift.clock_in_at)) / HOURS_MS);
-    const { error: closeShiftError } = await db
-      .from('employee_shifts')
-      .update({
-        clock_out_at: nowIso,
-        total_hours: totalHours,
-        updated_at: nowIso,
-      })
-      .eq('shift_id', openShift.shift_id);
-
-    if (closeShiftError) {
-      return { status: 500, payload: { error: 'Could not close the active shift before deactivation.' } };
-    }
+  const closeResult = await closeOpenShiftsForEmployeeStore(db, employeeId, existingEmployee.store_id, nowIso);
+  if (!closeResult.success) {
+    return { status: 500, payload: { error: closeResult.error } };
   }
 
   const { error: deactivateError } = await db
@@ -545,33 +638,9 @@ const saveEmployee = async (db: ReturnType<typeof createClient>, session: Intern
     };
 
     if (!isActive) {
-      const { data: openShiftRows, error: openShiftError } = await db
-        .from('employee_shifts')
-        .select('shift_id, clock_in_at')
-        .eq('employee_id', employeeId)
-        .is('clock_out_at', null)
-        .order('clock_in_at', { ascending: false })
-        .limit(1);
-
-      if (openShiftError) {
-        return { status: 500, payload: { error: 'Could not close the active shift before deactivation.' } };
-      }
-
-      const openShift = (openShiftRows ?? [])[0] ?? null;
-      if (openShift) {
-        const totalHours = roundHours((Date.parse(nowIso) - Date.parse(openShift.clock_in_at)) / HOURS_MS);
-        const { error: closeShiftError } = await db
-          .from('employee_shifts')
-          .update({
-            clock_out_at: nowIso,
-            total_hours: totalHours,
-            updated_at: nowIso,
-          })
-          .eq('shift_id', openShift.shift_id);
-
-        if (closeShiftError) {
-          return { status: 500, payload: { error: 'Could not close the active shift before deactivation.' } };
-        }
+      const closeResult = await closeOpenShiftsForEmployeeStore(db, employeeId, existingEmployee.store_id, nowIso);
+      if (!closeResult.success) {
+        return { status: 500, payload: { error: closeResult.error } };
       }
 
       updatePayload.shift_status = 'off_shift';
