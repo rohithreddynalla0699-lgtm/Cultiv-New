@@ -23,6 +23,10 @@ export function AdminDashboardLayout() {
     return <Navigate to="/operations/access" replace />;
   }
 
+  if (session.scopeType === 'store' && location.pathname.startsWith('/operations')) {
+    return <Navigate to="/store/shift" replace />;
+  }
+
   const isStoreWorkspace = session.scopeType === 'store' || location.pathname.startsWith('/store');
   const navItems = isStoreWorkspace
     ? [

@@ -73,6 +73,44 @@ const INTERNAL_UPDATE_CREDENTIALS_URL = `${import.meta.env.VITE_SUPABASE_URL}/fu
 const INTERNAL_MANAGE_OPERATIONS_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-manage-operations`;
 
 const INTERNAL_LOGOUT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/internal-logout`;
+const INTERNAL_ACCESS_SESSION_STORAGE_KEY = 'cultiv_admin_access_session_v1';
+const INTERNAL_ACTIVE_STORE_SCOPE_STORAGE_KEY = 'cultiv_admin_active_store_scope_v1';
+const INTERNAL_ACCESS_SESSION_UPDATED_EVENT = 'cultiv:internal-access-session-updated';
+
+const INTERNAL_INVALID_SESSION_MESSAGES = [
+  'invalid internal session',
+  'internal session token is invalid or expired',
+  'session is invalid or expired',
+  'session has expired',
+  'session is revoked',
+  'revoked',
+];
+
+const isInvalidInternalSessionError = (message: string, status?: number) => {
+  const normalized = message.trim().toLowerCase();
+  return status === 401 || INTERNAL_INVALID_SESSION_MESSAGES.some((candidate) => normalized.includes(candidate));
+};
+
+const clearInternalAccessSession = () => {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    localStorage.removeItem(INTERNAL_ACCESS_SESSION_STORAGE_KEY);
+    localStorage.removeItem(INTERNAL_ACTIVE_STORE_SCOPE_STORAGE_KEY);
+  } catch {
+    // Ignore storage write failures.
+  }
+
+  window.dispatchEvent(new CustomEvent(INTERNAL_ACCESS_SESSION_UPDATED_EVENT));
+};
+
+const maybeHandleInvalidInternalSession = (message: string, status?: number) => {
+  if (isInvalidInternalSessionError(message, status)) {
+    clearInternalAccessSession();
+  }
+};
 
 export async function internalLogout(internalSessionToken: string): Promise<{ success: boolean }> {
   try {
@@ -676,6 +714,7 @@ const postInternal = async <TResponse>(
 
     if (!response.ok) {
       const message = typeof payload.error === 'string' ? payload.error : fallbackMessage;
+      maybeHandleInvalidInternalSession(message, response.status);
       return { data: null, error: message };
     }
 
@@ -751,7 +790,20 @@ export async function listInternalOrders(params: {
     const rawText = await response.text();
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch internal orders list: ${response.status} ${rawText}`);
+      const fallbackMessage = `Failed to fetch internal orders list: ${response.status} ${rawText}`;
+      let parsedMessage = fallbackMessage;
+
+      try {
+        const parsedPayload = JSON.parse(rawText) as Record<string, unknown>;
+        if (typeof parsedPayload.error === 'string' && parsedPayload.error.trim()) {
+          parsedMessage = parsedPayload.error;
+        }
+      } catch {
+        // Ignore JSON parse failures and keep fallback message.
+      }
+
+      maybeHandleInvalidInternalSession(parsedMessage, response.status);
+      throw new Error(fallbackMessage);
     }
 
     const parsed = JSON.parse(rawText) as InternalOrdersListResponse;

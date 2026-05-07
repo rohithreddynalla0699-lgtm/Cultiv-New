@@ -471,6 +471,35 @@ export function AdminDashboardProvider({ children }: AdminDashboardProviderProps
     }
   }, [session, stores]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const syncInternalAccessState = () => {
+      setSession(normalizeSession(readStorage(STORAGE_KEYS.session, null), stores));
+      setStoredScope(readStorage(STORAGE_KEYS.activeStoreScope, 'all'));
+    };
+
+    const onStorage = (event: StorageEvent) => {
+      if (event.storageArea !== window.localStorage || !event.key) {
+        return;
+      }
+
+      if (event.key === STORAGE_KEYS.session || event.key === STORAGE_KEYS.activeStoreScope) {
+        syncInternalAccessState();
+      }
+    };
+
+    window.addEventListener('storage', onStorage);
+    window.addEventListener(INTERNAL_ACCESS_SESSION_UPDATED_EVENT, syncInternalAccessState);
+
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener(INTERNAL_ACCESS_SESSION_UPDATED_EVENT, syncInternalAccessState);
+    };
+  }, [stores]);
+
   const loginAsOwner = async (pin: string) => {
     if (!isSixDigitPin(pin)) {
       return { success: false, message: 'Enter a valid 6-digit PIN.' };
