@@ -24,21 +24,23 @@ export interface ConfirmCheckoutPaymentInput {
   failureReason?: string;
 }
 
-const env = import.meta as unknown as { env?: Record<string, string | undefined> };
+const configuredProvider = (import.meta.env.VITE_PAYMENT_PROVIDER || '').trim().toLowerCase();
 
-const configuredProvider = (env.env?.VITE_PAYMENT_PROVIDER || '').trim().toLowerCase();
+export const isCheckoutPaymentProvider = (value: unknown): value is CheckoutPaymentProvider => {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return normalized === 'mock' || normalized === 'razorpay';
+};
 
-export const defaultCheckoutPaymentProvider: CheckoutPaymentProvider = configuredProvider === 'razorpay' ? 'razorpay' : 'mock';
+export const configuredCheckoutPaymentProvider: CheckoutPaymentProvider | null = isCheckoutPaymentProvider(configuredProvider)
+  ? configuredProvider
+  : null;
 
 export const resolveCheckoutPaymentProvider = (
   gateway: unknown,
-): CheckoutPaymentProvider => {
-  const normalized = typeof gateway === 'string' ? gateway.trim().toLowerCase() : '';
-  if (normalized === 'razorpay') {
-    return 'razorpay';
+): CheckoutPaymentProvider | null => {
+  if (!isCheckoutPaymentProvider(gateway)) {
+    return null;
   }
-  if (normalized === 'mock') {
-    return 'mock';
-  }
-  return defaultCheckoutPaymentProvider;
+
+  return gateway.trim().toLowerCase() as CheckoutPaymentProvider;
 };

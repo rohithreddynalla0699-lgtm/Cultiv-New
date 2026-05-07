@@ -324,6 +324,7 @@ Examples:
 
 - never use `mock` in production
 - set `VITE_CUSTOMER_ONLINE_CHECKOUT_ENABLED=true` only when backend payment env is ready
+- if `VITE_PAYMENT_PROVIDER` is missing or invalid, frontend checkout stays disabled even when the checkout-enabled flag is `true`
 - verify `RAZORPAY_KEY_ID` is present
 - verify `RAZORPAY_KEY_SECRET` is present
 - verify payment-intent and payment-confirm flows against the production-like environment before launch

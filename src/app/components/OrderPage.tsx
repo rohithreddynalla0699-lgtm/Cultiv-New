@@ -40,7 +40,11 @@ import { useAuth } from '../contexts/AuthContext';
 import { DISCOUNT_REWARD_VALUES, FREE_ITEM_REWARD_DETAILS, normalizeRewardId } from '../config/rewardsCatalog';
 import type { OrderPageLocationState } from '../types/navigation';
 import type { CustomerCheckoutPaymentMethod, PlaceOrderInput, SelectedRewardEntitlementInput } from '../types/platform';
-import { resolveCheckoutPaymentProvider, type CheckoutPaymentIntent } from '../services/checkoutPaymentProvider';
+import {
+  configuredCheckoutPaymentProvider,
+  resolveCheckoutPaymentProvider,
+  type CheckoutPaymentIntent,
+} from '../services/checkoutPaymentProvider';
 import { getSelectedStore, loadSelectedStoreId, loadStores, requestOpenStoreSelector, subscribeSelectedStore, type StoreLocatorStore } from '../data/storeLocator';
 import { CHECKOUT_CONTACT_STORAGE_KEY } from '../data/shoppingSession';
 import {
@@ -111,10 +115,11 @@ const CATEGORY_PRIORITY = [
 ] as const;
 
 const CATEGORY_INDEX = Object.fromEntries(MENU_CATEGORIES.map((category) => [category.slug, category]));
-const env = import.meta as unknown as { env?: Record<string, string | undefined> };
 const CUSTOMER_ONLINE_CHECKOUT_ENABLED = import.meta.env.VITE_CUSTOMER_ONLINE_CHECKOUT_ENABLED === 'true';
 const ONLINE_CHECKOUT_DISABLED_MESSAGE = 'Online checkout is not live yet. Please place your order at the store.';
-const MOCK_PAYMENT_OUTCOME = (env.env?.VITE_MOCK_PAYMENT_OUTCOME || 'succeeded').trim().toLowerCase();
+const ONLINE_CHECKOUT_UNAVAILABLE_MESSAGE = 'Online checkout is temporarily unavailable. Please place your order at the store.';
+const MOCK_PAYMENT_OUTCOME = (import.meta.env.VITE_MOCK_PAYMENT_OUTCOME || 'succeeded').trim().toLowerCase();
+const CUSTOMER_CHECKOUT_AVAILABLE = CUSTOMER_ONLINE_CHECKOUT_ENABLED && configuredCheckoutPaymentProvider !== null;
 const STEP_BY_ID = Object.fromEntries(
   [...BOWL_CUSTOMIZATION_STEPS, ...BREAKFAST_CUSTOMIZE_STEPS].map((step) => [step.id, step]),
 );
@@ -366,6 +371,7 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
     isActive: false,
   };
 }, [stores]);
+  const resolvedCheckoutStoreId = selectedStore.isActive ? selectedStore.id : '';
 
   useEffect(() => {
     if (!isBrowser()) return;
@@ -896,7 +902,7 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
       next.reward = rewardValidationMessage;
     }
 
-    if (!selectedStoreId || !stores.some((store) => store.id === selectedStoreId && store.isActive)) {
+    if (!resolvedCheckoutStoreId || !stores.some((store) => store.id === resolvedCheckoutStoreId && store.isActive)) {
       next.store = 'Select a valid pickup store.';
     }
 
@@ -935,6 +941,10 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
     }
     if (!CUSTOMER_ONLINE_CHECKOUT_ENABLED) {
       setErrors((previous) => ({ ...previous, submit: ONLINE_CHECKOUT_DISABLED_MESSAGE }));
+      return;
+    }
+    if (!CUSTOMER_CHECKOUT_AVAILABLE) {
+      setErrors((previous) => ({ ...previous, submit: ONLINE_CHECKOUT_UNAVAILABLE_MESSAGE }));
       return;
     }
     if (!user) {
@@ -1058,12 +1068,12 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
   const launchCheckoutPayment = async (intent: CheckoutPaymentIntent, orderInput: PlaceOrderInput): Promise<PaymentLaunchResult> => {
     void orderInput;
     const provider = resolveCheckoutPaymentProvider(intent.gateway);
-    if (provider === 'mock') {
-      return runMockCheckout(intent);
+    if (!provider) {
+      throw new Error('Online payment gateway is unavailable for this checkout attempt. Please place your order at the store.');
     }
 
-    if (provider !== 'razorpay') {
-      throw new Error('Online payment gateway is not configured yet. Please use in-store payment for now.');
+    if (provider === 'mock') {
+      return runMockCheckout(intent);
     }
 
     return runRazorpayCheckout(intent);
@@ -1084,7 +1094,7 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
     try {
       const orderInput: PlaceOrderInput = {
         category: 'Central Ordering',
-        storeId: selectedStoreId,
+        storeId: resolvedCheckoutStoreId,
         items: [
           ...cartLines.map((line) => ({
             id: line.itemId,
@@ -1837,10 +1847,16 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
 
                   {errors.cart ? <p className="mt-2 text-xs text-red-600">{errors.cart}</p> : null}
                   {errors.reward ? <p className="mt-1.5 text-xs text-red-600">{errors.reward}</p> : null}
+                  {errors.store ? <p className="mt-1.5 text-xs text-red-600">{errors.store}</p> : null}
                   {!CUSTOMER_ONLINE_CHECKOUT_ENABLED ? (
                     <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-800">
                       <p className="font-semibold">Online checkout coming soon</p>
                       <p className="mt-0.5">{ONLINE_CHECKOUT_DISABLED_MESSAGE}</p>
+                    </div>
+                  ) : !CUSTOMER_CHECKOUT_AVAILABLE ? (
+                    <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs leading-5 text-amber-800">
+                      <p className="font-semibold">Online checkout unavailable</p>
+                      <p className="mt-0.5">{ONLINE_CHECKOUT_UNAVAILABLE_MESSAGE}</p>
                     </div>
                   ) : null}
                   {errors.submit ? <p className="mt-1.5 text-xs text-red-600">{errors.submit}</p> : null}
@@ -1856,11 +1872,11 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
                   <button
                     type="button"
                     onClick={placeFromCart}
-                    disabled={!user || !CUSTOMER_ONLINE_CHECKOUT_ENABLED || isSubmitting || Boolean(customizing)}
+                    disabled={!user || !CUSTOMER_CHECKOUT_AVAILABLE || isSubmitting || Boolean(customizing)}
                     className="inline-flex min-h-[48px] w-full items-center justify-center gap-2 rounded-full bg-primary py-3 text-sm font-semibold text-white transition-colors hover:bg-primary/90 disabled:opacity-60"
                   >
                     <ShoppingBag className="h-4 w-4" />
-                    {!CUSTOMER_ONLINE_CHECKOUT_ENABLED ? 'Order at store for now' : isSubmitting ? 'Processing Payment...' : customizing ? 'Finish customization to continue' : `Pay & Place Order · ₹${payableTotal.toFixed(2)}`}
+                    {!CUSTOMER_CHECKOUT_AVAILABLE ? 'Order at store for now' : isSubmitting ? 'Processing Payment...' : customizing ? 'Finish customization to continue' : `Pay & Place Order · ₹${payableTotal.toFixed(2)}`}
                   </button>
 
                 </div>

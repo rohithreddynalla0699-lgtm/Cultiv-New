@@ -85,6 +85,34 @@ const waitForOrderPageReady = async (page, timeout = 15000) => {
   ]);
 };
 
+const waitForStoreReady = async (page, timeout = 15000) => {
+  const checkoutPanel = page.locator('#checkout-panel');
+  await checkoutPanel.waitFor({ state: 'visible', timeout });
+
+  const storeReady = await page.waitForFunction(() => {
+    const panel = document.getElementById('checkout-panel');
+    if (!panel) return false;
+
+    const text = panel.innerText || '';
+    if (!text.includes('Cart')) return false;
+    if (!text.includes('Pickup')) return false;
+    if (text.includes('No stores available')) return false;
+    if (text.includes('Select location')) return false;
+
+    return true;
+  }, undefined, { timeout }).catch(() => null);
+
+  if (storeReady) {
+    return;
+  }
+
+  const panelText = await checkoutPanel.innerText().catch(() => '');
+  throw new Error(
+    `Store readiness did not resolve before checkout. `
+    + `checkoutPanel="${panelText.slice(0, 500)}"`,
+  );
+};
+
 const ensureLoggedOut = async (page) => {
   logStep('ensure-logged-out', BASE_URL);
   await page.goto(BASE_URL, { waitUntil: 'domcontentloaded' });
@@ -148,6 +176,7 @@ const goToOrderPage = async (page) => {
   await waitForOrderPageReady(page);
   await selectStoreIfPrompted(page);
   await waitForOrderPageReady(page);
+  await waitForStoreReady(page);
   record(true, 'checkout', `Order page ready at ${page.url()}`);
 };
 
@@ -164,12 +193,39 @@ const addSimpleItem = async (page) => {
     await fallbackAddButton.click();
   }
 
-  await waitForAnyVisible([
-    page.getByText(/Added/i),
-    page.getByRole('button', { name: /Pay & Place Order/i }),
-    page.getByText(/item in cart/i),
-    page.getByText(/items in cart/i),
-  ], 10000);
+  const checkoutPanel = page.locator('#checkout-panel');
+  const cartLineRemoveButton = checkoutPanel.getByRole('button', { name: /^Remove$/ }).first();
+  const emptyCartMessage = checkoutPanel.getByText(/Your cart is empty\. Add items from the middle panel\./i);
+  const buildingNowPanel = checkoutPanel.getByText(/Building now/i).first();
+
+  await Promise.race([
+    cartLineRemoveButton.waitFor({ state: 'visible', timeout: 10000 }),
+    buildingNowPanel.waitFor({ state: 'visible', timeout: 10000 }),
+  ]).catch(async () => {
+    const debug = await getPageDebugSnapshot(page);
+    const panelText = await checkoutPanel.innerText().catch(() => '');
+    throw new Error(
+      `Cart did not update after add-item click. `
+      + `checkoutPanel="${panelText.slice(0, 500)}" `
+      + `url=${debug.url} body="${debug.bodyPreview}"`,
+    );
+  });
+
+  if (await buildingNowPanel.isVisible().catch(() => false)) {
+    const panelText = await checkoutPanel.innerText().catch(() => '');
+    throw new Error(
+      `Add-item step opened customization instead of adding directly to cart. `
+      + `checkoutPanel="${panelText.slice(0, 500)}"`,
+    );
+  }
+
+  if (await emptyCartMessage.isVisible().catch(() => false)) {
+    const panelText = await checkoutPanel.innerText().catch(() => '');
+    throw new Error(
+      `Cart still shows empty state after add-item click. `
+      + `checkoutPanel="${panelText.slice(0, 500)}"`,
+    );
+  }
 
   record(true, 'add-item', 'Added one item to the cart.');
 };
@@ -250,12 +306,39 @@ const ensureCheckoutFieldsReady = async (page) => {
 const openCheckoutReview = async (page) => {
   logStep('checkout', 'opening checkout review');
   await ensureCheckoutFieldsReady(page);
+  await waitForStoreReady(page);
 
   const primaryCheckoutButton = page.getByRole('button', { name: /Pay & Place Order/i }).first();
   await primaryCheckoutButton.waitFor({ state: 'visible', timeout: 10000 });
   await primaryCheckoutButton.click();
 
-  await page.getByRole('heading', { name: /Review before placing/i }).waitFor({ state: 'visible', timeout: 15000 });
+  const reviewHeading = page.getByRole('heading', { name: /Review before placing/i });
+  const checkoutUnavailableBanner = page.getByText(/Online checkout unavailable|Online checkout coming soon/i).first();
+
+  try {
+    await Promise.race([
+      reviewHeading.waitFor({ state: 'visible', timeout: 15000 }),
+      checkoutUnavailableBanner.waitFor({ state: 'visible', timeout: 15000 }),
+    ]);
+  } catch {
+    const diagnostics = await getCheckoutContactDiagnostics(page);
+    const debug = await getPageDebugSnapshot(page);
+    throw new Error(
+      `Checkout review modal did not open after clicking checkout. `
+      + `name="${diagnostics.nameValue}" phone="${diagnostics.phoneValue}" email="${diagnostics.emailValue}" `
+      + `contactSection="${diagnostics.sectionText}" `
+      + `url=${debug.url} body="${debug.bodyPreview}"`,
+    );
+  }
+
+  if (await checkoutUnavailableBanner.isVisible().catch(() => false)) {
+    const debug = await getPageDebugSnapshot(page);
+    throw new Error(
+      `Checkout is unavailable in the preview build. `
+      + `url=${debug.url} body="${debug.bodyPreview}"`,
+    );
+  }
+
   record(true, 'checkout', 'Checkout review modal opened.');
 };
 
