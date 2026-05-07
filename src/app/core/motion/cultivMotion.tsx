@@ -1,7 +1,7 @@
 // cultivMotion — Framer Motion primitives: animation variants, SectionReveal, CardStagger, and PageReveal.
 
 import { motion } from "framer-motion";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 export const PageRevealVariants = {
 	hidden: { opacity: 0, y: 16, filter: "blur(6px)" },
@@ -139,14 +139,16 @@ export const DropdownSlide = {
 interface SectionRevealProps {
 	id?: string;
 	className?: string;
+	style?: CSSProperties;
 	children: ReactNode;
 }
 
-export function PageReveal({ id, className, children }: SectionRevealProps) {
+export function PageReveal({ id, className, style, children }: SectionRevealProps) {
 	return (
 		<motion.div
 			id={id}
 			className={className}
+			style={style}
 			initial="hidden"
 			animate="visible"
 			variants={PageRevealVariants}

@@ -22,6 +22,9 @@ export function Hero({ onOrderClick, onExploreMenu }: HeroProps) {
     .find((category) => category.slug === 'signature-bowls')
     ?.items.find((item) => item.id === 'everyday-chicken-bowl')
     ?.price ?? 189;
+  const featuredDrink = MENU_CATEGORIES
+    .find((category) => category.slug === 'drinks-juices')
+    ?.items[0];
 
   useEffect(() => {
     let isActive = true;
@@ -143,10 +146,14 @@ export function Hero({ onOrderClick, onExploreMenu }: HeroProps) {
 
                 <div className="grid gap-4">
                   <div className="overflow-hidden rounded-[28px] border border-white/45 bg-[#f7f6f1] p-4 shadow-sm">
-                    <ImageWithFallback src="https://images.unsplash.com/photo-1610970881699-44a5587cabec?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080" alt="Green juice" className="h-44 w-full rounded-2xl object-cover" />
+                    <ImageWithFallback
+                      src={featuredDrink?.image ?? 'https://images.unsplash.com/photo-1610970881699-44a5587cabec?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080'}
+                      alt={featuredDrink ? featuredDrink.name : 'Featured drink'}
+                      className="h-44 w-full rounded-2xl object-cover"
+                    />
                     <p className="mt-4 text-[11px] uppercase tracking-[0.18em] text-primary/60">Light add-on</p>
-                    <h4 className="mt-2 text-lg font-semibold">Green Juice</h4>
-                    <p className="mt-2 text-sm leading-6 text-foreground/60">Fresh, bright, and easy to add to a morning or post-workout order.</p>
+                    <h4 className="mt-2 text-lg font-semibold">{featuredDrink?.name ?? 'Fresh Juice'}</h4>
+                    <p className="mt-2 text-sm leading-6 text-foreground/60">{featuredDrink?.description ?? 'Fresh, bright, and easy to add to a morning or post-workout order.'}</p>
                   </div>
                   <div className="rounded-[28px] border border-primary/12 bg-white/82 p-5 shadow-sm">
                     <p className="text-[11px] uppercase tracking-[0.18em] text-primary/60">The ritual</p>

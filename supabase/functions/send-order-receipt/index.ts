@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { loadAuthorizedReceipt } from '../_shared/receipt-data.ts';
+import { notificationChannelPolicy } from '../_shared/notification-policy.ts';
 
 type DeliveryMethod = 'print' | 'email' | 'text' | 'all';
 type DigitalMethod = 'email' | 'text';
@@ -521,6 +522,8 @@ Deno.serve(async (req) => {
   const normalizedEmail = normalizeEmail(body.email);
   const normalizedPhone = normalizePhone(body.phone);
 
+  // Order/receipt channel policy: email is preferred for commerce receipts, while SMS remains supported for backward compatibility.
+  const commercePolicy = notificationChannelPolicy.commerce;
   if (deliveryMethod === 'email' || deliveryMethod === 'all') {
     const emailRecipient = normalizedEmail || normalizeEmail(receipt.meta.customerEmail);
     let emailAttempt: DeliveryResult;

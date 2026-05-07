@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { notificationChannelPolicy } from '../_shared/notification-policy.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -234,6 +235,8 @@ Deno.serve(async (req) => {
   let debugResetToken: string | undefined;
   const allowDebugTokenResponse = (Deno.env.get('PASSWORD_RESET_DEBUG_TOKEN_RESPONSE') ?? '').toLowerCase() === 'true';
 
+  // Security recovery channel policy: password reset tokens are part of account security flows; SMS remains the default security channel for verification.
+  const receiptChannelPolicy = notificationChannelPolicy.security;
   if (customer?.id && customer.is_active !== false) {
     const rawResetToken = createResetToken();
     const tokenHash = await sha256Base64Url(rawResetToken);

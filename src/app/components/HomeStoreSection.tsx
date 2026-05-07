@@ -61,7 +61,7 @@ export function HomeStoreSection({ onOrderClick }: HomeStoreSectionProps) {
                     <div className="mt-3 flex flex-wrap gap-2 text-xs text-foreground/60">
                       <span className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5"><MapPin className="h-3.5 w-3.5 text-primary" /> {selectedStore ? `${selectedStore.city} • ${selectedStore.zipCode}` : 'Select location when stores are available'}</span>
                       {selectedStore ? (
-                        <span className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5"><Clock3 className="h-3.5 w-3.5 text-primary" /> 11 AM – 9 PM</span>
+                        <span className="inline-flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5"><Clock3 className="h-3.5 w-3.5 text-primary" /> Open daily from 9:00 AM to 10:00 PM</span>
                       ) : null}
                     </div>
                   </div>

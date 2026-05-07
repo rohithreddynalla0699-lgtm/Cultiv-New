@@ -3,6 +3,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { createCustomerSession } from '../_shared/customer-session.ts';
 import { verifyOtp } from '../_shared/phone-update.ts';
+import { notificationChannelPolicy } from '../_shared/notification-policy.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -125,6 +126,7 @@ Deno.serve(async (req) => {
     return jsonResponse(400, { success: false, error: 'This verification code has expired.' });
   }
 
+  // Security/verification channel policy: signup verification is handled over SMS as defined in the shared notification policy.
   const isValidOtp = await verifyOtp(otpCode, requestRow.otp_hash);
   if (!isValidOtp) {
     const nextAttempts = Number(requestRow.otp_attempts ?? 0) + 1;

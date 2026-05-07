@@ -23,7 +23,10 @@ const ambientShapes = [
 
 export function AuthShell({ title, subtitle, children, footer, tagline = 'A premium healthy routine, kept in one place.' }: AuthShellProps) {
 	return (
-		<PageReveal className="relative min-h-[100svh] overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(45,80,22,0.12),_transparent_34%),linear-gradient(180deg,_#fafaf8_0%,_#f4f3ee_100%)] text-foreground">
+		<PageReveal
+			className="relative min-h-[100svh] overflow-y-auto bg-[radial-gradient(circle_at_top_left,_rgba(45,80,22,0.12),_transparent_34%),linear-gradient(180deg,_#fafaf8_0%,_#f4f3ee_100%)] text-foreground"
+			style={{ scrollbarGutter: 'stable' }}
+		>
 			<div
 				className="pointer-events-none absolute inset-0 opacity-[0.06] mix-blend-overlay"
 				style={{
