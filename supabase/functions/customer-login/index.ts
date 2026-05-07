@@ -133,6 +133,8 @@ interface LoginResponse {
   };
 }
 
+const LOGIN_VERIFICATION_REQUIRED_MESSAGE = "Verify your phone number to finish setting up your CULTIV account.";
+
 const buildNormalizedIdentifier = (identifier: string) => {
   const normalizedPhone = normalizePhone(identifier);
   if (normalizedPhone.length === 10) {
@@ -283,7 +285,7 @@ serve(async (req: any) => {
     if (normalizedPhone.length === 10) {
       const { data, error } = await supabase
         .from("customers")
-        .select("id, full_name, email, phone, password_hash, reward_points, phone_verified, email_verified")
+        .select("id, full_name, email, phone, password_hash, reward_points, phone_verified, email_verified, is_active, phone_verification_required")
         .eq("phone", normalizedPhone)
         .maybeSingle();
 
@@ -299,7 +301,7 @@ serve(async (req: any) => {
       const normalizedEmail = normalizeEmail(identifier);
       const { data, error } = await supabase
         .from("customers")
-        .select("id, full_name, email, phone, password_hash, reward_points, phone_verified, email_verified")
+        .select("id, full_name, email, phone, password_hash, reward_points, phone_verified, email_verified, is_active, phone_verification_required")
         .eq("email", normalizedEmail)
         .maybeSingle();
 
@@ -339,6 +341,21 @@ serve(async (req: any) => {
         success: false,
         message: LOGIN_FAILURE_MESSAGE,
       }, 401);
+    }
+
+    if (customer.is_active === false) {
+      return jsonResponse({
+        success: false,
+        message: LOGIN_FAILURE_MESSAGE,
+      }, 401);
+    }
+
+    if (customer.phone_verification_required === true) {
+      return jsonResponse({
+        success: false,
+        message: LOGIN_VERIFICATION_REQUIRED_MESSAGE,
+        requires_verification: true,
+      }, 403);
     }
 
     await clearFailedAttempts(supabase, [ipAttemptKey, identifierAttemptKey]);

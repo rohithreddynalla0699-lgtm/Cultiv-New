@@ -217,6 +217,10 @@ export interface AuthActionResult {
 	resetToken?: string;
 	verificationCode?: string;
 	userExists?: boolean;
+	customerId?: string;
+	requestId?: string;
+	expiresAt?: string;
+	requiresVerification?: boolean;
 }
 
 export interface CustomerPhoneUpdateRequestResult extends AuthActionResult {

@@ -76,6 +76,8 @@ interface AuthContextType {
   refreshLoyalty: () => Promise<void>;
   login: (input: LoginInput) => Promise<AuthActionResult>;
   signup: (input: SignupInput) => Promise<AuthActionResult>;
+  confirmCustomerSignupVerification: (input: { customerId: string; requestId: string; otpCode: string }) => Promise<AuthActionResult>;
+  resendCustomerSignupVerification: (customerId: string) => Promise<AuthActionResult>;
   requestPasswordReset: (identifier: string) => Promise<AuthActionResult>;
   resetPassword: (token: string, password: string) => Promise<AuthActionResult>;
   updateCustomerProfile: (input: { fullName: string }) => Promise<AuthActionResult>;
@@ -1489,34 +1491,115 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       const customerId = edgeFunctionResponse.customerId ?? edgeFunctionResponse.customer_id;
-      const customerSessionTokenFromSignup = normalizeCustomerSessionToken(edgeFunctionResponse.customer_session_token);
+      const requestId = typeof edgeFunctionResponse.verification_request_id === 'string'
+        ? edgeFunctionResponse.verification_request_id
+        : typeof edgeFunctionResponse.requestId === 'string'
+          ? edgeFunctionResponse.requestId
+          : undefined;
+      const expiresAt = typeof edgeFunctionResponse.verification_expires_at === 'string'
+        ? edgeFunctionResponse.verification_expires_at
+        : typeof edgeFunctionResponse.expiresAt === 'string'
+          ? edgeFunctionResponse.expiresAt
+          : undefined;
       if (!customerId) {
         return { success: false, message: 'Could not create your CULTIV profile right now. Please try again.' };
       }
 
-      if (!customerSessionTokenFromSignup) {
-        return { success: false, message: 'Could not create a secure customer session right now. Please try signing in.' };
-      }
-
-      setUsers((previous) => upsertBackendCustomerUser(previous, {
-        id: customerId,
-        full_name: fullName,
-        phone: normalizedPhoneValue,
-        email: normalizedEmail,
-      }));
-      setLoyaltyProfiles((previous) => ({
-        ...previous,
-        [customerId]: createEmptyLoyaltyProfile(customerId),
-      }));
-      setCustomerSessionTokenAndStorage(customerSessionTokenFromSignup);
-      setCurrentUserId(customerId);
-      setCustomerAccount({ id: customerId, reward_points: 0, phone_verified: false, email_verified: false });
-      setSupabaseRefreshTick((value) => value + 1);
-
-      return { success: true, message: 'Your CULTIV profile is ready.' };
+      return {
+        success: true,
+        message: edgeFunctionResponse.message || 'Enter the verification code sent to your phone to finish creating your account.',
+        customerId,
+        requestId,
+        expiresAt,
+        requiresVerification: true,
+      };
     } catch (err) {
       console.error('[signup] unexpected error calling edge function', err);
       return { success: false, message: 'Could not create your CULTIV profile right now. Please try again.' };
+    }
+  };
+
+  const confirmCustomerSignupVerification = async (
+    input: { customerId: string; requestId: string; otpCode: string },
+  ): Promise<AuthActionResult> => {
+    const customerId = input.customerId.trim();
+    const requestId = input.requestId.trim();
+    const otpCode = input.otpCode.trim();
+
+    if (!customerId || !requestId || !otpCode) {
+      return { success: false, message: 'Customer, request, and verification code are required.' };
+    }
+
+    try {
+      const { data, error } = await supabase.functions.invoke('customer-confirm-signup-verification', {
+        body: {
+          customerId,
+          requestId,
+          otpCode,
+        },
+      });
+
+      const message = data?.message
+        || data?.error
+        || (error ? 'Could not verify your phone right now. Please try again later.' : 'Could not verify your phone right now. Please try again later.');
+
+      if (error || data?.success === false) {
+        return { success: false, message };
+      }
+
+      const verifiedCustomerId = data?.customer_id;
+      const customerData = data?.customer;
+      const customerSessionToken = normalizeCustomerSessionToken(data?.customer_session_token);
+      if (!verifiedCustomerId || !customerData || !customerSessionToken) {
+        return { success: false, message: 'Your phone was verified, but we could not start your session. Please sign in.' };
+      }
+
+      setCustomerSessionTokenAndStorage(customerSessionToken);
+      setUsers((previous) => upsertBackendCustomerUser(previous, customerData));
+      setCurrentUserId(verifiedCustomerId);
+      setCustomerAccount({
+        id: verifiedCustomerId,
+        reward_points: customerData.reward_points,
+        phone_verified: customerData.phone_verified,
+        email_verified: customerData.email_verified,
+      });
+      setSupabaseRefreshTick((value) => value + 1);
+
+      return { success: true, message };
+    } catch (err) {
+      console.error('[confirmCustomerSignupVerification] unexpected error calling edge function', err);
+      return { success: false, message: 'Could not verify your phone right now. Please try again later.' };
+    }
+  };
+
+  const resendCustomerSignupVerification = async (customerId: string): Promise<AuthActionResult> => {
+    const trimmedCustomerId = customerId.trim();
+    if (!trimmedCustomerId) {
+      return { success: false, message: 'Customer id is required.' };
+    }
+
+    try {
+      const { data, error } = await supabase.functions.invoke('customer-resend-signup-verification', {
+        body: { customerId: trimmedCustomerId },
+      });
+
+      const message = data?.message
+        || data?.error
+        || (error ? 'Could not resend the verification code right now. Please try again later.' : 'Could not resend the verification code right now. Please try again later.');
+
+      if (error || data?.success === false) {
+        return { success: false, message };
+      }
+
+      return {
+        success: true,
+        message,
+        requestId: typeof data?.requestId === 'string' ? data.requestId : undefined,
+        expiresAt: typeof data?.expiresAt === 'string' ? data.expiresAt : undefined,
+      };
+    } catch (err) {
+      console.error('[resendCustomerSignupVerification] unexpected error calling edge function', err);
+      return { success: false, message: 'Could not resend the verification code right now. Please try again later.' };
     }
   };
 
@@ -2119,6 +2202,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     signup,
     requestPasswordReset,
     resetPassword,
+    confirmCustomerSignupVerification,
+    resendCustomerSignupVerification,
     updateCustomerProfile,
     requestCustomerPhoneUpdate,
     confirmCustomerPhoneUpdate,

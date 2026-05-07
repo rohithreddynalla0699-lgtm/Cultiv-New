@@ -4,7 +4,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.43.0";
 // @ts-ignore: Deno remote imports
 import { hash } from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
-import { createCustomerSession } from "../_shared/customer-session.ts";
+import { generateOtpCode, hashOtp, sendSms } from "../_shared/phone-update.ts";
 
 declare const Deno: any;
 
@@ -40,6 +40,7 @@ const jsonResponse = (body: Record<string, unknown>, status = 200): Response =>
 const PBKDF2_ITERATIONS = 100000;
 const PBKDF2_SALT_BYTES = 16;
 const PBKDF2_HASH_BITS = 256;
+const OTP_EXPIRY_MS = 2 * 60 * 1000;
 
 const bytesToBase64 = (bytes: Uint8Array): string => {
   let binary = "";
@@ -153,6 +154,11 @@ serve(async (req: any) => {
     );
 
 
+    const nowIso = new Date().toISOString();
+    const otpCode = generateOtpCode();
+    const otpHash = await hashOtp(otpCode);
+    const verificationExpiresAtIso = new Date(Date.now() + OTP_EXPIRY_MS).toISOString();
+
     // Insert into customers table (password_hash column)
     const { data: insertedCustomer, error: insertError } = await supabase
       .from("customers")
@@ -161,6 +167,8 @@ serve(async (req: any) => {
         email: normalizedEmail,
         phone: normalizedPhone,
         password_hash: passwordHash,
+        phone_verified: false,
+        phone_verification_required: true,
         is_active: true,
       })
       .select("id")
@@ -240,22 +248,51 @@ serve(async (req: any) => {
       }, 500);
     }
 
-    let customerSession;
-    try {
-      customerSession = await createCustomerSession(supabase, insertedCustomer.id, req);
-    } catch (sessionError) {
-      console.error("[customer-signup] customer session create failed", sessionError);
+    const { data: verificationRequest, error: verificationInsertError } = await supabase
+      .from("customer_signup_verification_requests")
+      .insert({
+        customer_id: insertedCustomer.id,
+        phone_normalized: normalizedPhone,
+        otp_hash: otpHash,
+        status: "pending",
+        requested_at: nowIso,
+        expires_at: verificationExpiresAtIso,
+        last_otp_sent_at: nowIso,
+        otp_attempts: 0,
+        resend_attempts: 0,
+        created_at: nowIso,
+        updated_at: nowIso,
+      })
+      .select("id")
+      .maybeSingle();
+
+    if (verificationInsertError || !verificationRequest?.id) {
+      console.error("[customer-signup] verification request insert failed", verificationInsertError);
+      await supabase.from("customers").delete().eq("id", insertedCustomer.id);
       return jsonResponse({
         success: false,
-        message: "Your account was created, but we could not start your session. Please sign in.",
+        message: "Could not start phone verification right now. Please try again.",
+      }, 500);
+    }
+
+    try {
+      await sendSms(normalizedPhone, `Your CULTIV verification code is ${otpCode}`);
+    } catch (smsError) {
+      console.error("[customer-signup] signup verification SMS send failed", smsError);
+      await supabase.from("customer_signup_verification_requests").delete().eq("id", verificationRequest.id);
+      await supabase.from("customers").delete().eq("id", insertedCustomer.id);
+      return jsonResponse({
+        success: false,
+        message: "Could not send your verification code right now. Please try again.",
       }, 500);
     }
 
     return jsonResponse({
       success: true,
       customerId: insertedCustomer.id,
-      customer_session_token: customerSession.token,
-      customer_session_expires_at: customerSession.expiresAtIso,
+      verification_request_id: verificationRequest.id,
+      verification_expires_at: verificationExpiresAtIso,
+      message: "Enter the verification code sent to your phone to finish creating your account.",
     }, 201);
   } catch (err) {
     console.error("[customer-signup] unexpected error:", err);

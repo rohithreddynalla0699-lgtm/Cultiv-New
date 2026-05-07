@@ -168,7 +168,7 @@ CHECKOUT_DEBUG_LOGS=false
 
 ## OTP / Phone Secrets
 
-Required if customer phone-update OTP flow is enabled.
+Required if customer phone-update OTP flow or customer signup phone verification is enabled.
 
 #### `OTP_HASH_SECRET`
 
@@ -379,6 +379,9 @@ Production rule:
 - `OTP_HASH_SECRET` set
 - Twilio credentials set
 - Twilio sender phone configured
+- customer signup verification request succeeds
+- customer signup verification confirm succeeds
+- pending unverified signup cannot log in before verification
 - customer phone update request succeeds
 - customer phone update confirm succeeds
 - no dev logging or fallback assumptions remain in production
