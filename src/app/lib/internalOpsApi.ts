@@ -490,6 +490,39 @@ export type InternalPosCheckoutErrorCode =
   | 'UNKNOWN_ERROR';
 
 export interface InternalReportsSummary {
+  reconciliation: {
+    summary: {
+      initiatedOlderThan15Minutes: number;
+      pendingActionOlderThan15Minutes: number;
+      failed: number;
+      cancelled: number;
+      orphaned: number;
+      succeededWithoutOrder: number;
+      paidOrderMissingOrderPayment: number;
+    };
+    anomalies: Array<{
+      anomalyType:
+        | 'initiated_older_than_15_minutes'
+        | 'pending_action_older_than_15_minutes'
+        | 'failed'
+        | 'cancelled'
+        | 'orphaned'
+        | 'succeeded_without_order'
+        | 'paid_order_missing_order_payment';
+      paymentId: string;
+      status: string;
+      storeId: string;
+      storeName: string;
+      amount: number;
+      gateway: string;
+      gatewayOrderId: string | null;
+      gatewayPaymentId: string | null;
+      orderId: string | null;
+      failureMessage: string | null;
+      createdAt: string;
+      updatedAt: string;
+    }>;
+  };
   rangeLabel: string;
   rangeFrom: string | null;
   rangeTo: string | null;

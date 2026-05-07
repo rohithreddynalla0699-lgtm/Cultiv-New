@@ -8,6 +8,19 @@ import type { InternalReportsSummary } from '../../lib/internalOpsApi';
 const formatCurrency = (value: number) => `Rs ${Number(value ?? 0).toFixed(2)}`;
 type ReportsDatePreset = 'today' | 'yesterday' | 'this_week' | 'this_month' | 'custom';
 
+const EMPTY_RECONCILIATION: NonNullable<InternalReportsSummary['reconciliation']> = {
+  summary: {
+    initiatedOlderThan15Minutes: 0,
+    pendingActionOlderThan15Minutes: 0,
+    failed: 0,
+    cancelled: 0,
+    orphaned: 0,
+    succeededWithoutOrder: 0,
+    paidOrderMissingOrderPayment: 0,
+  },
+  anomalies: [],
+};
+
 function escapeCsvCell(value: string | number | null | undefined) {
   const normalized = String(value ?? '');
   if (/[",\n]/.test(normalized)) {
@@ -109,6 +122,22 @@ function formatDateLabel(value: string) {
     month: 'short',
     year: 'numeric',
   });
+}
+
+function formatDateTimeLabel(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function formatReconciliationAnomalyLabel(value: string) {
+  return value.replace(/_/g, ' ');
 }
 
 function toDateInputValue(date: Date) {
@@ -326,6 +355,8 @@ export function ReportsScreen() {
 
   const selectedStoreLabel = activeStore?.name ?? 'All stores';
   const isAllStores = !activeStore;
+  const reconciliation = summary?.reconciliation ?? EMPTY_RECONCILIATION;
+  const reconciliationRows = reconciliation.anomalies;
 
   const exportSummaryCsv = () => {
     if (!summary) return;
@@ -394,6 +425,36 @@ export function ReportsScreen() {
     );
   };
 
+  const exportReconciliationCsv = () => {
+    if (!summary) return;
+    downloadCsvFile(
+      buildReportFilename('payments', summary.rangeFrom, summary.rangeTo, `${selectedStoreLabel}_reconciliation`, isAllStores),
+      [
+        ...buildCsvMetadataRows({
+          reportName: 'Payment Reconciliation Report',
+          rangeLabel: summary.rangeLabel,
+          storeLabel: selectedStoreLabel,
+        }),
+        ['Anomaly Type', 'Payment ID', 'Status', 'Store', 'Store ID', 'Amount', 'Gateway', 'Gateway Order ID', 'Gateway Payment ID', 'Order ID', 'Failure Message', 'Created At', 'Updated At'],
+        ...reconciliationRows.map((entry) => [
+          entry.anomalyType,
+          entry.paymentId,
+          entry.status,
+          entry.storeName,
+          entry.storeId,
+          entry.amount,
+          entry.gateway,
+          entry.gatewayOrderId,
+          entry.gatewayPaymentId,
+          entry.orderId,
+          entry.failureMessage,
+          entry.createdAt,
+          entry.updatedAt,
+        ]),
+      ],
+    );
+  };
+
   if (!permissions.canViewReports) {
     return <Navigate to="/operations/summary" replace />;
   }
@@ -436,6 +497,13 @@ export function ReportsScreen() {
                   className="rounded-full border border-primary/16 bg-white px-4 py-2 text-sm font-medium text-foreground/72 transition hover:bg-primary/5"
                 >
                   Export Store CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={exportReconciliationCsv}
+                  className="rounded-full border border-primary/16 bg-white px-4 py-2 text-sm font-medium text-foreground/72 transition hover:bg-primary/5"
+                >
+                  Export Reconciliation CSV
                 </button>
               </>
             ) : null}
@@ -576,6 +644,110 @@ export function ReportsScreen() {
               </div>
             </section>
           </div>
+
+          <section className="rounded-[24px] border border-primary/12 bg-white/90 p-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-foreground/55">Payment Reconciliation</p>
+                <p className="mt-1 text-sm text-foreground/60">Read-only visibility into customer checkout payment attempts that may need support review.</p>
+              </div>
+              <div className="rounded-2xl bg-[#F7FAF3] px-3 py-2 text-xs text-foreground/64">
+                {reconciliationRows.length} anomaly row{reconciliationRows.length === 1 ? '' : 's'} in range
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl bg-[#F7FAF3] px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.12em] text-foreground/52">Stale initiated</p>
+                <p className="mt-1 text-lg font-semibold text-foreground">{reconciliation.summary.initiatedOlderThan15Minutes}</p>
+              </div>
+              <div className="rounded-2xl bg-[#F7FAF3] px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.12em] text-foreground/52">Stale pending action</p>
+                <p className="mt-1 text-lg font-semibold text-foreground">{reconciliation.summary.pendingActionOlderThan15Minutes}</p>
+              </div>
+              <div className="rounded-2xl bg-[#F7FAF3] px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.12em] text-foreground/52">Failed / Cancelled</p>
+                <p className="mt-1 text-lg font-semibold text-foreground">{reconciliation.summary.failed + reconciliation.summary.cancelled}</p>
+              </div>
+              <div className="rounded-2xl bg-[#F7FAF3] px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.12em] text-foreground/52">Escalate now</p>
+                <p className="mt-1 text-lg font-semibold text-foreground">
+                  {reconciliation.summary.orphaned + reconciliation.summary.succeededWithoutOrder + reconciliation.summary.paidOrderMissingOrderPayment}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <div className="rounded-2xl border border-primary/10 px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.12em] text-foreground/52">Failed</p>
+                <p className="mt-1 text-base font-semibold text-foreground">{reconciliation.summary.failed}</p>
+              </div>
+              <div className="rounded-2xl border border-primary/10 px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.12em] text-foreground/52">Cancelled</p>
+                <p className="mt-1 text-base font-semibold text-foreground">{reconciliation.summary.cancelled}</p>
+              </div>
+              <div className="rounded-2xl border border-primary/10 px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.12em] text-foreground/52">Orphaned</p>
+                <p className="mt-1 text-base font-semibold text-foreground">{reconciliation.summary.orphaned}</p>
+              </div>
+              <div className="rounded-2xl border border-primary/10 px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.12em] text-foreground/52">Succeeded without order</p>
+                <p className="mt-1 text-base font-semibold text-foreground">{reconciliation.summary.succeededWithoutOrder}</p>
+              </div>
+              <div className="rounded-2xl border border-primary/10 px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.12em] text-foreground/52">Paid order missing payment row</p>
+                <p className="mt-1 text-base font-semibold text-foreground">{reconciliation.summary.paidOrderMissingOrderPayment}</p>
+              </div>
+            </div>
+
+            <div className="mt-4 overflow-x-auto rounded-[20px] border border-primary/10">
+              <div className="min-w-[1180px]">
+                <div className="grid grid-cols-[1.25fr_1.35fr_1.2fr_0.8fr_0.7fr_1fr_1fr_1fr_1.2fr] gap-3 border-b border-primary/10 bg-[#F7FAF3] px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/52">
+                  <p>Anomaly</p>
+                  <p>Payment</p>
+                  <p>Store</p>
+                  <p>Amount</p>
+                  <p>Gateway</p>
+                  <p>Order Ref</p>
+                  <p>Payment Ref</p>
+                  <p>Order</p>
+                  <p>Updated</p>
+                </div>
+                <div className="divide-y divide-primary/8">
+                  {reconciliationRows.length > 0 ? reconciliationRows.map((entry) => (
+                    <div key={`${entry.paymentId}-${entry.anomalyType}`} className="grid grid-cols-[1.25fr_1.35fr_1.2fr_0.8fr_0.7fr_1fr_1fr_1fr_1.2fr] gap-3 px-4 py-3 text-sm">
+                      <div>
+                        <p className="font-medium capitalize text-foreground">{formatReconciliationAnomalyLabel(entry.anomalyType)}</p>
+                        <p className="mt-1 text-xs text-foreground/56">{entry.status || 'unknown'}</p>
+                      </div>
+                      <div>
+                        <p className="font-mono text-xs text-foreground">{entry.paymentId}</p>
+                        {entry.failureMessage ? (
+                          <p className="mt-1 text-xs text-rose-700">{entry.failureMessage}</p>
+                        ) : (
+                          <p className="mt-1 text-xs text-foreground/56">Created {formatDateTimeLabel(entry.createdAt)}</p>
+                        )}
+                      </div>
+                      <div>
+                        <p className="font-medium text-foreground">{entry.storeName}</p>
+                        <p className="mt-1 font-mono text-xs text-foreground/56">{entry.storeId}</p>
+                      </div>
+                      <p className="font-semibold text-foreground">{formatCurrency(entry.amount)}</p>
+                      <p className="capitalize text-foreground/72">{entry.gateway || 'unknown'}</p>
+                      <p className="font-mono text-xs text-foreground/72">{entry.gatewayOrderId ?? '—'}</p>
+                      <p className="font-mono text-xs text-foreground/72">{entry.gatewayPaymentId ?? '—'}</p>
+                      <p className="font-mono text-xs text-foreground/72">{entry.orderId ?? '—'}</p>
+                      <p className="text-xs text-foreground/62">{formatDateTimeLabel(entry.updatedAt)}</p>
+                    </div>
+                  )) : (
+                    <div className="px-4 py-6 text-sm text-foreground/60">
+                      No reconciliation anomalies found for the selected range.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
 
           <section className="overflow-x-auto rounded-[24px] border border-primary/12 bg-white/90">
             <div className="min-w-[760px]">

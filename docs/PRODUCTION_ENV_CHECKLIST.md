@@ -341,6 +341,19 @@ Examples:
 - order row created
 - payment row created
 
+### Payment reconciliation readiness
+
+- internal Reports should expose customer checkout payment anomalies before launch
+- review customer payment attempts for:
+  - `initiated` older than 15 minutes
+  - `pending_action` older than 15 minutes
+  - `failed`
+  - `cancelled`
+  - `orphaned`
+  - `succeeded` without an order link
+  - paid orders missing an `order_payments` row
+- normal successful mock checkout should not appear in reconciliation anomalies
+
 ## 5. OTP / Phone Setup
 
 Phone update flow requires secure OTP configuration.

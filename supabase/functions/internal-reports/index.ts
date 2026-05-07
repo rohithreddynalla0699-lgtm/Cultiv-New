@@ -28,6 +28,15 @@ interface InternalAccessSessionRow {
   last_seen_at: string;
 }
 
+type ReconciliationAnomalyType =
+  | 'initiated_older_than_15_minutes'
+  | 'pending_action_older_than_15_minutes'
+  | 'failed'
+  | 'cancelled'
+  | 'orphaned'
+  | 'succeeded_without_order'
+  | 'paid_order_missing_order_payment';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
@@ -164,6 +173,15 @@ const resolveScopedStoreIds = async (db: ReturnType<typeof createClient>, sessio
   return { storeIds: (data ?? []).map((row: { id: string }) => row.id) };
 };
 
+const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
+
+const isOlderThan15Minutes = (value: unknown) => {
+  if (typeof value !== 'string' || !value.trim()) return false;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return false;
+  return Date.now() - parsed.getTime() > FIFTEEN_MINUTES_MS;
+};
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -226,54 +244,169 @@ Deno.serve(async (req) => {
 
   let ordersQuery = db
       .from('orders')
-      .select('order_id, store_id, order_type, source_channel, order_status, total_amount, subtotal_amount, discount_amount, tax_amount, tip_amount, created_at')
+      .select('order_id, store_id, order_type, source_channel, order_status, total_amount, subtotal_amount, discount_amount, tax_amount, tip_amount, payment_status, created_at')
       .in('store_id', storeIds);
+
+  let customerPaymentsQuery = db
+    .from('customer_payments')
+    .select('payment_id, status, store_id, amount, gateway, gateway_order_id, gateway_payment_id, order_id, failure_message, created_at, updated_at')
+    .in('store_id', storeIds);
 
   if (normalizedDateRange.from && normalizedDateRange.to) {
     ordersQuery = ordersQuery
       .gte('created_at', normalizedDateRange.from)
       .lte('created_at', normalizedDateRange.to);
+    customerPaymentsQuery = customerPaymentsQuery
+      .gte('created_at', normalizedDateRange.from)
+      .lte('created_at', normalizedDateRange.to);
   }
 
-  const [ordersResult, storesResult] = await Promise.all([
+  const [ordersResult, storesResult, customerPaymentsResult] = await Promise.all([
     ordersQuery,
     db
       .from('stores')
       .select('id, name')
       .in('id', storeIds),
+    customerPaymentsQuery,
   ]);
 
-  if (ordersResult.error || storesResult.error) {
+  if (ordersResult.error || storesResult.error || customerPaymentsResult.error) {
     return json(500, { error: 'Could not load reports.' });
   }
 
-  const orders = (ordersResult.data ?? []).filter((row: any) => row.order_status !== 'cancelled');
+  const allOrders = ordersResult.data ?? [];
+  const orders = allOrders.filter((row: any) => row.order_status !== 'cancelled');
   const stores = storesResult.data ?? [];
+  const customerPayments = customerPaymentsResult.data ?? [];
   const storeNameById = Object.fromEntries(stores.map((row: any) => [row.id, row.name]));
   const filteredOrderIds = orders.map((row: any) => row.order_id);
+  const customerPaymentOrderIds = customerPayments
+    .map((row: any) => row.order_id)
+    .filter((orderId: string | null): orderId is string => Boolean(orderId));
+  const reconciliationOrderIds = Array.from(new Set(customerPaymentOrderIds));
 
-  const [paymentsResult, itemsResult] = filteredOrderIds.length > 0
+  const safeFilteredOrderIds = filteredOrderIds.length > 0 ? filteredOrderIds : ['00000000-0000-0000-0000-000000000000'];
+  const safeReconciliationOrderIds = reconciliationOrderIds.length > 0 ? reconciliationOrderIds : ['00000000-0000-0000-0000-000000000000'];
+
+  const [paymentsResult, itemsResult, reconciliationOrderPaymentsResult] = filteredOrderIds.length > 0 || reconciliationOrderIds.length > 0
     ? await Promise.all([
       db
         .from('order_payments')
         .select('order_id, store_id, payment_method, amount, status, recorded_at')
-        .in('order_id', filteredOrderIds),
+        .in('order_id', safeFilteredOrderIds),
       db
         .from('order_items')
         .select('order_id, item_name, quantity, line_total')
-        .in('order_id', filteredOrderIds),
+        .in('order_id', safeFilteredOrderIds),
+      db
+        .from('order_payments')
+        .select('order_id, status')
+        .in('order_id', safeReconciliationOrderIds),
     ])
     : [
       { data: [], error: null },
       { data: [], error: null },
+      { data: [], error: null },
     ];
 
-  if (paymentsResult.error || itemsResult.error) {
+  if (paymentsResult.error || itemsResult.error || reconciliationOrderPaymentsResult.error) {
     return json(500, { error: 'Could not load reports.' });
   }
 
   const payments = (paymentsResult.data ?? []).filter((row: any) => row.status === 'recorded');
   const orderItems = itemsResult.data ?? [];
+  const reconciliationOrderPayments = reconciliationOrderPaymentsResult.data ?? [];
+  const orderById = new Map(allOrders.map((row: any) => [row.order_id, row]));
+  const reconciliationPaymentByOrderId = new Map(reconciliationOrderPayments.map((row: any) => [row.order_id, row]));
+
+  const reconciliationSummary = {
+    initiatedOlderThan15Minutes: 0,
+    pendingActionOlderThan15Minutes: 0,
+    failed: 0,
+    cancelled: 0,
+    orphaned: 0,
+    succeededWithoutOrder: 0,
+    paidOrderMissingOrderPayment: 0,
+  };
+
+  const anomalyPriority: Record<ReconciliationAnomalyType, number> = {
+    orphaned: 0,
+    succeeded_without_order: 1,
+    paid_order_missing_order_payment: 2,
+    initiated_older_than_15_minutes: 3,
+    pending_action_older_than_15_minutes: 4,
+    failed: 5,
+    cancelled: 6,
+  };
+
+  const anomalies = customerPayments.flatMap((row: any) => {
+    const anomalyTypes: ReconciliationAnomalyType[] = [];
+    const status = String(row.status ?? '').trim().toLowerCase();
+    const matchingOrder = row.order_id ? orderById.get(row.order_id) : null;
+    const matchingOrderPayment = row.order_id ? reconciliationPaymentByOrderId.get(row.order_id) : null;
+
+    if (status === 'initiated' && isOlderThan15Minutes(row.created_at)) {
+      reconciliationSummary.initiatedOlderThan15Minutes += 1;
+      anomalyTypes.push('initiated_older_than_15_minutes');
+    }
+
+    if (status === 'pending_action' && isOlderThan15Minutes(row.created_at)) {
+      reconciliationSummary.pendingActionOlderThan15Minutes += 1;
+      anomalyTypes.push('pending_action_older_than_15_minutes');
+    }
+
+    if (status === 'failed') {
+      reconciliationSummary.failed += 1;
+      anomalyTypes.push('failed');
+    }
+
+    if (status === 'cancelled') {
+      reconciliationSummary.cancelled += 1;
+      anomalyTypes.push('cancelled');
+    }
+
+    if (status === 'orphaned') {
+      reconciliationSummary.orphaned += 1;
+      anomalyTypes.push('orphaned');
+    }
+
+    if (status === 'succeeded' && !row.order_id) {
+      reconciliationSummary.succeededWithoutOrder += 1;
+      anomalyTypes.push('succeeded_without_order');
+    }
+
+    if (
+      row.order_id
+      && matchingOrder
+      && String(matchingOrder.payment_status ?? '').trim().toLowerCase() === 'paid'
+      && !matchingOrderPayment
+    ) {
+      reconciliationSummary.paidOrderMissingOrderPayment += 1;
+      anomalyTypes.push('paid_order_missing_order_payment');
+    }
+
+    return anomalyTypes.map((anomalyType) => ({
+      anomalyType,
+      paymentId: row.payment_id,
+      status: String(row.status ?? ''),
+      storeId: row.store_id,
+      storeName: storeNameById[row.store_id] ?? 'Unknown store',
+      amount: Number(row.amount ?? 0),
+      gateway: String(row.gateway ?? ''),
+      gatewayOrderId: row.gateway_order_id ? String(row.gateway_order_id) : null,
+      gatewayPaymentId: row.gateway_payment_id ? String(row.gateway_payment_id) : null,
+      orderId: row.order_id ? String(row.order_id) : null,
+      failureMessage: row.failure_message ? String(row.failure_message) : null,
+      createdAt: String(row.created_at ?? ''),
+      updatedAt: String(row.updated_at ?? ''),
+    }));
+  })
+    .sort((left, right) => {
+      const priorityDelta = anomalyPriority[left.anomalyType] - anomalyPriority[right.anomalyType];
+      if (priorityDelta !== 0) return priorityDelta;
+      return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+    })
+    .slice(0, 50);
 
   const totalRevenue = orders.reduce((sum: number, row: any) => sum + Number(row.total_amount ?? 0), 0);
   const totalTax = orders.reduce((sum: number, row: any) => sum + Number(row.tax_amount ?? 0), 0);
@@ -330,6 +463,10 @@ Deno.serve(async (req) => {
       paymentMethodSummary,
       itemSalesSummary,
       storeSalesSummary,
+      reconciliation: {
+        summary: reconciliationSummary,
+        anomalies,
+      },
     },
   });
 });
