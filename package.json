@@ -11,7 +11,8 @@
     "dev:all": "concurrently -k -n SYNC,WEB -c green,cyan \"npm run sync\" \"npm run dev\"",
     "qa:store-operator": "node qa/local_store_operator_regression.mjs",
     "qa:customer-checkout": "node qa/local_customer_checkout_mock.mjs",
-    "qa:protected-routes": "node qa/local_protected_routes_logout_regression.mjs"
+    "qa:protected-routes": "node qa/local_protected_routes_logout_regression.mjs",
+    "qa:staging-release-gate": "node qa/staging_release_gate.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.101.1",

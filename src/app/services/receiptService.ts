@@ -1,5 +1,17 @@
 // @ts-ignore - Supabase client is defined in JS module.
 import { supabase } from '../../lib/supabase';
+import { handleInvalidInternalSessionFailure } from '../lib/internalOpsApi';
+
+const resolveFunctionErrorStatus = (error: unknown): number | undefined => {
+  if (!error || typeof error !== 'object') {
+    return undefined;
+  }
+
+  const maybeStatus = (error as { context?: { status?: unknown }; status?: unknown }).context?.status
+    ?? (error as { status?: unknown }).status;
+
+  return typeof maybeStatus === 'number' ? maybeStatus : undefined;
+};
 
 export interface ReceiptBusinessMeta {
   brandName: string;
@@ -86,6 +98,15 @@ export async function fetchOrderReceipt(params: {
     },
   });
 
+  if (params.internalSessionToken) {
+    const payload = data as { error?: string; code?: string; success?: boolean } | null;
+    handleInvalidInternalSessionFailure({
+      message: payload?.error ?? error?.message ?? null,
+      code: payload?.code ?? null,
+      status: resolveFunctionErrorStatus(error),
+    });
+  }
+
   if (error || !data?.success || !data?.receipt) {
     throw new Error(data?.error || error?.message || 'Could not load receipt.');
   }
@@ -111,6 +132,15 @@ export async function sendOrderReceipt(params: {
       phone: params.phone ?? undefined,
     },
   });
+
+  if (params.internalSessionToken) {
+    const payload = data as { error?: string; code?: string; success?: boolean } | null;
+    handleInvalidInternalSessionFailure({
+      message: payload?.error ?? error?.message ?? null,
+      code: payload?.code ?? null,
+      status: resolveFunctionErrorStatus(error),
+    });
+  }
 
   if (error && !data) {
     throw new Error(error.message || 'Could not deliver receipt.');

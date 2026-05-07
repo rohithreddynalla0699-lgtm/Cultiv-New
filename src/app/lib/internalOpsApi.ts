@@ -112,6 +112,20 @@ const maybeHandleInvalidInternalSession = (message: string, status?: number) => 
   }
 };
 
+export const handleInvalidInternalSessionFailure = (params: {
+  message?: string | null;
+  status?: number;
+  code?: string | null;
+}) => {
+  const message = params.message?.trim() ?? '';
+  if (params.code === 'INVALID_SESSION') {
+    clearInternalAccessSession();
+    return;
+  }
+
+  maybeHandleInvalidInternalSession(message, params.status);
+};
+
 export async function internalLogout(internalSessionToken: string): Promise<{ success: boolean }> {
   try {
     const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
@@ -1222,6 +1236,12 @@ export async function createInternalPosOrder(params: {
       const errorCode = typeof rawPayload.code === 'string'
         ? rawPayload.code as InternalPosCheckoutErrorCode
         : 'UNKNOWN_ERROR';
+
+      handleInvalidInternalSessionFailure({
+        message,
+        status: response.status,
+        code: errorCode,
+      });
 
       return {
         data: null,

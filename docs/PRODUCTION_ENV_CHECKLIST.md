@@ -477,7 +477,56 @@ Important recent examples:
 - `20260506140000_add_store_operator_sessions.sql`
 - `20260506173000_harden_employee_shifts_and_operator_sessions.sql`
 
-## 8. Post-deploy Smoke Tests
+## 8. Staging Release Gate
+
+Before any pilot or public deployment, staging smoke must pass against the actual target environment.
+
+This release gate intentionally uses the existing deterministic local smoke scripts. It does not add a broad browser PR gate.
+
+### Required env vars for the staging gate
+
+- `BASE_URL`
+- `ADMIN_OWNER_PIN`
+- `STORE_TEST_PIN`
+- `STORE_TEST_EMPLOYEE_NAME`
+- `STORE_TEST_EMPLOYEE_PIN`
+- `CUSTOMER_TEST_EMAIL`
+- `CUSTOMER_TEST_PASSWORD`
+
+### Required command
+
+```bash
+npm run qa:staging-release-gate
+```
+
+### What it runs
+
+The release gate runs these scripts in order and stops on first failure:
+
+1. `qa:protected-routes`
+2. `qa:store-operator`
+3. `qa:customer-checkout`
+
+### Pass / fail rules
+
+- All three scripts must exit with code `0`
+- Any script failure blocks pilot/public deployment
+- Any missing env var blocks the release gate immediately
+- Typecheck and build must also pass before deployment
+
+### Required pre-release sequence
+
+```bash
+npm run typecheck
+npm run build
+npm run qa:staging-release-gate
+```
+
+### Release discipline rule
+
+Do not promote staging to pilot or public if any of the above commands fail.
+
+## 9. Post-deploy Smoke Tests
 
 ## Customer Flows
 
@@ -525,7 +574,7 @@ Important recent examples:
 - no active operator session remains linked to a closed shift
 - `shift_status` matches actual open-shift truth
 
-## 9. Common Failure Modes
+## 10. Common Failure Modes
 
 ### Payment provider mismatch
 
@@ -611,7 +660,7 @@ Cause:
 - `CHECKOUT_DEBUG_LOGS=true`
 - `RECEIPT_DEBUG_LOGS=true`
 
-## 10. Security Warnings
+## 11. Security Warnings
 
 - Never commit secrets to the repository.
 - Never commit production `.env` files.
@@ -622,11 +671,10 @@ Cause:
 - Keep debug flags disabled in production unless temporarily needed for incident response.
 - Restrict access to service-role secrets and provider API keys.
 
-## Recommended Documentation Follow-up
+## 12. Recommended Documentation Follow-up
 
 If we want to keep this guide in sync long-term, the best companion files to maintain are:
 
 - [README.md](/Users/rohith/Desktop/Personal%20Business/Cultiv%20New/README.md:1)
 - [.env.local.example](/Users/rohith/Desktop/Personal%20Business/Cultiv%20New/.env.local.example:1)
 - `supabase/.env.example` if added later
-
