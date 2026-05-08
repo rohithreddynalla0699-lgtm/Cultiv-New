@@ -10,6 +10,7 @@ import { DropdownSlide } from "../core/motion/cultivMotion";
 import type { HomeScrollLocationState } from '../types/navigation';
 import { StoreSelectorModal, type StoreSelectorItem } from './StoreSelectorModal';
 import { AppWaitlistModal } from './AppWaitlistModal';
+import { SignOutConfirmModal } from './SignOutConfirmModal';
 import {
   getSelectedStore,
   loadSelectedStoreId,
@@ -19,6 +20,7 @@ import {
   subscribeSelectedStore,
 } from '../data/storeLocator';
 import { requestOpenAppWaitlist, subscribeOpenAppWaitlist } from '../data/appLaunch';
+import { hasActiveCartItems } from '../data/shoppingSession';
 
 export function Header() {
   const { user, logout, authRestoring } = useAuth();
@@ -28,6 +30,7 @@ export function Header() {
   const [activeHomeTab, setActiveHomeTab] = useState<'home' | 'journal' | 'about'>('home');
   const [showStoreSelector, setShowStoreSelector] = useState(false);
   const [showAppWaitlist, setShowAppWaitlist] = useState(false);
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
   const [stores, setStores] = useState<StoreSelectorItem[]>([]);
   const [selectedStoreId, setSelectedStoreIdState] = useState<string>('');
   const menuRef = useRef<HTMLDivElement>(null);
@@ -179,6 +182,26 @@ export function Header() {
     }
   };
 
+  const executeLogout = () => {
+    logout();
+    navigate('/', {
+      replace: true,
+      state: { flashMessage: "You've been signed out successfully." },
+    });
+    setShowUserMenu(false);
+    setShowSignOutConfirm(false);
+  };
+
+  const handleSignOut = () => {
+    if (hasActiveCartItems()) {
+      setShowSignOutConfirm(true);
+      setShowUserMenu(false);
+      return;
+    }
+
+    executeLogout();
+  };
+
   return (
     <header className="fixed top-0 left-0 right-0 z-50 border-b border-black/[0.06] bg-[#f8f7f2]/95">
       <div className="container mx-auto px-6 py-4">
@@ -259,8 +282,7 @@ export function Header() {
         <div className="flex items-center gap-2 justify-self-end">
           <button type="button" onClick={() => setShowStoreSelector(true)} className={rightUtilityClassName}>
             <MapPin className="h-4 w-4 text-primary" />
-            <span className="hidden 2xl:inline flex-1 truncate text-left">{activeStore?.name ?? (stores.length === 0 ? 'No stores available' : 'Select location')}</span>
-            <span className="2xl:hidden">Store</span>
+            <span className="min-w-0 flex-1 truncate text-left">{activeStore?.name ?? (stores.length === 0 ? 'No stores available' : 'Select location')}</span>
             <ChevronDown className="h-4 w-4 text-foreground/45" />
           </button>
 
@@ -324,14 +346,7 @@ export function Header() {
                       Rewards
                     </Link>
                     <button
-                      onClick={() => {
-                        logout();
-                        navigate('/', {
-                          replace: true,
-                          state: { flashMessage: "You've been signed out successfully." },
-                        });
-                        setShowUserMenu(false);
-                      }}
+                      onClick={handleSignOut}
                       className="block w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
                     >
                       Sign Out
@@ -357,7 +372,8 @@ export function Header() {
               <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center">
                 <User className="w-4 h-4 text-primary" />
               </div>
-              <span className="hidden sm:block">Profile</span>
+              <span className="sm:hidden">Login</span>
+              <span className="hidden sm:block">Login / Sign Up</span>
             </Link>
           )}
         </div>
@@ -378,6 +394,12 @@ export function Header() {
         isOpen={showAppWaitlist}
         defaultEmail={user?.email}
         onClose={() => setShowAppWaitlist(false)}
+      />
+
+      <SignOutConfirmModal
+        open={showSignOutConfirm}
+        onClose={() => setShowSignOutConfirm(false)}
+        onConfirm={executeLogout}
       />
     </header>
   );

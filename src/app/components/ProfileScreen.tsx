@@ -8,7 +8,9 @@ import { useAuth } from '../contexts/AuthContext';
 import { Logo } from './Logo';
 import { ProfilePhoneUpdateFlow } from './ProfilePhoneUpdateFlow';
 import { Modal } from './Modal';
+import { SignOutConfirmModal } from './SignOutConfirmModal';
 import { CardStagger, CardStaggerItem, HoverLift, PageReveal } from '../core/motion/cultivMotion';
+import { hasActiveCartItems } from '../data/shoppingSession';
 
 export function ProfileScreen() {
   const { user, customerAccount, loyaltySummary, logout, updateCustomerProfile } = useAuth();
@@ -20,12 +22,21 @@ export function ProfileScreen() {
   const [nameErrorMessage, setNameErrorMessage] = useState<string | null>(null);
   const [profileStatusMessage, setProfileStatusMessage] = useState<string | null>(null);
   const [isPhoneModalOpen, setIsPhoneModalOpen] = useState(false);
+  const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 
   if (!user) {
     return <Navigate to="/" replace />;
   }
 
   const memberSince = new Date(user.createdAt).toLocaleDateString();
+  const executeLogout = () => {
+    logout();
+    navigate('/', {
+      replace: true,
+      state: { flashMessage: "You've been signed out successfully." },
+    });
+    setShowSignOutConfirm(false);
+  };
 
   return (
     <PageReveal className="min-h-screen bg-[radial-gradient(circle_at_6%_10%,rgba(45,80,22,0.12),transparent_24%),radial-gradient(circle_at_94%_16%,rgba(126,153,108,0.16),transparent_28%),linear-gradient(160deg,#F1F4EC_0%,#F8F7F2_52%,#EEF3E8_100%)] p-4">
@@ -235,11 +246,12 @@ export function ProfileScreen() {
 
                   <motion.button
                     onClick={() => {
-                      logout();
-                      navigate('/', {
-                        replace: true,
-                        state: { flashMessage: "You've been signed out successfully." },
-                      });
+                      if (hasActiveCartItems()) {
+                        setShowSignOutConfirm(true);
+                        return;
+                      }
+
+                      executeLogout();
                     }}
                     className="flex items-center justify-between rounded-2xl border border-red-100 bg-red-50 px-5 py-4 text-red-700"
                     whileHover={HoverLift.whileHover}
@@ -268,6 +280,11 @@ export function ProfileScreen() {
           }}
         />
       </Modal>
+      <SignOutConfirmModal
+        open={showSignOutConfirm}
+        onClose={() => setShowSignOutConfirm(false)}
+        onConfirm={executeLogout}
+      />
     </PageReveal>
   );
 }

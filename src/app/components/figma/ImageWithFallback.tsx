@@ -4,6 +4,24 @@ import { useState } from 'react'
 const ERROR_IMG_SRC =
   'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODgiIGhlaWdodD0iODgiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgc3Ryb2tlPSIjMDAwIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBvcGFjaXR5PSIuMyIgZmlsbD0ibm9uZSIgc3Ryb2tlLXdpZHRoPSIzLjciPjxyZWN0IHg9IjE2IiB5PSIxNiIgd2lkdGg9IjU2IiBoZWlnaHQ9IjU2IiByeD0iNiIvPjxwYXRoIGQ9Im0xNiA1OCAxNi0xOCAzMiAzMiIvPjxjaXJjbGUgY3g9IjUzIiBjeT0iMzUiIHI9IjciLz48L3N2Zz4KCg=='
 
+const normalizeImageSource = (src: React.ImgHTMLAttributes<HTMLImageElement>['src']) => {
+  if (typeof src !== 'string' || !src.startsWith('https://images.unsplash.com/photo-')) {
+    return src;
+  }
+
+  try {
+    const url = new URL(src);
+    if (!url.searchParams.has('auto')) url.searchParams.set('auto', 'format');
+    if (!url.searchParams.has('fit')) url.searchParams.set('fit', 'crop');
+    if (!url.searchParams.has('fm')) url.searchParams.set('fm', 'jpg');
+    if (!url.searchParams.has('q')) url.searchParams.set('q', '80');
+    if (!url.searchParams.has('w')) url.searchParams.set('w', '1080');
+    return url.toString();
+  } catch {
+    return src;
+  }
+};
+
 export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElement>) {
   const [didError, setDidError] = useState(false)
 
@@ -12,6 +30,7 @@ export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElemen
   }
 
   const { src, alt, style, className, ...rest } = props
+  const normalizedSrc = normalizeImageSource(src)
 
   return didError ? (
     <div
@@ -23,6 +42,6 @@ export function ImageWithFallback(props: React.ImgHTMLAttributes<HTMLImageElemen
       </div>
     </div>
   ) : (
-    <img src={src} alt={alt} className={className} style={style} {...rest} onError={handleError} />
+    <img src={normalizedSrc} alt={alt} className={className} style={style} {...rest} onError={handleError} />
   )
 }

@@ -33,11 +33,11 @@ export function CareersScreen() {
             <div>
               <p className="text-sm font-semibold text-foreground/88">Want to be considered early?</p>
               <p className="mt-1 text-sm text-foreground/65">
-                Send your profile to 
+                Send your resume to 
                 <a className="ml-1 font-medium text-primary hover:underline" href={`mailto:${CAREERS_CONFIG.jobsEmail}`}>
                   {CAREERS_CONFIG.jobsEmail}
                 </a>
-                .
+                {' '}and our team will get back to you as soon as possible.
               </p>
             </div>
             <a
@@ -45,7 +45,7 @@ export function CareersScreen() {
               className="inline-flex items-center justify-center gap-2 rounded-full bg-primary px-5 py-2.5 text-sm font-semibold text-primary-foreground"
             >
               <BriefcaseBusiness className="h-4 w-4" />
-              Share Resume
+              Email Resume
             </a>
           </div>
 

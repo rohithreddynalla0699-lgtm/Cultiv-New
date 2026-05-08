@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronLeft, ChevronRight, CreditCard, Minus, Plus, ShoppingBag, Smartphone } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { PageReveal } from '../core/motion/cultivMotion';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import {
@@ -46,7 +46,12 @@ import {
   type CheckoutPaymentIntent,
 } from '../services/checkoutPaymentProvider';
 import { getSelectedStore, loadSelectedStoreId, loadStores, requestOpenStoreSelector, subscribeSelectedStore, type StoreLocatorStore } from '../data/storeLocator';
-import { CHECKOUT_CONTACT_STORAGE_KEY } from '../data/shoppingSession';
+import {
+  clearCheckoutContactDraft,
+  getCheckoutContactScope,
+  loadCheckoutContactDraft,
+  saveCheckoutContactDraft,
+} from '../data/shoppingSession';
 import {
   DEFAULT_ACTIVE_ORDER_CATEGORY_SLUG,
   POS_TAX_RATE,
@@ -65,6 +70,8 @@ interface CustomerState {
   phone: string;
   email: string;
 }
+
+type CheckoutContactMode = 'profile' | 'different';
 
 interface GatewaySuccessPayload {
   gatewayOrderId: string;
@@ -329,10 +336,13 @@ export function OrderPage() {
   const location = useLocation();
   const { user, createCheckoutPaymentIntent, confirmCheckoutPayment, loyaltySummary, offers } = useAuth();
   const locationState = (location.state as OrderPageLocationState | null) ?? null;
+  const checkoutContactScope = getCheckoutContactScope(user?.id ?? null);
 
   const [activeCategorySlug, setActiveCategorySlug] = useState<string>(DEFAULT_ACTIVE_ORDER_CATEGORY_SLUG);
   const [cartLines, setCartLines] = useState<CartLine[]>(() => loadDraftCart());
-  const [customer, setCustomer] = useState<CustomerState>({ fullName: '', phone: '', email: '' });
+  const [contactMode, setContactMode] = useState<CheckoutContactMode>('profile');
+  const [differentContact, setDifferentContact] = useState<CustomerState>({ fullName: '', phone: '', email: '' });
+  const [contactDraftReady, setContactDraftReady] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
@@ -348,6 +358,7 @@ export function OrderPage() {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<CustomerCheckoutPaymentMethod>('upi');
   const submissionLockRef = useRef(false);
   const menuScrollRef = useRef<HTMLDivElement | null>(null);
+  const hydratedContactScopeRef = useRef<string>('');
   const [stores, setStores] = useState<StoreLocatorStore[]>([]);
 const [selectedStoreId, setSelectedStoreId] = useState<string>('');
   const selectedStore = useMemo(() => {
@@ -372,36 +383,54 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
   };
 }, [stores]);
   const resolvedCheckoutStoreId = selectedStore.isActive ? selectedStore.id : '';
+  const profileContact = useMemo<CustomerState>(() => ({
+    fullName: user?.fullName ?? '',
+    phone: user?.phone ?? '',
+    email: user?.email ?? '',
+  }), [user?.email, user?.fullName, user?.phone]);
+  const resolvedCheckoutContact = contactMode === 'profile' ? profileContact : differentContact;
 
   useEffect(() => {
     if (!isBrowser()) return;
-    try {
-      const rawContact = localStorage.getItem(CHECKOUT_CONTACT_STORAGE_KEY);
-      if (rawContact) {
-        const parsed = JSON.parse(rawContact) as Partial<CustomerState>;
-        setCustomer((current) => ({
-          fullName: current.fullName || (parsed.fullName ?? ''),
-          phone: current.phone || (parsed.phone ?? ''),
-          email: current.email || (parsed.email ?? ''),
-        }));
-      }
-    } catch {
-      // Ignore malformed local storage payloads.
-    }
-  }, []);
 
-  useEffect(() => {
-    setCustomer((current) => ({
-      fullName: current.fullName || user?.fullName || '',
-      phone: current.phone || user?.phone || '',
-      email: current.email || user?.email || '',
+    setContactDraftReady(false);
+    const draft = loadCheckoutContactDraft(checkoutContactScope);
+    const nextMode: CheckoutContactMode = user
+      ? (draft?.mode === 'different' ? 'different' : 'profile')
+      : 'different';
+
+    hydratedContactScopeRef.current = checkoutContactScope;
+    setContactMode(nextMode);
+    setDifferentContact({
+      fullName: draft?.fullName ?? '',
+      phone: draft?.phone ?? '',
+      email: draft?.email ?? '',
+    });
+    setErrors((current) => ({
+      ...current,
+      fullName: '',
+      phone: '',
+      email: '',
+      submit: '',
     }));
-  }, [user]);
+    setContactDraftReady(true);
+  }, [checkoutContactScope, user]);
 
   useEffect(() => {
-    if (!isBrowser()) return;
-    localStorage.setItem(CHECKOUT_CONTACT_STORAGE_KEY, JSON.stringify(customer));
-  }, [customer]);
+    if (!isBrowser() || !contactDraftReady || hydratedContactScopeRef.current !== checkoutContactScope) return;
+
+    if (!user && !differentContact.fullName.trim() && !differentContact.phone.trim() && !differentContact.email.trim()) {
+      clearCheckoutContactDraft(checkoutContactScope);
+      return;
+    }
+
+    saveCheckoutContactDraft(checkoutContactScope, {
+      mode: user ? contactMode : 'different',
+      fullName: differentContact.fullName,
+      phone: differentContact.phone,
+      email: differentContact.email,
+    });
+  }, [checkoutContactScope, contactDraftReady, contactMode, differentContact.email, differentContact.fullName, differentContact.phone, user]);
 
 
   useEffect(() => {
@@ -877,16 +906,16 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
   const validateOrder = () => {
     const next: Record<string, string> = {};
 
-    if (!customer.fullName.trim()) {
+    if (!resolvedCheckoutContact.fullName.trim()) {
       next.fullName = 'Name is required.';
     }
 
-    const phone = normalizePhone(customer.phone);
+    const phone = normalizePhone(resolvedCheckoutContact.phone);
     if (phone.length !== 10) {
       next.phone = 'Enter a valid 10-digit phone number.';
     }
 
-    const email = normalizeEmail(customer.email);
+    const email = normalizeEmail(resolvedCheckoutContact.email);
     if (!email) {
       next.email = 'Email is required for order confirmation.';
     } else if (!isValidEmail(email)) {
@@ -981,9 +1010,9 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
         description: 'Pickup order payment',
         order_id: intent.gatewayOrderId,
         prefill: {
-          name: customer.fullName,
-          contact: normalizePhone(customer.phone),
-          email: normalizeEmail(customer.email),
+          name: resolvedCheckoutContact.fullName,
+          contact: normalizePhone(resolvedCheckoutContact.phone),
+          email: normalizeEmail(resolvedCheckoutContact.email),
         },
         method: {
           upi: intent.paymentMethod === 'upi',
@@ -1115,9 +1144,9 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
         selectedRewardEntitlements,
         total: payableTotal,
         paymentMethod: selectedPaymentMethod,
-        fullName: customer.fullName.trim(),
-        phone: normalizePhone(customer.phone),
-        email: normalizeEmail(customer.email),
+        fullName: resolvedCheckoutContact.fullName.trim(),
+        phone: normalizePhone(resolvedCheckoutContact.phone),
+        email: normalizeEmail(resolvedCheckoutContact.email),
       };
 
       const paymentIntent = await createCheckoutPaymentIntent(orderInput);
@@ -1807,42 +1836,80 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
                       </div>
                     </div>
                     {errors.paymentMethod ? <p className="text-xs text-red-600">{errors.paymentMethod}</p> : null}
-                    <input
-                      id="checkout-full-name"
-                      name="fullName"
-                      aria-label="Full name"
-                      autoComplete="name"
-                      type="text"
-                      value={customer.fullName}
-                      onChange={(e) => setCustomer((prev) => ({ ...prev, fullName: e.target.value }))}
-                      placeholder="Full Name"
-                      className={`w-full rounded-xl border bg-white px-3 py-2.5 text-sm outline-none ${errors.fullName ? 'border-red-400' : 'border-primary/14'}`}
-                    />
-                    {errors.fullName ? <p className="text-xs text-red-600">{errors.fullName}</p> : null}
-                    <input
-                      id="checkout-phone"
-                      name="phone"
-                      aria-label="Phone number"
-                      autoComplete="tel"
-                      type="tel"
-                      value={customer.phone}
-                      onChange={(e) => setCustomer((prev) => ({ ...prev, phone: e.target.value }))}
-                      placeholder="Phone Number"
-                      className={`w-full rounded-xl border bg-white px-3 py-2.5 text-sm outline-none ${errors.phone ? 'border-red-400' : 'border-primary/14'}`}
-                    />
-                    {errors.phone ? <p className="text-xs text-red-600">{errors.phone}</p> : null}
-                    <input
-                      id="checkout-email"
-                      name="email"
-                      aria-label="Email address"
-                      autoComplete="email"
-                      type="email"
-                      value={customer.email}
-                      onChange={(e) => setCustomer((prev) => ({ ...prev, email: e.target.value }))}
-                      placeholder="Email Address"
-                      className={`w-full rounded-xl border bg-white px-3 py-2.5 text-sm outline-none ${errors.email ? 'border-red-400' : 'border-primary/14'}`}
-                    />
-                    {errors.email ? <p className="text-xs text-red-600">{errors.email}</p> : null}
+                    {user ? (
+                      <div className="rounded-xl border border-primary/14 bg-white px-3 py-3">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/55">Pickup Contact</p>
+                        <div className="mt-2 grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setContactMode('profile');
+                              setErrors((current) => ({ ...current, fullName: '', phone: '', email: '' }));
+                            }}
+                            className={`rounded-xl border px-3 py-2.5 text-center text-sm font-semibold transition-colors ${contactMode === 'profile' ? 'border-primary bg-primary/10 text-foreground' : 'border-primary/15 text-foreground/72 hover:border-primary/30'}`}
+                          >
+                            My Details
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setContactMode('different');
+                              setErrors((current) => ({ ...current, fullName: '', phone: '', email: '' }));
+                            }}
+                            className={`rounded-xl border px-3 py-2.5 text-center text-sm font-semibold transition-colors ${contactMode === 'different' ? 'border-primary bg-primary/10 text-foreground' : 'border-primary/15 text-foreground/72 hover:border-primary/30'}`}
+                          >
+                            Other Pickup
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {user && contactMode === 'profile' ? (
+                      <div className="rounded-xl border border-primary/14 bg-[#f9fbf6] px-3 py-3 text-sm">
+                        <p className="font-semibold text-foreground/88">{profileContact.fullName || '—'}</p>
+                        <p className="mt-1 text-foreground/62">{profileContact.phone || '—'}</p>
+                        <p className="mt-1 text-foreground/62">{profileContact.email || '—'}</p>
+                      </div>
+                    ) : (
+                      <>
+                        <input
+                          id="checkout-full-name"
+                          name="fullName"
+                          aria-label="Full name"
+                          autoComplete="name"
+                          type="text"
+                          value={differentContact.fullName}
+                          onChange={(e) => setDifferentContact((prev) => ({ ...prev, fullName: e.target.value }))}
+                          placeholder="Full Name"
+                          className={`w-full rounded-xl border bg-white px-3 py-2.5 text-sm outline-none ${errors.fullName ? 'border-red-400' : 'border-primary/14'}`}
+                        />
+                        {errors.fullName ? <p className="text-xs text-red-600">{errors.fullName}</p> : null}
+                        <input
+                          id="checkout-phone"
+                          name="phone"
+                          aria-label="Phone number"
+                          autoComplete="tel"
+                          type="tel"
+                          value={differentContact.phone}
+                          onChange={(e) => setDifferentContact((prev) => ({ ...prev, phone: e.target.value }))}
+                          placeholder="Phone Number"
+                          className={`w-full rounded-xl border bg-white px-3 py-2.5 text-sm outline-none ${errors.phone ? 'border-red-400' : 'border-primary/14'}`}
+                        />
+                        {errors.phone ? <p className="text-xs text-red-600">{errors.phone}</p> : null}
+                        <input
+                          id="checkout-email"
+                          name="email"
+                          aria-label="Email address"
+                          autoComplete="email"
+                          type="email"
+                          value={differentContact.email}
+                          onChange={(e) => setDifferentContact((prev) => ({ ...prev, email: e.target.value }))}
+                          placeholder="Email Address"
+                          className={`w-full rounded-xl border bg-white px-3 py-2.5 text-sm outline-none ${errors.email ? 'border-red-400' : 'border-primary/14'}`}
+                        />
+                        {errors.email ? <p className="text-xs text-red-600">{errors.email}</p> : null}
+                      </>
+                    )}
                   </div>
 
                   {errors.cart ? <p className="mt-2 text-xs text-red-600">{errors.cart}</p> : null}
@@ -1862,7 +1929,21 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
                   {errors.submit ? <p className="mt-1.5 text-xs text-red-600">{errors.submit}</p> : null}
                   {!user ? (
                     <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm leading-5 text-amber-800">
-                      Please sign in or create an account to place your order.
+                      <p>Please sign in or create an account to place your order.</p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Link
+                          to="/login"
+                          className="inline-flex items-center justify-center rounded-full bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground"
+                        >
+                          Sign In
+                        </Link>
+                        <Link
+                          to="/signup"
+                          className="inline-flex items-center justify-center rounded-full border border-primary/20 bg-white px-4 py-2 text-sm font-semibold text-foreground/78"
+                        >
+                          Create Account
+                        </Link>
+                      </div>
                     </div>
                   ) : null}
                 </div>
@@ -1904,7 +1985,7 @@ const [selectedStoreId, setSelectedStoreId] = useState<string>('');
           <OrderReviewModal
             items={cartLines}
             store={selectedStore}
-            customer={customer}
+            customer={resolvedCheckoutContact}
             subtotal={cartTotal}
             rewardDiscount={rewardDiscount}
             taxAmount={gstAmount}

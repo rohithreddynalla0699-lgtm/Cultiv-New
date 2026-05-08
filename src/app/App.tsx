@@ -122,6 +122,9 @@ function AppShell() {
 
   // Scroll to top on route change
   useEffect(() => {
+    window.dispatchEvent(new CustomEvent('cultiv:route-changed', {
+      detail: { pathname: location.pathname },
+    }));
     window.scrollTo(0, 0);
   }, [location.pathname]);
   useEffect(() => {

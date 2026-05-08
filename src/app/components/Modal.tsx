@@ -2,13 +2,14 @@ import { ReactNode } from "react";
 import { ModalPortal } from "./ModalPortal";
 import { motion, AnimatePresence } from "framer-motion";
 
-export function Modal({ open, onClose, children, ariaLabel, panelClassName, bodyClassName }: {
+export function Modal({ open, onClose, children, ariaLabel, panelClassName, bodyClassName, closeButtonClassName }: {
   open: boolean;
   onClose: () => void;
   children: ReactNode;
   ariaLabel?: string;
   panelClassName?: string;
   bodyClassName?: string;
+  closeButtonClassName?: string;
 }) {
   return (
     <ModalPortal>
@@ -42,7 +43,7 @@ export function Modal({ open, onClose, children, ariaLabel, panelClassName, body
             >
               <button
                 onClick={onClose}
-                className="absolute top-4 right-4 z-10 rounded-full border border-primary/10 bg-white/80 p-2 text-foreground/60 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary/5 hover:text-primary hover:shadow-[0_10px_18px_rgba(28,45,14,0.08)]"
+                className={`absolute top-4 right-4 z-10 rounded-full border border-primary/10 bg-white/80 p-2 text-foreground/60 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-primary/5 hover:text-primary hover:shadow-[0_10px_18px_rgba(28,45,14,0.08)] ${closeButtonClassName ?? ""}`}
                 aria-label="Close dialog"
                 type="button"
               >

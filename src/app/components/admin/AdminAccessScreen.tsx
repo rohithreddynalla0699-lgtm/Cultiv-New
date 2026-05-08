@@ -26,6 +26,15 @@ export function AdminAccessScreen({
   const [message, setMessage] = useState('Choose owner, admin, or store access and continue with a 6-digit PIN.');
   const [isLoading, setIsLoading] = useState(false);
 
+  const switchMode = (nextMode: 'owner' | 'admin' | 'store') => {
+    setMode(nextMode);
+    setOwnerPin('');
+    setAdminPin('');
+    setStorePin('');
+    setShowPin(false);
+    setMessage('Choose owner, admin, or store access and continue with a 6-digit PIN.');
+  };
+
   // Defensive guard: this screen is only valid on /operations.
   if (!location.pathname.startsWith('/operations')) {
     return null;
@@ -99,10 +108,7 @@ export function AdminAccessScreen({
                 <button
                   type="button"
                   data-testid="mode-owner"
-                  onClick={() => {
-                    setMode('owner');
-                    setShowPin(false);
-                  }}
+                  onClick={() => switchMode('owner')}
                   className={`rounded-2xl px-4 py-4 text-base font-semibold leading-tight ${mode === 'owner' ? 'bg-primary text-primary-foreground' : 'border border-primary/16 bg-white text-foreground/74'}`}
                 >
                   Owner Login
@@ -110,10 +116,7 @@ export function AdminAccessScreen({
                 <button
                   type="button"
                   data-testid="mode-admin"
-                  onClick={() => {
-                    setMode('admin');
-                    setShowPin(false);
-                  }}
+                  onClick={() => switchMode('admin')}
                   className={`rounded-2xl px-4 py-4 text-base font-semibold leading-tight ${mode === 'admin' ? 'bg-primary text-primary-foreground' : 'border border-primary/16 bg-white text-foreground/74'}`}
                 >
                   Admin Login
@@ -121,10 +124,7 @@ export function AdminAccessScreen({
                 <button
                   type="button"
                   data-testid="mode-store"
-                  onClick={() => {
-                    setMode('store');
-                    setShowPin(false);
-                  }}
+                  onClick={() => switchMode('store')}
                   className={`rounded-2xl px-4 py-4 text-base font-semibold leading-tight ${mode === 'store' ? 'bg-primary text-primary-foreground' : 'border border-primary/16 bg-white text-foreground/74'}`}
                 >
                   Store Login

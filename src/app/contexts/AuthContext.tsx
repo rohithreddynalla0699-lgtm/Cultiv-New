@@ -115,6 +115,7 @@ const STORAGE_KEYS = {
 
 const ADMIN_ACCESS_SESSION_STORAGE_KEY = 'cultiv_admin_access_session_v1';
 const INTERNAL_ACCESS_SESSION_UPDATED_EVENT = 'cultiv:internal-access-session-updated';
+const APP_ROUTE_CHANGED_EVENT = 'cultiv:route-changed';
 
 const STATUS_CONTENT: Record<OrderStatus, { label: string; description: string }> = {
   placed: { label: 'Order Placed', description: 'Your order is in the CULTIV queue.' },
@@ -255,15 +256,6 @@ const writeStorage = (key: string, value: unknown) => {
   localStorage.setItem(key, JSON.stringify(value));
 };
 
-const parseStorageEventValue = <T,>(raw: string | null): T | null => {
-  if (raw === null) return null;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
-};
-
 const normalizeCustomerSessionToken = (value: unknown): string | null => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -273,27 +265,63 @@ const normalizeCustomerSessionToken = (value: unknown): string | null => {
   return trimmed;
 };
 
-const readCustomerSessionTokenFromStorage = (): string | null => {
+interface StoredCustomerSessionSnapshot {
+  token: string;
+  expiresAt: string | null;
+  isLegacyToken: boolean;
+}
+
+const parseCustomerSessionSnapshot = (raw: string | null): StoredCustomerSessionSnapshot | null => {
+  if (raw === null) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = raw;
+  }
+
+  if (typeof parsed === 'string') {
+    const normalizedLegacyToken = normalizeCustomerSessionToken(parsed);
+    return normalizedLegacyToken
+      ? { token: normalizedLegacyToken, expiresAt: null, isLegacyToken: true }
+      : null;
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    return null;
+  }
+
+  const token = normalizeCustomerSessionToken((parsed as { token?: unknown }).token);
+  if (!token) {
+    return null;
+  }
+
+  const expiresAt = typeof (parsed as { expiresAt?: unknown }).expiresAt === 'string'
+    ? (parsed as { expiresAt: string }).expiresAt
+    : null;
+
+  return {
+    token,
+    expiresAt,
+    isLegacyToken: false,
+  };
+};
+
+const readCustomerSessionSnapshotFromStorage = (): StoredCustomerSessionSnapshot | null => {
   if (typeof window === 'undefined') return null;
 
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.customerSessionToken);
     if (raw === null) return null;
 
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch {
-      parsed = raw;
-    }
-
-    const normalized = normalizeCustomerSessionToken(parsed);
-    if (!normalized) {
+    const parsed = parseCustomerSessionSnapshot(raw);
+    if (!parsed) {
       localStorage.removeItem(STORAGE_KEYS.customerSessionToken);
       return null;
     }
 
-    return normalized;
+    return parsed;
   } catch {
     try {
       localStorage.removeItem(STORAGE_KEYS.customerSessionToken);
@@ -303,6 +331,12 @@ const readCustomerSessionTokenFromStorage = (): string | null => {
     return null;
   }
 };
+
+const readCustomerSessionTokenFromStorage = (): string | null =>
+  readCustomerSessionSnapshotFromStorage()?.token ?? null;
+
+const readCustomerSessionExpiresAtFromStorage = (): string | null =>
+  readCustomerSessionSnapshotFromStorage()?.expiresAt ?? null;
 
 const buildFulfillmentWindow = () => {
   const now = Date.now();
@@ -875,6 +909,20 @@ export const useAuth = () => {
 interface AuthProviderProps {
   children: ReactNode;
 }
+
+const readInitialPathname = () => (typeof window === 'undefined' ? '/' : window.location.pathname);
+
+const isInternalOperationsPath = (pathname: string) =>
+  pathname.startsWith('/operations')
+  || pathname.startsWith('/store')
+  || pathname.startsWith('/shift');
+
+const isProtectedCustomerPath = (pathname: string) =>
+  pathname.startsWith('/profile')
+  || pathname.startsWith('/orders')
+  || pathname.startsWith('/rewards')
+  || pathname.startsWith('/order-success');
+
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const seedState = useMemo(() => buildSeedState(), []);
   const [users, setUsers] = useState<AuthRecord[]>(() => normalizeUserRecords(seedState.users));
@@ -892,6 +940,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [internalOrdersSession, setInternalOrdersSession] = useState<InternalAccessSessionSnapshot | null>(() => readInternalAccessSessionSnapshot());
   const [customerAccount, setCustomerAccount] = useState<CustomerAccountSummary | null>(null);
   const [customerSessionToken, setCustomerSessionToken] = useState<string | null>(() => readCustomerSessionTokenFromStorage());
+  const [customerSessionExpiresAt, setCustomerSessionExpiresAt] = useState<string | null>(() => readCustomerSessionExpiresAtFromStorage());
+  const [currentPathname, setCurrentPathname] = useState<string>(readInitialPathname);
   const [authRestoring, setAuthRestoring] = useState<boolean>(() => Boolean(readCustomerSessionTokenFromStorage()));
   const [loyaltySummary, setLoyaltySummary] = useState<LoyaltySummary | null>(null);
   const [loyaltyLoading, setLoyaltyLoading] = useState(false);
@@ -899,11 +949,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const usersRef = useRef(users);
   const previousUserIdRef = useRef<string | null>(currentUserId);
   const customerSessionTokenRef = useRef<string | null>(customerSessionToken);
+  const customerSessionExpiresAtRef = useRef<string | null>(customerSessionExpiresAt);
 
-  const setCustomerSessionTokenAndStorage = useCallback((token: string | null | undefined) => {
+  const setCustomerSessionTokenAndStorage = useCallback((token: string | null | undefined, expiresAt?: string | null) => {
     const nextToken = normalizeCustomerSessionToken(token);
+    const nextExpiresAt = nextToken && typeof expiresAt === 'string' && expiresAt.trim()
+      ? expiresAt.trim()
+      : null;
     customerSessionTokenRef.current = nextToken;
+    customerSessionExpiresAtRef.current = nextExpiresAt;
     setCustomerSessionToken(nextToken);
+    setCustomerSessionExpiresAt(nextExpiresAt);
 
     if (typeof window === 'undefined') {
       return;
@@ -911,7 +967,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     try {
       if (nextToken) {
-        localStorage.setItem(STORAGE_KEYS.customerSessionToken, JSON.stringify(nextToken));
+        localStorage.setItem(STORAGE_KEYS.customerSessionToken, JSON.stringify({
+          token: nextToken,
+          expiresAt: nextExpiresAt,
+        }));
       } else {
         localStorage.removeItem(STORAGE_KEYS.customerSessionToken);
       }
@@ -947,6 +1006,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, [customerSessionToken]);
 
   useEffect(() => {
+    customerSessionExpiresAtRef.current = customerSessionExpiresAt;
+  }, [customerSessionExpiresAt]);
+
+  useEffect(() => {
     setUsers((previous) => {
       const normalized = normalizeUserRecords(previous);
       const hasChanges = normalized.some((entry, index) => JSON.stringify(entry) !== JSON.stringify(previous[index]));
@@ -974,6 +1037,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const syncInternalOrdersSession = () => {
       setInternalOrdersSession(readInternalAccessSessionSnapshot());
     };
+    const handleRouteChanged = (event: Event) => {
+      const customEvent = event as CustomEvent<{ pathname?: string }>;
+      setCurrentPathname(customEvent.detail?.pathname || readInitialPathname());
+    };
 
     const onStorage = (event: StorageEvent) => {
       if (event.storageArea !== window.localStorage || !event.key) {
@@ -981,8 +1048,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
 
       if (event.key === STORAGE_KEYS.customerSessionToken) {
-        const nextCustomerSessionToken = normalizeCustomerSessionToken(parseStorageEventValue<unknown>(event.newValue));
-        setCustomerSessionTokenAndStorage(nextCustomerSessionToken);
+        const nextSnapshot = parseCustomerSessionSnapshot(event.newValue);
+        setCustomerSessionTokenAndStorage(nextSnapshot?.token ?? null, nextSnapshot?.expiresAt ?? null);
       }
 
       if (event.key === ADMIN_ACCESS_SESSION_STORAGE_KEY) {
@@ -992,9 +1059,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     window.addEventListener('storage', onStorage);
     window.addEventListener(INTERNAL_ACCESS_SESSION_UPDATED_EVENT, syncInternalOrdersSession);
+    window.addEventListener(APP_ROUTE_CHANGED_EVENT, handleRouteChanged);
     return () => {
       window.removeEventListener('storage', onStorage);
       window.removeEventListener(INTERNAL_ACCESS_SESSION_UPDATED_EVENT, syncInternalOrdersSession);
+      window.removeEventListener(APP_ROUTE_CHANGED_EVENT, handleRouteChanged);
     };
   }, [setCustomerSessionTokenAndStorage]);
 
@@ -1305,16 +1374,35 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       return;
     }
 
+    if (isInternalOperationsPath(currentPathname)) {
+      setAuthRestoring(false);
+      return;
+    }
+
+    const requestExpiresAt = customerSessionExpiresAtRef.current;
+    if (requestExpiresAt) {
+      const expiresAtMs = new Date(requestExpiresAt).getTime();
+      if (!Number.isNaN(expiresAtMs) && expiresAtMs <= Date.now()) {
+        clearInvalidCustomerSession(requestToken);
+        setAuthRestoring(false);
+        return;
+      }
+    } else if (!isProtectedCustomerPath(currentPathname)) {
+      setAuthRestoring(false);
+      return;
+    }
+
     let active = true;
     const restore = async () => {
       try {
         await syncCanonicalCustomerProfile(requestToken);
       } catch (error) {
-        console.error('Customer profile sync failed.', error);
         const message = error instanceof Error ? error.message : String(error ?? '');
         if (message.includes('Customer session token is invalid or expired.')) {
           clearInvalidCustomerSession(requestToken);
+          return;
         }
+        console.error('Customer profile sync failed.', error);
       } finally {
         if (active) {
           setAuthRestoring(false);
@@ -1328,7 +1416,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return () => {
       active = false;
     };
-  }, [clearInvalidCustomerSession, customerSessionToken, syncCanonicalCustomerProfile]);
+  }, [clearInvalidCustomerSession, currentPathname, customerSessionToken, syncCanonicalCustomerProfile]);
 
   const refreshPendingGuestOrderClaims = useCallback(async (sessionToken: string) => {
     const requestToken = normalizeCustomerSessionToken(sessionToken);
@@ -1412,12 +1500,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const customerId = loginResponse.customer_id;
       const customerData = loginResponse.customer;
       const customerSessionTokenFromLogin = normalizeCustomerSessionToken(loginResponse.customer_session_token);
+      const customerSessionExpiresAtFromLogin = typeof loginResponse.customer_session_expires_at === 'string'
+        ? loginResponse.customer_session_expires_at
+        : null;
 
       if (!customerId || !customerData || !customerSessionTokenFromLogin) {
         return { success: false, message: 'Invalid email, phone, or password.' };
       }
 
-      setCustomerSessionTokenAndStorage(customerSessionTokenFromLogin);
+      setCustomerSessionTokenAndStorage(customerSessionTokenFromLogin, customerSessionExpiresAtFromLogin);
       setUsers((previous) => upsertBackendCustomerUser(previous, customerData));
       setCurrentUserId(customerId);
       setCustomerAccount({
@@ -1551,11 +1642,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const verifiedCustomerId = data?.customer_id;
       const customerData = data?.customer;
       const customerSessionToken = normalizeCustomerSessionToken(data?.customer_session_token);
+      const customerSessionExpiresAt = typeof data?.customer_session_expires_at === 'string'
+        ? data.customer_session_expires_at
+        : null;
       if (!verifiedCustomerId || !customerData || !customerSessionToken) {
         return { success: false, message: 'Your phone was verified, but we could not start your session. Please sign in.' };
       }
 
-      setCustomerSessionTokenAndStorage(customerSessionToken);
+      setCustomerSessionTokenAndStorage(customerSessionToken, customerSessionExpiresAt);
       setUsers((previous) => upsertBackendCustomerUser(previous, customerData));
       setCurrentUserId(verifiedCustomerId);
       setCustomerAccount({

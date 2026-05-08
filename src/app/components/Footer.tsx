@@ -3,11 +3,18 @@
 import { Logo } from "./Logo";
 import { Link } from "react-router-dom";
 import { BRAND_CONTACT } from '../config/brandContact';
+import { useState } from 'react';
+import { Modal } from './Modal';
+import { PrivacyPolicy } from './PrivacyPolicy';
+import { TermsOfUse } from './TermsOfUse';
 
 export function Footer() {
+  const [modal, setModal] = useState<null | 'privacy' | 'terms'>(null);
+
   return (
-    <footer className="py-16 border-t border-border bg-gradient-to-b from-background to-[#F5F5F0]">
-      <div className="container mx-auto px-6">
+    <>
+      <footer className="py-16 border-t border-border bg-gradient-to-b from-background to-[#F5F5F0]">
+        <div className="container mx-auto px-6">
         <div className="grid md:grid-cols-4 gap-12 mb-12">
           <div className="md:col-span-2">
             <Logo variant="wordmark" size="md" className="mb-4" />
@@ -56,14 +63,21 @@ export function Footer() {
 
         <div className="pt-8 border-t border-border flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-foreground/60">
           <div className="flex gap-6">
-            <a href="#" className="hover:text-foreground transition-colors">Privacy Policy</a>
-            <a href="#" className="hover:text-foreground transition-colors">Terms of Service</a>
+            <button type="button" onClick={() => setModal('privacy')} className="hover:text-foreground transition-colors">Privacy Policy</button>
+            <button type="button" onClick={() => setModal('terms')} className="hover:text-foreground transition-colors">Terms of Service</button>
           </div>
           <div>
             Made with intention
           </div>
         </div>
-      </div>
-    </footer>
+        </div>
+      </footer>
+      <Modal open={modal === 'privacy'} onClose={() => setModal(null)} ariaLabel="Privacy Policy">
+        {modal === 'privacy' && <PrivacyPolicy variant="modal" />}
+      </Modal>
+      <Modal open={modal === 'terms'} onClose={() => setModal(null)} ariaLabel="Terms of Use">
+        {modal === 'terms' && <TermsOfUse variant="modal" />}
+      </Modal>
+    </>
   );
 }
