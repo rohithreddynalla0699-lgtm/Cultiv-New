@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { createCorsHeaders } from '../_shared/cors.ts';
+import { expireAvailableRewardEntitlements } from '../_shared/reward-entitlement-reconciliation.ts';
 
 type RoleKey = 'owner' | 'admin' | 'store';
 type ScopeType = 'global' | 'store' | 'owner' | 'admin';
@@ -473,6 +474,12 @@ const updateProgramSettings = async (db: ReturnType<typeof createClient>, body: 
 };
 
 const loadCustomerRewardDetail = async (db: ReturnType<typeof createClient>, customerId: string) => {
+  try {
+    await expireAvailableRewardEntitlements(db, customerId);
+  } catch {
+    return { status: 500, payload: { error: 'Could not reconcile expired reward entitlements.' } };
+  }
+
   const { data: syncedRewardPoints, error: syncError } = await db.rpc('sync_customer_reward_points', {
     p_customer_id: customerId,
   });

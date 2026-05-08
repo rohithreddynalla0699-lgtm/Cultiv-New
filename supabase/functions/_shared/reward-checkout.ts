@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { expireAvailableRewardEntitlements } from './reward-entitlement-reconciliation.ts';
 
 const roundMoney = (value: unknown) => Number((Number(value ?? 0) + Number.EPSILON).toFixed(2));
 
@@ -28,6 +29,8 @@ export const resolveCheckoutRewards = async (
   selectedRewardEntitlements: Array<{ entitlementId?: unknown; rewardCode?: unknown }>,
   foodSubtotal: number,
 ) => {
+  await expireAvailableRewardEntitlements(db, customerId);
+
   const normalizedSelections = Array.from(new Map(
     (Array.isArray(selectedRewardEntitlements) ? selectedRewardEntitlements : [])
       .map((entry) => ({

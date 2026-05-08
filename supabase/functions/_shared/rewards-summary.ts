@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { expireAvailableRewardEntitlements } from './reward-entitlement-reconciliation.ts';
 
 const EXPIRING_SOON_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 
@@ -83,6 +84,8 @@ const mapSettingsRow = (settings: any) => ({
 });
 
 export const buildRewardSummary = async (db: any, customerId: string) => {
+  await expireAvailableRewardEntitlements(db, customerId);
+
   const nowIso = new Date().toISOString();
 
   const { data: syncedRewardPoints, error: syncError } = await db.rpc('sync_customer_reward_points', {

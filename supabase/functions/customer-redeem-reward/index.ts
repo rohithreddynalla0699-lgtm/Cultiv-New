@@ -2,6 +2,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { verifyAndLoadCustomerSession } from '../_shared/customer-session.ts';
 import { buildRewardSummary } from '../_shared/rewards-summary.ts';
+import { expireAvailableRewardEntitlements } from '../_shared/reward-entitlement-reconciliation.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -63,6 +64,8 @@ Deno.serve(async (req) => {
   }
 
   try {
+    await expireAvailableRewardEntitlements(db, verifiedSession.session.customer_id);
+
     const { data, error } = await db.rpc('redeem_customer_reward', {
       p_customer_id: verifiedSession.session.customer_id,
       p_reward_id: rewardId,
