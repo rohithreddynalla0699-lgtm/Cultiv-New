@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useOptionalAdminDashboard } from '../../contexts/AdminDashboardContext';
 import type { Order } from '../../types/platform';
 import type { ReceiptData } from '../types/receipt';
 import { mapOrderToReceiptData } from '../mappers/mapOrderToReceiptData';
@@ -19,34 +20,15 @@ interface UseReceiptDataOptions {
 }
 
 export function useReceiptData(order: Order | undefined, options?: UseReceiptDataOptions): ReceiptState {
-  const { customerAccount } = useAuth();
+  const { customerAccount, customerSessionToken } = useAuth();
+  const adminDashboard = useOptionalAdminDashboard();
   const authMode = options?.authMode ?? 'customer';
   const [state, setState] = useState<ReceiptState>({
     data: order ? mapOrderToReceiptData(order) : null,
     isLoading: false,
     error: null,
   });
-
-  const customerSessionToken = useMemo(() => {
-    if (typeof localStorage === 'undefined') return null;
-    try {
-      return JSON.parse(localStorage.getItem('cultiv_customer_session_token_v1') ?? 'null') as string | null;
-    } catch {
-      return null;
-    }
-  }, [customerAccount?.id]);
-
-  const internalSessionToken = useMemo(() => {
-    if (typeof localStorage === 'undefined') return null;
-    try {
-      const raw = localStorage.getItem('cultiv_admin_access_session_v1');
-      if (!raw) return null;
-      const parsed = JSON.parse(raw) as { internalSessionToken?: string | null } | null;
-      return parsed?.internalSessionToken?.trim() || null;
-    } catch {
-      return null;
-    }
-  }, []);
+  const internalSessionToken = adminDashboard?.session?.internalSessionToken?.trim() || null;
 
   useEffect(() => {
     const resolvedOrderId = options?.orderId ?? order?.id ?? null;
@@ -89,7 +71,7 @@ export function useReceiptData(order: Order | undefined, options?: UseReceiptDat
     return () => {
       active = false;
     };
-  }, [authMode, customerSessionToken, internalSessionToken, options?.orderId, order]);
+  }, [authMode, customerAccount?.id, customerSessionToken, internalSessionToken, options?.orderId, order]);
 
   return state;
 }

@@ -1219,3 +1219,7 @@ export function useAdminDashboard() {
   }
   return context;
 }
+
+export function useOptionalAdminDashboard() {
+  return useContext(AdminDashboardContext);
+}

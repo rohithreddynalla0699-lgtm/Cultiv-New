@@ -64,6 +64,7 @@ interface PendingGuestOrderClaim {
 interface AuthContextType {
   user: User | null;
   customerAccount: CustomerAccountSummary | null;
+  customerSessionToken: string | null;
   isAuthenticated: boolean;
   authRestoring: boolean;
   orders: Order[];
@@ -2188,6 +2189,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const value: AuthContextType = {
     user,
     customerAccount,
+    customerSessionToken,
     isAuthenticated: Boolean(customerSessionToken),
     authRestoring,
     orders,
