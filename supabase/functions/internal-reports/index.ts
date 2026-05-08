@@ -37,6 +37,8 @@ type ReconciliationAnomalyType =
   | 'succeeded_without_order'
   | 'paid_order_missing_order_payment';
 
+type NotificationAnomalySource = 'receipt_delivery' | 'notification_event';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
@@ -244,7 +246,7 @@ Deno.serve(async (req) => {
 
   let ordersQuery = db
       .from('orders')
-      .select('order_id, store_id, order_type, source_channel, order_status, total_amount, subtotal_amount, discount_amount, tax_amount, tip_amount, payment_status, created_at')
+      .select('order_id, store_id, customer_id, order_type, source_channel, order_status, total_amount, subtotal_amount, discount_amount, tax_amount, tip_amount, payment_status, created_at')
       .in('store_id', storeIds);
 
   let customerPaymentsQuery = db
@@ -279,6 +281,7 @@ Deno.serve(async (req) => {
   const stores = storesResult.data ?? [];
   const customerPayments = customerPaymentsResult.data ?? [];
   const storeNameById = Object.fromEntries(stores.map((row: any) => [row.id, row.name]));
+  const allOrderIds = allOrders.map((row: any) => row.order_id);
   const filteredOrderIds = orders.map((row: any) => row.order_id);
   const customerPaymentOrderIds = customerPayments
     .map((row: any) => row.order_id)
@@ -288,7 +291,36 @@ Deno.serve(async (req) => {
   const safeFilteredOrderIds = filteredOrderIds.length > 0 ? filteredOrderIds : ['00000000-0000-0000-0000-000000000000'];
   const safeReconciliationOrderIds = reconciliationOrderIds.length > 0 ? reconciliationOrderIds : ['00000000-0000-0000-0000-000000000000'];
 
-  const [paymentsResult, itemsResult, reconciliationOrderPaymentsResult] = filteredOrderIds.length > 0 || reconciliationOrderIds.length > 0
+  let receiptDeliveriesQuery = db
+    .from('receipt_deliveries')
+    .select('id, order_id, delivery_method, recipient, status, provider, error_code, error_message, sent_at, created_at');
+
+  let notificationEventsQuery = db
+    .from('notification_events')
+    .select('id, channel, purpose, status, provider, recipient, customer_id, order_id, store_id, error_code, error_message, sent_at, created_at, updated_at');
+
+  if (normalizedDateRange.from && normalizedDateRange.to) {
+    receiptDeliveriesQuery = receiptDeliveriesQuery
+      .gte('created_at', normalizedDateRange.from)
+      .lte('created_at', normalizedDateRange.to);
+    notificationEventsQuery = notificationEventsQuery
+      .gte('created_at', normalizedDateRange.from)
+      .lte('created_at', normalizedDateRange.to);
+  }
+
+  if (allOrderIds.length > 0) {
+    const safeAllOrderIds = allOrderIds.length > 0 ? allOrderIds : ['00000000-0000-0000-0000-000000000000'];
+    receiptDeliveriesQuery = receiptDeliveriesQuery.in('order_id', safeAllOrderIds);
+  } else {
+    receiptDeliveriesQuery = receiptDeliveriesQuery.limit(0);
+  }
+
+  const shouldIncludeGlobalNotificationEvents = verifiedSession.session.scope_type !== 'store' && !body.storeId?.trim();
+  if (!shouldIncludeGlobalNotificationEvents) {
+    notificationEventsQuery = notificationEventsQuery.in('store_id', storeIds);
+  }
+
+  const [paymentsResult, itemsResult, reconciliationOrderPaymentsResult, receiptDeliveriesResult, notificationEventsResult] = filteredOrderIds.length > 0 || reconciliationOrderIds.length > 0 || allOrderIds.length > 0 || shouldIncludeGlobalNotificationEvents
     ? await Promise.all([
       db
         .from('order_payments')
@@ -302,20 +334,29 @@ Deno.serve(async (req) => {
         .from('order_payments')
         .select('order_id, status')
         .in('order_id', safeReconciliationOrderIds),
+      receiptDeliveriesQuery,
+      notificationEventsQuery,
     ])
     : [
       { data: [], error: null },
       { data: [], error: null },
       { data: [], error: null },
+      { data: [], error: null },
+      { data: [], error: null },
     ];
 
-  if (paymentsResult.error || itemsResult.error || reconciliationOrderPaymentsResult.error) {
+  if (paymentsResult.error || itemsResult.error || reconciliationOrderPaymentsResult.error || receiptDeliveriesResult.error || notificationEventsResult.error) {
     return json(500, { error: 'Could not load reports.' });
   }
 
   const payments = (paymentsResult.data ?? []).filter((row: any) => row.status === 'recorded');
   const orderItems = itemsResult.data ?? [];
   const reconciliationOrderPayments = reconciliationOrderPaymentsResult.data ?? [];
+  const receiptDeliveries = receiptDeliveriesResult.data ?? [];
+  const notificationEvents = (notificationEventsResult.data ?? []).filter((row: any) => {
+    if (!body.storeId?.trim()) return true;
+    return Boolean(row.store_id) && storeIds.includes(row.store_id);
+  });
   const orderById = new Map(allOrders.map((row: any) => [row.order_id, row]));
   const reconciliationPaymentByOrderId = new Map(reconciliationOrderPayments.map((row: any) => [row.order_id, row]));
 
@@ -408,6 +449,72 @@ Deno.serve(async (req) => {
     })
     .slice(0, 50);
 
+  const notificationSummary = {
+    failedReceiptDeliveries: 0,
+    failedNotificationEvents: 0,
+    notDeliveredNotificationEvents: 0,
+    sentNotificationEvents: 0,
+  };
+
+  const notificationAnomalies = [
+    ...receiptDeliveries
+      .filter((row: any) => String(row.status ?? '').trim().toLowerCase() !== 'success')
+      .map((row: any) => {
+        const matchingOrder = row.order_id ? orderById.get(row.order_id) : null;
+        notificationSummary.failedReceiptDeliveries += 1;
+        return {
+          source: 'receipt_delivery' as NotificationAnomalySource,
+          eventId: String(row.id),
+          purpose: 'receipt',
+          channel: String(row.delivery_method ?? ''),
+          status: String(row.status ?? ''),
+          storeId: matchingOrder?.store_id ?? null,
+          storeName: matchingOrder?.store_id ? (storeNameById[matchingOrder.store_id] ?? 'Unknown store') : 'No store',
+          orderId: row.order_id ? String(row.order_id) : null,
+          customerId: matchingOrder?.customer_id ? String(matchingOrder.customer_id) : null,
+          recipient: row.recipient ? String(row.recipient) : null,
+          provider: row.provider ? String(row.provider) : null,
+          errorCode: row.error_code ? String(row.error_code) : null,
+          errorMessage: row.error_message ? String(row.error_message) : null,
+          createdAt: String(row.created_at ?? ''),
+          updatedAt: String(row.created_at ?? ''),
+        };
+      }),
+    ...notificationEvents.flatMap((row: any) => {
+      const status = String(row.status ?? '').trim().toLowerCase();
+      if (status === 'sent') {
+        notificationSummary.sentNotificationEvents += 1;
+        return [];
+      }
+      if (status === 'failed') {
+        notificationSummary.failedNotificationEvents += 1;
+      }
+      if (status === 'not_delivered') {
+        notificationSummary.notDeliveredNotificationEvents += 1;
+      }
+      const storeName = row.store_id ? (storeNameById[row.store_id] ?? 'Unknown store') : 'No store';
+      return [{
+        source: 'notification_event' as NotificationAnomalySource,
+        eventId: String(row.id),
+        purpose: String(row.purpose ?? ''),
+        channel: String(row.channel ?? ''),
+        status: String(row.status ?? ''),
+        storeId: row.store_id ? String(row.store_id) : null,
+        storeName,
+        orderId: row.order_id ? String(row.order_id) : null,
+        customerId: row.customer_id ? String(row.customer_id) : null,
+        recipient: row.recipient ? String(row.recipient) : null,
+        provider: row.provider ? String(row.provider) : null,
+        errorCode: row.error_code ? String(row.error_code) : null,
+        errorMessage: row.error_message ? String(row.error_message) : null,
+        createdAt: String(row.created_at ?? ''),
+        updatedAt: String(row.updated_at ?? row.created_at ?? ''),
+      }];
+    }),
+  ]
+    .sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime())
+    .slice(0, 50);
+
   const totalRevenue = orders.reduce((sum: number, row: any) => sum + Number(row.total_amount ?? 0), 0);
   const totalTax = orders.reduce((sum: number, row: any) => sum + Number(row.tax_amount ?? 0), 0);
 
@@ -466,6 +573,10 @@ Deno.serve(async (req) => {
       reconciliation: {
         summary: reconciliationSummary,
         anomalies,
+      },
+      notifications: {
+        summary: notificationSummary,
+        anomalies: notificationAnomalies,
       },
     },
   });

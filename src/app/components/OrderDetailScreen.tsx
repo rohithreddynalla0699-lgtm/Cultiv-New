@@ -5,6 +5,7 @@ import { Link, Navigate, useParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { CardStagger, CardStaggerItem, PageReveal } from '../core/motion/cultivMotion';
 import { Receipt } from '../receipts/components/Receipt';
+import { ReceiptModal } from '../receipts/components/ReceiptModal';
 import { useReceiptData } from '../receipts/hooks/useReceiptData';
 import { printReceiptElement } from '../receipts/utils/printReceiptElement';
 import { loadStores, type StoreLocatorStore } from '../data/storeLocator';
@@ -297,50 +298,53 @@ export function OrderDetailScreen() {
           </motion.div>
         </CardStagger>
 
+        <ReceiptModal
+          open={showReceipt && !receiptLoading && !receiptError && Boolean(receiptData)}
+          onClose={() => setShowReceipt(false)}
+          data={receiptData}
+          onPrint={printReceiptElement}
+          footerContent={undefined}
+        />
+
         <AnimatePresence>
-          {showReceipt && (
+          {showReceipt && (receiptLoading || receiptError) ? (
             <motion.div
-              className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(22,28,18,0.42)] p-4 backdrop-blur-[2px]"
+              className="fixed inset-x-0 bottom-0 top-[calc(env(safe-area-inset-top)+5.25rem)] z-[100] overflow-hidden bg-[rgba(22,28,18,0.42)] backdrop-blur-[2px] sm:top-[calc(env(safe-area-inset-top)+5.75rem)]"
               onClick={() => setShowReceipt(false)}
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
             >
-              <motion.div
-                className="relative w-full max-w-lg rounded-[26px] border border-[#dde2d4] bg-[#fbfbf7] p-6 shadow-[0_24px_60px_rgba(22,30,18,0.18)]"
-                onClick={(e) => e.stopPropagation()}
-                initial={{ opacity: 0, scale: 0.96, y: 10 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.96, y: 10 }}
-              >
-                <button
-                  onClick={() => setShowReceipt(false)}
-                  className="absolute right-4 top-4 text-lg text-[#7b8570] transition hover:text-[#27311f]"
-                  aria-label="Close receipt"
-                  type="button"
+              <div className="flex h-full items-start justify-center overflow-hidden px-3 py-4 sm:px-4 sm:py-5">
+                <motion.div
+                  className="relative w-full max-w-[520px] rounded-[24px] border border-[#dde2d4] bg-[#fbfbf7] p-6 shadow-[0_24px_60px_rgba(22,30,18,0.18)]"
+                  onClick={(e) => e.stopPropagation()}
+                  initial={{ opacity: 0, scale: 0.96, y: 10 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.96, y: 10 }}
                 >
-                  ×
-                </button>
+                  <button
+                    onClick={() => setShowReceipt(false)}
+                    className="absolute right-4 top-4 text-lg text-[#7b8570] transition hover:text-[#27311f]"
+                    aria-label="Close receipt"
+                    type="button"
+                  >
+                    ×
+                  </button>
 
-                {receiptLoading ? (
-                  <div className="rounded-2xl border border-[#E5EBDD] bg-white p-4 text-sm text-foreground/60">
-                    Loading receipt...
-                  </div>
-                ) : receiptError ? (
-                  <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
-                    {receiptError}
-                  </div>
-                ) : receiptData ? (
-                  <Receipt
-                    data={receiptData}
-                    variant="screen"
-                    showActions
-                    onPrint={printReceiptElement}
-                  />
-                ) : null}
-              </motion.div>
+                  {receiptLoading ? (
+                    <div className="rounded-2xl border border-[#E5EBDD] bg-white p-4 text-sm text-foreground/60">
+                      Loading receipt...
+                    </div>
+                  ) : receiptError ? (
+                    <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+                      {receiptError}
+                    </div>
+                  ) : null}
+                </motion.div>
+              </div>
             </motion.div>
-          )}
+          ) : null}
         </AnimatePresence>
       </div>
     </PageReveal>

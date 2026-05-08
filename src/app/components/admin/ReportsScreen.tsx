@@ -21,6 +21,16 @@ const EMPTY_RECONCILIATION: NonNullable<InternalReportsSummary['reconciliation']
   anomalies: [],
 };
 
+const EMPTY_NOTIFICATION_OBSERVABILITY: NonNullable<InternalReportsSummary['notifications']> = {
+  summary: {
+    failedReceiptDeliveries: 0,
+    failedNotificationEvents: 0,
+    notDeliveredNotificationEvents: 0,
+    sentNotificationEvents: 0,
+  },
+  anomalies: [],
+};
+
 function escapeCsvCell(value: string | number | null | undefined) {
   const normalized = String(value ?? '');
   if (/[",\n]/.test(normalized)) {
@@ -137,6 +147,10 @@ function formatDateTimeLabel(value: string) {
 }
 
 function formatReconciliationAnomalyLabel(value: string) {
+  return value.replace(/_/g, ' ');
+}
+
+function formatNotificationPurposeLabel(value: string) {
   return value.replace(/_/g, ' ');
 }
 
@@ -357,6 +371,8 @@ export function ReportsScreen() {
   const isAllStores = !activeStore;
   const reconciliation = summary?.reconciliation ?? EMPTY_RECONCILIATION;
   const reconciliationRows = reconciliation.anomalies;
+  const notificationObservability = summary?.notifications ?? EMPTY_NOTIFICATION_OBSERVABILITY;
+  const notificationRows = notificationObservability.anomalies;
 
   const exportSummaryCsv = () => {
     if (!summary) return;
@@ -744,6 +760,87 @@ export function ReportsScreen() {
                       No reconciliation anomalies found for the selected range.
                     </div>
                   )}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-[24px] border border-primary/12 bg-white/90 p-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-foreground/55">Receipt & Notification Observability</p>
+                <p className="mt-1 text-sm text-foreground/60">Read-only delivery audit visibility for receipts, signup verification, and password reset preparation.</p>
+              </div>
+              <div className="rounded-2xl bg-[#F7FAF3] px-3 py-2 text-xs text-foreground/64">
+                {notificationRows.length} anomaly row{notificationRows.length === 1 ? '' : 's'} in range
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl bg-[#F7FAF3] px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.12em] text-foreground/52">Failed receipt deliveries</p>
+                <p className="mt-1 text-lg font-semibold text-foreground">{notificationObservability.summary.failedReceiptDeliveries}</p>
+              </div>
+              <div className="rounded-2xl bg-[#F7FAF3] px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.12em] text-foreground/52">Failed notification events</p>
+                <p className="mt-1 text-lg font-semibold text-foreground">{notificationObservability.summary.failedNotificationEvents}</p>
+              </div>
+              <div className="rounded-2xl bg-[#F7FAF3] px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.12em] text-foreground/52">Prepared / not delivered</p>
+                <p className="mt-1 text-lg font-semibold text-foreground">{notificationObservability.summary.notDeliveredNotificationEvents}</p>
+              </div>
+              <div className="rounded-2xl bg-[#F7FAF3] px-4 py-3">
+                <p className="text-xs uppercase tracking-[0.12em] text-foreground/52">Sent notification events</p>
+                <p className="mt-1 text-lg font-semibold text-foreground">{notificationObservability.summary.sentNotificationEvents}</p>
+              </div>
+            </div>
+
+            <div className="mt-4 overflow-hidden rounded-[20px] border border-primary/10">
+              <div className="max-h-[min(60vh,34rem)] overflow-auto">
+                <div className="min-w-[1220px]">
+                  <div className="grid grid-cols-[0.9fr_1fr_0.95fr_0.9fr_1.1fr_1fr_1fr_1fr_1.2fr] gap-3 border-b border-primary/10 bg-[#F7FAF3] px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/52">
+                    <p>Source</p>
+                    <p>Purpose</p>
+                    <p>Channel</p>
+                  <p>Status</p>
+                  <p>Store</p>
+                  <p>Recipient</p>
+                  <p>Provider</p>
+                  <p>Order</p>
+                  <p>Updated</p>
+                </div>
+                  <div className="divide-y divide-primary/8">
+                    {notificationRows.length > 0 ? notificationRows.map((entry) => (
+                      <div key={`${entry.source}-${entry.eventId}`} className="grid grid-cols-[0.9fr_1fr_0.95fr_0.9fr_1.1fr_1fr_1fr_1fr_1.2fr] gap-3 px-4 py-3 text-sm">
+                        <div>
+                          <p className="font-medium capitalize text-foreground">{entry.source.replace(/_/g, ' ')}</p>
+                          <p className="mt-1 font-mono text-xs text-foreground/56">{entry.eventId}</p>
+                        </div>
+                        <div>
+                          <p className="font-medium capitalize text-foreground">{formatNotificationPurposeLabel(entry.purpose)}</p>
+                          {entry.errorMessage ? (
+                            <p className="mt-1 text-xs text-rose-700">{entry.errorMessage}</p>
+                          ) : (
+                            <p className="mt-1 text-xs text-foreground/56">Created {formatDateTimeLabel(entry.createdAt)}</p>
+                          )}
+                        </div>
+                        <p className="capitalize text-foreground/72">{entry.channel || 'unknown'}</p>
+                        <p className="capitalize text-foreground/72">{entry.status || 'unknown'}</p>
+                        <div>
+                          <p className="font-medium text-foreground">{entry.storeName}</p>
+                          <p className="mt-1 font-mono text-xs text-foreground/56">{entry.storeId ?? '—'}</p>
+                        </div>
+                        <p className="text-xs text-foreground/72">{entry.recipient ?? '—'}</p>
+                        <p className="capitalize text-foreground/72">{entry.provider ?? '—'}</p>
+                        <p className="font-mono text-xs text-foreground/72">{entry.orderId ?? '—'}</p>
+                        <p className="text-xs text-foreground/62">{formatDateTimeLabel(entry.updatedAt)}</p>
+                      </div>
+                    )) : (
+                      <div className="px-4 py-6 text-sm text-foreground/60">
+                        No receipt or notification anomalies found for the selected range.
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

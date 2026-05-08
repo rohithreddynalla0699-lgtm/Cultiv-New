@@ -5,6 +5,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.43.0";
 // @ts-ignore: Deno remote imports
 import { hash } from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 import { generateOtpCode, hashOtp, sendSms } from "../_shared/phone-update.ts";
+import { logNotificationEvent } from "../_shared/notification-events.ts";
 
 declare const Deno: any;
 
@@ -277,8 +278,36 @@ serve(async (req: any) => {
 
     try {
       await sendSms(normalizedPhone, `Your CULTIV verification code is ${otpCode}`);
+      await logNotificationEvent(supabase, {
+        channel: 'sms',
+        purpose: 'signup_verification',
+        status: 'sent',
+        provider: Deno.env.get('TWILIO_ACCOUNT_SID') ? 'twilio' : 'dev_console',
+        recipient: normalizedPhone,
+        customerId: insertedCustomer.id,
+        errorCode: null,
+        errorMessage: null,
+        metadata: {
+          requestId: verificationRequest.id,
+          event: 'signup_verification_requested',
+        },
+      });
     } catch (smsError) {
       console.error("[customer-signup] signup verification SMS send failed", smsError);
+      await logNotificationEvent(supabase, {
+        channel: 'sms',
+        purpose: 'signup_verification',
+        status: 'failed',
+        provider: Deno.env.get('TWILIO_ACCOUNT_SID') ? 'twilio' : 'dev_console',
+        recipient: normalizedPhone,
+        customerId: insertedCustomer.id,
+        errorCode: 'OTP_SEND_FAILED',
+        errorMessage: smsError instanceof Error ? smsError.message : String(smsError),
+        metadata: {
+          requestId: verificationRequest.id,
+          event: 'signup_verification_requested',
+        },
+      });
       await supabase.from("customer_signup_verification_requests").delete().eq("id", verificationRequest.id);
       await supabase.from("customers").delete().eq("id", insertedCustomer.id);
       return jsonResponse({

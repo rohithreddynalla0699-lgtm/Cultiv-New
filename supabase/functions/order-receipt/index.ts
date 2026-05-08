@@ -138,7 +138,7 @@ Deno.serve(async (req) => {
       if (/expired|revoked|not found|required/i.test(message) && /session/i.test(message)) {
         return json(401, { error: message });
       }
-      if (/does not belong|scope does not allow/i.test(message)) {
+      if (/does not belong|scope does not allow|permission/i.test(message)) {
         return json(403, { error: message });
       }
       if (/Order not found/i.test(message)) {

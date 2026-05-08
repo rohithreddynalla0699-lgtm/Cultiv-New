@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { notificationChannelPolicy } from '../_shared/notification-policy.ts';
+import { logNotificationEvent } from '../_shared/notification-events.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -273,6 +274,22 @@ Deno.serve(async (req) => {
     if (allowDebugTokenResponse) {
       debugResetToken = rawResetToken;
     }
+
+    await logNotificationEvent(db, {
+      channel: 'sms',
+      purpose: 'password_reset',
+      status: 'not_delivered',
+      provider: null,
+      recipient: customer.phone ? String(customer.phone) : null,
+      customerId: customer.id,
+      errorCode: 'DELIVERY_NOT_IMPLEMENTED',
+      errorMessage: 'Password reset token was prepared, but provider-backed delivery is not implemented in this environment.',
+      metadata: {
+        securityPreferredChannel: receiptChannelPolicy.preferred,
+        debugTokenResponseEnabled: allowDebugTokenResponse,
+        identifierType: isPhoneIdentifier ? 'phone' : 'email',
+      },
+    });
   }
 
   return json(200, {

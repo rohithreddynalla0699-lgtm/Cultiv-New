@@ -17,6 +17,25 @@ export interface InternalAccessSessionRow {
   last_seen_at: string;
 }
 
+const loadPermissionKeys = async (db: ReturnType<typeof createClient>, internalUserId: string) => {
+  const { data, error } = await db
+    .from('internal_users')
+    .select('roles!inner(role_permissions(is_allowed, permissions(permission_key)))')
+    .eq('id', internalUserId)
+    .single();
+
+  if (error || !data) {
+    return { error: 'Could not load internal user permissions.' };
+  }
+
+  const permissionKeys = ((data.roles?.role_permissions ?? []) as Array<{ is_allowed?: boolean; permissions?: { permission_key?: string | null } | null }>)
+    .filter((entry) => entry.is_allowed)
+    .map((entry) => entry.permissions?.permission_key?.trim())
+    .filter((permissionKey): permissionKey is string => Boolean(permissionKey));
+
+  return { permissionKeys: Array.from(new Set(permissionKeys)) };
+};
+
 export interface ReceiptBusinessMeta {
   brandName: string;
   storeName: string;
@@ -110,6 +129,15 @@ export async function loadAuthorizedReceipt(params: {
     const verifiedInternalSession = await verifyAndLoadInternalSession(db, internalSessionToken);
     if (!verifiedInternalSession.valid) {
       throw new Error(verifiedInternalSession.error);
+    }
+    const permissionsResult = await loadPermissionKeys(db, verifiedInternalSession.session.internal_user_id);
+    if ('error' in permissionsResult) {
+      throw new Error(permissionsResult.error);
+    }
+    const hasReceiptAccess = permissionsResult.permissionKeys.includes('can_access_orders')
+      || permissionsResult.permissionKeys.includes('can_access_pos');
+    if (!hasReceiptAccess) {
+      throw new Error('You do not have permission to access receipts.');
     }
     internalScopeStoreId = verifiedInternalSession.session.scope_type === 'store'
       ? verifiedInternalSession.session.scope_store_id

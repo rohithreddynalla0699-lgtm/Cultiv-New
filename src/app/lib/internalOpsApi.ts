@@ -523,6 +523,31 @@ export interface InternalReportsSummary {
       updatedAt: string;
     }>;
   };
+  notifications: {
+    summary: {
+      failedReceiptDeliveries: number;
+      failedNotificationEvents: number;
+      notDeliveredNotificationEvents: number;
+      sentNotificationEvents: number;
+    };
+    anomalies: Array<{
+      source: 'receipt_delivery' | 'notification_event';
+      eventId: string;
+      purpose: string;
+      channel: string;
+      status: string;
+      storeId: string | null;
+      storeName: string;
+      orderId: string | null;
+      customerId: string | null;
+      recipient: string | null;
+      provider: string | null;
+      errorCode: string | null;
+      errorMessage: string | null;
+      createdAt: string;
+      updatedAt: string;
+    }>;
+  };
   rangeLabel: string;
   rangeFrom: string | null;
   rangeTo: string | null;

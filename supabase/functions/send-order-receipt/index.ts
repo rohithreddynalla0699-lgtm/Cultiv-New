@@ -2,6 +2,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { loadAuthorizedReceipt } from '../_shared/receipt-data.ts';
 import { notificationChannelPolicy } from '../_shared/notification-policy.ts';
+import { logNotificationEvent } from '../_shared/notification-events.ts';
 
 type DeliveryMethod = 'print' | 'email' | 'text' | 'all';
 type DigitalMethod = 'email' | 'text';
@@ -509,7 +510,7 @@ Deno.serve(async (req) => {
     if (/expired|revoked|not found|required/i.test(message) && /session/i.test(message)) {
       return json(401, { success: false, code: 'INVALID_SESSION', error: message });
     }
-    if (/does not belong|scope does not allow/i.test(message)) {
+    if (/does not belong|scope does not allow|permission/i.test(message)) {
       return json(403, { success: false, code: 'FORBIDDEN', error: message });
     }
     if (/Order not found/i.test(message)) {
@@ -560,6 +561,22 @@ Deno.serve(async (req) => {
       errorCode: emailAttempt.errorCode,
       errorMessage: emailAttempt.errorMessage,
     });
+    await logNotificationEvent(db, {
+      channel: 'email',
+      purpose: 'receipt',
+      status: emailAttempt.success ? 'sent' : 'failed',
+      provider: emailAttempt.provider,
+      recipient: emailAttempt.recipient,
+      orderId,
+      storeId: receipt.meta.storeId ?? null,
+      errorCode: emailAttempt.errorCode,
+      errorMessage: emailAttempt.errorMessage,
+      metadata: {
+        deliveryMethod,
+        policyPreferredChannel: commercePolicy.preferred,
+        policyLegacyFallback: commercePolicy.legacyFallback ?? null,
+      },
+    });
   }
 
   if (deliveryMethod === 'text' || deliveryMethod === 'all') {
@@ -597,6 +614,22 @@ Deno.serve(async (req) => {
       provider: smsAttempt.provider,
       errorCode: smsAttempt.errorCode,
       errorMessage: smsAttempt.errorMessage,
+    });
+    await logNotificationEvent(db, {
+      channel: 'sms',
+      purpose: 'receipt',
+      status: smsAttempt.success ? 'sent' : 'failed',
+      provider: smsAttempt.provider,
+      recipient: smsAttempt.recipient,
+      orderId,
+      storeId: receipt.meta.storeId ?? null,
+      errorCode: smsAttempt.errorCode,
+      errorMessage: smsAttempt.errorMessage,
+      metadata: {
+        deliveryMethod,
+        policyPreferredChannel: commercePolicy.preferred,
+        policyLegacyFallback: commercePolicy.legacyFallback ?? null,
+      },
     });
   }
 
