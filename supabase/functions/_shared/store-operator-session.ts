@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { createCorsHeaders } from './cors.ts';
 
-export const STORE_OPERATOR_SESSION_EXPIRY_MS = 12 * 60 * 60 * 1000;
+export const STORE_OPERATOR_SESSION_INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
 
 export const buildStoreOperatorCorsHeaders = (req: Request) => createCorsHeaders(req, {
   allowedHeaders: ['authorization', 'apikey', 'content-type', 'x-client-info', 'x-internal-session-token'],
@@ -166,13 +166,17 @@ export const loadOpenShiftForEmployee = async (db: any, employeeId: string, stor
 const activeSessionSelect =
   'id, session_token, internal_access_session_id, internal_user_id, employee_id, shift_id, store_id, device_id, device_name, started_at, last_activity_at, expires_at, ended_at, ended_reason, is_locked, employees!inner(full_name, employee_role)';
 
-export const loadActiveOperatorSession = async (db: any, internalAccessSessionId: string) => {
+export const isOperatorSessionExpired = (session: { expires_at: string } | null | undefined, now = new Date()) => {
+  if (!session?.expires_at) return false;
+  return new Date(session.expires_at) <= now;
+};
+
+export const loadLatestOpenOperatorSession = async (db: any, internalAccessSessionId: string) => {
   const { data, error } = await db
     .from('store_operator_sessions')
     .select(activeSessionSelect)
     .eq('internal_access_session_id', internalAccessSessionId)
     .is('ended_at', null)
-    .gt('expires_at', new Date().toISOString())
     .order('started_at', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -182,6 +186,42 @@ export const loadActiveOperatorSession = async (db: any, internalAccessSessionId
   }
 
   return { session: data ?? null };
+};
+
+export const loadActiveOperatorSession = async (db: any, internalAccessSessionId: string) => {
+  const result = await loadLatestOpenOperatorSession(db, internalAccessSessionId);
+  if (result.error) {
+    return result;
+  }
+
+  if (!result.session || isOperatorSessionExpired(result.session)) {
+    return { session: null };
+  }
+
+  return result;
+};
+
+export const endOperatorSessionById = async (
+  db: any,
+  sessionId: string,
+  reason: string,
+  endedAtIso = new Date().toISOString(),
+) => {
+  const { error } = await db
+    .from('store_operator_sessions')
+    .update({
+      ended_at: endedAtIso,
+      ended_reason: reason,
+      updated_at: endedAtIso,
+    })
+    .eq('id', sessionId)
+    .is('ended_at', null);
+
+  if (error) {
+    return { error: 'Could not reconcile store operator session state.', status: 500 };
+  }
+
+  return { endedAt: endedAtIso };
 };
 
 export const endActiveOperatorSessions = async (

@@ -2,10 +2,12 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
   buildStoreOperatorCorsHeaders,
+  endOperatorSessionById,
   enforceStoreScope,
   extractSessionToken,
+  isOperatorSessionExpired,
   json,
-  loadActiveOperatorSession,
+  loadLatestOpenOperatorSession,
   mapOperatorSessionResponse,
   verifyAndLoadSession,
 } from '../_shared/store-operator-session.ts';
@@ -56,9 +58,21 @@ Deno.serve(async (req) => {
     return json(corsHeaders, 403, { error: scopeResult.error });
   }
 
-  const sessionResult = await loadActiveOperatorSession(db, verifyResult.session.id);
+  const sessionResult = await loadLatestOpenOperatorSession(db, verifyResult.session.id);
   if (sessionResult.error) {
     return json(corsHeaders, sessionResult.status ?? 500, { error: sessionResult.error });
+  }
+
+  if (sessionResult.session?.id && isOperatorSessionExpired(sessionResult.session)) {
+    const endResult = await endOperatorSessionById(db, sessionResult.session.id, 'expired');
+    if (endResult.error) {
+      return json(corsHeaders, endResult.status ?? 500, { error: endResult.error });
+    }
+
+    return json(corsHeaders, 200, {
+      success: true,
+      session: null,
+    });
   }
 
   if (sessionResult.session?.id && sessionResult.session.shift_id) {
@@ -73,19 +87,9 @@ Deno.serve(async (req) => {
     }
 
     if (!shift?.shift_id || shift.clock_out_at !== null) {
-      const nowIso = new Date().toISOString();
-      const { error: endError } = await db
-        .from('store_operator_sessions')
-        .update({
-          ended_at: nowIso,
-          ended_reason: 'clock_out',
-          updated_at: nowIso,
-        })
-        .eq('id', sessionResult.session.id)
-        .is('ended_at', null);
-
-      if (endError) {
-        return json(corsHeaders, 500, { error: 'Could not reconcile store operator session state.' });
+      const endResult = await endOperatorSessionById(db, sessionResult.session.id, 'clock_out');
+      if (endResult.error) {
+        return json(corsHeaders, endResult.status ?? 500, { error: endResult.error });
       }
 
       return json(corsHeaders, 200, {

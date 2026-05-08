@@ -2,10 +2,13 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
   buildStoreOperatorCorsHeaders,
+  endOperatorSessionById,
   enforceStoreScope,
   extractSessionToken,
+  isOperatorSessionExpired,
   json,
-  loadActiveOperatorSession,
+  loadLatestOpenOperatorSession,
+  STORE_OPERATOR_SESSION_INACTIVITY_TIMEOUT_MS,
   verifyAndLoadSession,
 } from '../_shared/store-operator-session.ts';
 
@@ -55,7 +58,7 @@ Deno.serve(async (req) => {
     return json(corsHeaders, 403, { error: scopeResult.error });
   }
 
-  const sessionResult = await loadActiveOperatorSession(db, verifyResult.session.id);
+  const sessionResult = await loadLatestOpenOperatorSession(db, verifyResult.session.id);
   if (sessionResult.error) {
     return json(corsHeaders, sessionResult.status ?? 500, { error: sessionResult.error });
   }
@@ -64,11 +67,23 @@ Deno.serve(async (req) => {
     return json(corsHeaders, 404, { error: 'No active store operator session was found.' });
   }
 
-  const nowIso = new Date().toISOString();
+  if (isOperatorSessionExpired(sessionResult.session)) {
+    const endResult = await endOperatorSessionById(db, sessionResult.session.id, 'expired');
+    if (endResult.error) {
+      return json(corsHeaders, endResult.status ?? 500, { error: endResult.error });
+    }
+
+    return json(corsHeaders, 404, { error: 'Store operator session expired due to inactivity.' });
+  }
+
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const expiresAt = new Date(now.getTime() + STORE_OPERATOR_SESSION_INACTIVITY_TIMEOUT_MS).toISOString();
   const { data, error } = await db
     .from('store_operator_sessions')
     .update({
       last_activity_at: nowIso,
+      expires_at: expiresAt,
       updated_at: nowIso,
     })
     .eq('id', sessionResult.session.id)

@@ -11,7 +11,7 @@ import {
   loadEmployeeForStore,
   loadOpenShiftForEmployee,
   mapOperatorSessionResponse,
-  STORE_OPERATOR_SESSION_EXPIRY_MS,
+  STORE_OPERATOR_SESSION_INACTIVITY_TIMEOUT_MS,
   verifyAndLoadSession,
 } from '../_shared/store-operator-session.ts';
 
@@ -89,7 +89,7 @@ Deno.serve(async (req) => {
 
   const now = new Date();
   const nowIso = now.toISOString();
-  const expiresAt = new Date(now.getTime() + STORE_OPERATOR_SESSION_EXPIRY_MS).toISOString();
+  const expiresAt = new Date(now.getTime() + STORE_OPERATOR_SESSION_INACTIVITY_TIMEOUT_MS).toISOString();
   const deviceId = typeof body.deviceId === 'string' && body.deviceId.trim() ? body.deviceId.trim().slice(0, 255) : null;
   const deviceName = typeof body.deviceName === 'string' && body.deviceName.trim() ? body.deviceName.trim().slice(0, 255) : null;
 

@@ -92,6 +92,21 @@ const mapBackendRoleToStoreSessionRole = (
   role: InternalStoreOperatorSession['employeeRole'],
 ): 'staff' | 'store_manager' => (role === 'manager' ? 'store_manager' : 'staff');
 
+const EXPLICIT_INVALID_STORE_SESSION_ERRORS = [
+  'internal session not found',
+  'internal session has been revoked',
+  'internal session has expired',
+  'no active store operator session was found',
+  'store operator session expired due to inactivity',
+  'store operator sessions require a store-scoped internal session',
+];
+
+const isExplicitInvalidStoreSessionError = (message: string | null | undefined) => {
+  if (!message) return false;
+  const normalized = message.trim().toLowerCase();
+  return EXPLICIT_INVALID_STORE_SESSION_ERRORS.some((candidate) => normalized.includes(candidate));
+};
+
 const mapOperatorSessionToStoreEmployeeSession = (
   operatorSession: InternalStoreOperatorSession,
   previousSession: StoreEmployeeSession | null,
@@ -148,6 +163,13 @@ export const StoreSessionProvider: React.FC<StoreSessionProviderProps> = ({
     clearSessionTimers();
     lastTouchSentAtRef.current = 0;
   }, [clearSessionTimers]);
+
+  const invalidateLocalSession = useCallback((message?: string | null) => {
+    clearLocalSession();
+    if (message) {
+      setSessionError(message);
+    }
+  }, [clearLocalSession]);
 
   const endSessionWithReason = useCallback(async (
     reason: 'clock_out' | 'logout' | 'expired' | 'manual' | 'replaced',
@@ -226,6 +248,19 @@ export const StoreSessionProvider: React.FC<StoreSessionProviderProps> = ({
       });
 
       if (error || !data?.success) {
+        if (isExplicitInvalidStoreSessionError(error)) {
+          invalidateLocalSession(error);
+          return;
+        }
+
+        if (cachedSession) {
+          setSession(cachedSession);
+          sessionRef.current = cachedSession;
+          setSessionError(error ?? 'Could not restore store operator session.');
+          scheduleSessionTimers(cachedSession.last_activity_at);
+          return;
+        }
+
         clearLocalSession();
         setSessionError(error ?? 'Could not restore store operator session.');
         return;
@@ -244,12 +279,20 @@ export const StoreSessionProvider: React.FC<StoreSessionProviderProps> = ({
       scheduleSessionTimers(restoredSession.last_activity_at);
       lastTouchSentAtRef.current = Date.now();
     } catch {
-      clearLocalSession();
-      setSessionError('Could not restore store operator session.');
+      const cachedSession = readStoredSessionCache();
+      if (cachedSession) {
+        setSession(cachedSession);
+        sessionRef.current = cachedSession;
+        setSessionError('Could not restore store operator session.');
+        scheduleSessionTimers(cachedSession.last_activity_at);
+      } else {
+        clearLocalSession();
+        setSessionError('Could not restore store operator session.');
+      }
     } finally {
       setIsSessionInitializing(false);
     }
-  }, [clearLocalSession, scheduleSessionTimers]);
+  }, [clearLocalSession, invalidateLocalSession, scheduleSessionTimers]);
 
   const createSession = useCallback(async (
     employeeId: string,
@@ -336,6 +379,7 @@ export const StoreSessionProvider: React.FC<StoreSessionProviderProps> = ({
 
       const internalSession = readInternalAccessSessionSnapshot();
       if (!internalSession || internalSession.scopeType !== 'store') {
+        invalidateLocalSession('Store operator session is no longer available. Please unlock again.');
         return;
       }
 
@@ -344,7 +388,11 @@ export const StoreSessionProvider: React.FC<StoreSessionProviderProps> = ({
       });
 
       if (error || !data?.success) {
-        console.warn('Failed to touch session.');
+        if (isExplicitInvalidStoreSessionError(error)) {
+          invalidateLocalSession(error);
+          return;
+        }
+
         return;
       }
 
@@ -361,9 +409,9 @@ export const StoreSessionProvider: React.FC<StoreSessionProviderProps> = ({
       scheduleSessionTimers(updatedSession.last_activity_at);
       lastTouchSentAtRef.current = nowMs;
     } catch {
-      console.warn('Failed to touch session.');
+      return;
     }
-  }, [scheduleSessionTimers]);
+  }, [invalidateLocalSession, scheduleSessionTimers]);
 
   const clearSession = useCallback(() => {
     clearLocalSession();

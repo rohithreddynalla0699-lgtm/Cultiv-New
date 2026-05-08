@@ -47,8 +47,13 @@ Deno.serve(async (req) => {
   });
 
 
-  // Update unrevoked session by token, regardless of expiry
   const nowIso = new Date().toISOString();
+  const { data: sessionRow } = await db
+    .from('internal_access_sessions')
+    .select('id')
+    .eq('session_token', sessionToken)
+    .maybeSingle();
+
   await db
     .from('internal_access_sessions')
     .update({
@@ -57,6 +62,18 @@ Deno.serve(async (req) => {
     })
     .eq('session_token', sessionToken)
     .is('revoked_at', null);
+
+  if (sessionRow?.id) {
+    await db
+      .from('store_operator_sessions')
+      .update({
+        ended_at: nowIso,
+        ended_reason: 'logout',
+        updated_at: nowIso,
+      })
+      .eq('internal_access_session_id', sessionRow.id)
+      .is('ended_at', null);
+  }
 
   // Always return success, never expose session details
   return json(corsHeaders, 200, { success: true });
