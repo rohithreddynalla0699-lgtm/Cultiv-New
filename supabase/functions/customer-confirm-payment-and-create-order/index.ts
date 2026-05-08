@@ -2,18 +2,13 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 // @ts-ignore: Deno remote imports
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.43.0";
+import { createCorsHeaders } from "../_shared/cors.ts";
 
 declare const Deno: any;
 
 const NON_PRODUCTION_ENV_VALUES = new Set(["development", "dev", "staging", "stage", "test", "local"]);
 
-const corsHeaders: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
-
-const jsonResponse = (body: Record<string, unknown>, status = 200): Response =>
+const jsonResponse = (corsHeaders: Record<string, string>, body: Record<string, unknown>, status = 200): Response =>
   new Response(JSON.stringify(body), {
     status,
     headers: {
@@ -75,6 +70,9 @@ const verifyRazorpaySignature = async (
 };
 
 serve(async (req: any) => {
+  const corsHeaders = createCorsHeaders(req, {
+    allowedHeaders: ["authorization", "x-client-info", "apikey", "content-type"],
+  });
   if (req.method === "OPTIONS") {
     return new Response("ok", {
       status: 200,
@@ -84,7 +82,7 @@ serve(async (req: any) => {
 
   try {
     if (req.method !== "POST") {
-      return jsonResponse({ success: false, message: "Method not allowed" }, 405);
+      return jsonResponse(corsHeaders, { success: false, message: "Method not allowed" }, 405);
     }
 
     const body = (await req.json()) as ConfirmPaymentRequest;
@@ -92,11 +90,11 @@ serve(async (req: any) => {
     const outcome = body.outcome;
 
     if (!paymentId || !outcome) {
-      return jsonResponse({ success: false, message: "Missing payment confirmation payload." }, 400);
+      return jsonResponse(corsHeaders, { success: false, message: "Missing payment confirmation payload." }, 400);
     }
 
     if (!["succeeded", "failed", "cancelled"].includes(outcome)) {
-      return jsonResponse({ success: false, message: "Invalid payment outcome." }, 400);
+      return jsonResponse(corsHeaders, { success: false, message: "Invalid payment outcome." }, 400);
     }
 
     const supabase = createClient(
@@ -112,11 +110,11 @@ serve(async (req: any) => {
 
     if (paymentLookupError) {
       console.error("[customer-confirm-payment-and-create-order] lookup failed", paymentLookupError);
-      return jsonResponse({ success: false, message: "Could not verify payment." }, 500);
+      return jsonResponse(corsHeaders, { success: false, message: "Could not verify payment." }, 500);
     }
 
     if (!paymentRow) {
-      return jsonResponse({ success: false, message: "Payment attempt not found." }, 404);
+      return jsonResponse(corsHeaders, { success: false, message: "Payment attempt not found." }, 404);
     }
 
     if (paymentRow.status === "succeeded" && paymentRow.order_id) {
@@ -126,7 +124,7 @@ serve(async (req: any) => {
         .eq("order_id", paymentRow.order_id)
         .maybeSingle();
 
-      return jsonResponse({
+      return jsonResponse(corsHeaders, {
         success: true,
         orderId: existingOrder?.order_id ?? paymentRow.order_id,
         orderNumber: existingOrder?.order_number ?? null,
@@ -147,7 +145,7 @@ serve(async (req: any) => {
         })
         .eq("payment_id", paymentId);
 
-      return jsonResponse({
+      return jsonResponse(corsHeaders, {
         success: false,
         message: outcome === "cancelled" ? "Payment was cancelled. No order was created." : "Payment failed. No order was created.",
       }, 400);
@@ -163,7 +161,7 @@ serve(async (req: any) => {
         ensureMockProviderAllowed();
       } catch (error) {
         console.error("[customer-confirm-payment-and-create-order] mock provider not allowed", error);
-        return jsonResponse({ success: false, message: "Mock payment provider is not allowed in production." }, 400);
+        return jsonResponse(corsHeaders, { success: false, message: "Mock payment provider is not allowed in production." }, 400);
       }
 
       if (!gatewayOrderId) {
@@ -184,11 +182,11 @@ serve(async (req: any) => {
           })
           .eq("payment_id", paymentId);
 
-        return jsonResponse({ success: false, message: "Payment verification failed." }, 400);
+        return jsonResponse(corsHeaders, { success: false, message: "Payment verification failed." }, 400);
       }
 
       if (paymentRow.gateway_order_id && paymentRow.gateway_order_id !== gatewayOrderId) {
-        return jsonResponse({ success: false, message: "Gateway order mismatch." }, 400);
+        return jsonResponse(corsHeaders, { success: false, message: "Gateway order mismatch." }, 400);
       }
 
       const razorpaySecret = Deno.env.get("RAZORPAY_KEY_SECRET") || "";
@@ -202,7 +200,7 @@ serve(async (req: any) => {
           })
           .eq("payment_id", paymentId);
 
-        return jsonResponse({ success: false, message: "Payment verification failed." }, 400);
+        return jsonResponse(corsHeaders, { success: false, message: "Payment verification failed." }, 400);
       }
 
       const signatureValid = await verifyRazorpaySignature(gatewayOrderId, gatewayPaymentId, gatewaySignature, razorpaySecret);
@@ -218,10 +216,10 @@ serve(async (req: any) => {
           })
           .eq("payment_id", paymentId);
 
-        return jsonResponse({ success: false, message: "Payment signature verification failed." }, 400);
+        return jsonResponse(corsHeaders, { success: false, message: "Payment signature verification failed." }, 400);
       }
     } else {
-      return jsonResponse({ success: false, message: "Online payment gateway is not configured for live confirmation." }, 400);
+      return jsonResponse(corsHeaders, { success: false, message: "Online payment gateway is not configured for live confirmation." }, 400);
     }
 
     const confirmedAtIso = new Date().toISOString();
@@ -236,7 +234,7 @@ serve(async (req: any) => {
 
     if (finalizeError) {
       console.error("[customer-confirm-payment-and-create-order] transactional finalize failed", finalizeError);
-      return jsonResponse({
+      return jsonResponse(corsHeaders, {
         success: false,
         message: "Payment captured but order could not be finalized.",
       }, 500);
@@ -245,13 +243,13 @@ serve(async (req: any) => {
     const result = (finalizeResult ?? {}) as FinalizePaymentResult;
     if (!result.orderId) {
       console.error("[customer-confirm-payment-and-create-order] finalize returned incomplete result", finalizeResult);
-      return jsonResponse({
+      return jsonResponse(corsHeaders, {
         success: false,
         message: "Payment captured but order could not be finalized.",
       }, 500);
     }
 
-    return jsonResponse({
+    return jsonResponse(corsHeaders, {
       success: true,
       orderId: result.orderId,
       orderNumber: result.orderNumber ?? null,
@@ -259,6 +257,6 @@ serve(async (req: any) => {
     }, 200);
   } catch (err) {
     console.error("[customer-confirm-payment-and-create-order] unexpected error", err);
-    return jsonResponse({ success: false, message: "Could not confirm payment and place order." }, 500);
+    return jsonResponse(corsHeaders, { success: false, message: "Could not confirm payment and place order." }, 500);
   }
 });

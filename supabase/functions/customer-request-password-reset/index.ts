@@ -2,14 +2,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { notificationChannelPolicy } from '../_shared/notification-policy.ts';
 import { logNotificationEvent } from '../_shared/notification-events.ts';
+import { createCorsHeaders } from '../_shared/cors.ts';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
-const json = (status: number, payload: Record<string, unknown>) =>
+const json = (corsHeaders: Record<string, string>, status: number, payload: Record<string, unknown>) =>
   new Response(JSON.stringify(payload), {
     status,
     headers: {
@@ -149,31 +144,32 @@ const registerAttempt = async (db: ReturnType<typeof createClient>, attemptKey: 
 };
 
 Deno.serve(async (req) => {
+  const corsHeaders = createCorsHeaders(req);
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
-    return json(405, { success: false, message: 'Method not allowed.' });
+    return json(corsHeaders, 405, { success: false, message: 'Method not allowed.' });
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !serviceRoleKey) {
-    return json(500, { success: false, message: 'Server is not configured.' });
+    return json(corsHeaders, 500, { success: false, message: 'Server is not configured.' });
   }
 
   let body: { identifier?: string };
   try {
     body = await req.json();
   } catch {
-    return json(400, { success: false, message: 'Invalid JSON body.' });
+    return json(corsHeaders, 400, { success: false, message: 'Invalid JSON body.' });
   }
 
   const rawIdentifier = String(body.identifier ?? '').trim();
   if (!rawIdentifier) {
-    return json(400, { success: false, message: 'Email or phone number is required.' });
+    return json(corsHeaders, 400, { success: false, message: 'Email or phone number is required.' });
   }
 
   const normalizedPhone = normalizePhone(rawIdentifier);
@@ -182,7 +178,7 @@ Deno.serve(async (req) => {
   const isEmailIdentifier = isValidEmail(normalizedEmail);
 
   if (!isPhoneIdentifier && !isEmailIdentifier) {
-    return json(400, { success: false, message: 'Enter a valid 10-digit phone number or email address.' });
+    return json(corsHeaders, 400, { success: false, message: 'Enter a valid 10-digit phone number or email address.' });
   }
 
   const db = createClient(supabaseUrl, serviceRoleKey, {
@@ -195,7 +191,7 @@ Deno.serve(async (req) => {
   const attemptState = await loadAttemptState(db, attemptKey);
 
   if (attemptState?.locked_until && new Date(attemptState.locked_until) > new Date()) {
-    return json(429, {
+    return json(corsHeaders, 429, {
       success: false,
       message: 'Too many reset requests. Please wait before trying again.',
     });

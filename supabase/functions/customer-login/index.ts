@@ -5,6 +5,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.43.0";
 // @ts-ignore: Deno remote imports
 import { compare } from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 import { createCustomerSession, extractClientIp } from "../_shared/customer-session.ts";
+import { createCorsHeaders } from "../_shared/cors.ts";
 
 declare const Deno: any;
 
@@ -25,13 +26,7 @@ interface LoginRequest {
   password?: string;
 }
 
-const corsHeaders: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
-
-const jsonResponse = (body: Record<string, unknown>, status = 200): Response =>
+const jsonResponse = (corsHeaders: Record<string, string>, body: Record<string, unknown>, status = 200): Response =>
   new Response(JSON.stringify(body), {
     status,
     headers: {
@@ -214,13 +209,16 @@ const clearFailedAttempts = async (db: ReturnType<typeof createClient>, attemptK
 
 serve(async (req: any) => {
   try {
+    const corsHeaders = createCorsHeaders(req, {
+      allowedHeaders: ["authorization", "x-client-info", "apikey", "content-type"],
+    });
 
     if (req.method === "OPTIONS") {
-      return jsonResponse({ success: true }, 200);
+      return jsonResponse(corsHeaders, { success: true }, 200);
     }
 
     if (req.method !== "POST") {
-      return jsonResponse({ success: false, message: "Method not allowed" }, 405);
+      return jsonResponse(corsHeaders, { success: false, message: "Method not allowed" }, 405);
     }
 
     const body: LoginRequest = await req.json();
@@ -229,14 +227,14 @@ serve(async (req: any) => {
 
     // Validate required fields
     if (!identifier || !identifier.trim()) {
-      return jsonResponse({
+      return jsonResponse(corsHeaders, {
         success: false,
         message: "Email or phone number is required.",
       }, 400);
     }
 
     if (!password || !password.trim()) {
-      return jsonResponse({
+      return jsonResponse(corsHeaders, {
         success: false,
         message: "Password is required.",
       }, 400);

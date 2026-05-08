@@ -5,16 +5,11 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.43.0";
 import { canonicalizeOrderPricing } from "../_shared/canonical-pricing.ts";
 import { verifyAndLoadCustomerSession } from "../_shared/customer-session.ts";
 import { resolveCheckoutRewards } from "../_shared/reward-checkout.ts";
+import { createCorsHeaders } from "../_shared/cors.ts";
 
 declare const Deno: any;
 
-const corsHeaders: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
-
-const jsonResponse = (body: Record<string, unknown>, status = 200): Response =>
+const jsonResponse = (corsHeaders: Record<string, string>, body: Record<string, unknown>, status = 200): Response =>
   new Response(JSON.stringify(body), {
     status,
     headers: {
@@ -59,11 +54,12 @@ const logStage = (stage: string, details?: Record<string, unknown>) => {
 };
 
 const errorResponse = (
+  corsHeaders: Record<string, string>,
   status: number,
   code: string,
   message: string,
   details?: Record<string, unknown>,
-) => jsonResponse({
+) => jsonResponse(corsHeaders, {
   success: false,
   code,
   message,
@@ -199,6 +195,9 @@ const resolveCheckoutGateway = (): CheckoutGateway => {
 };
 
 serve(async (req: any) => {
+  const corsHeaders = createCorsHeaders(req, {
+    allowedHeaders: ["authorization", "x-client-info", "apikey", "content-type"],
+  });
   if (req.method === "OPTIONS") {
     return new Response("ok", {
       status: 200,
@@ -226,7 +225,7 @@ serve(async (req: any) => {
     });
 
     if (req.method !== "POST") {
-      return jsonResponse({ success: false, message: "Method not allowed" }, 405);
+      return jsonResponse(corsHeaders, { success: false, message: "Method not allowed" }, 405);
     }
 
     const body = (await req.json()) as CreatePaymentIntentRequest;
@@ -241,7 +240,7 @@ serve(async (req: any) => {
     });
 
     if (!customerSessionToken) {
-      return errorResponse(401, "customer_session_missing", "Customer session is required for checkout.");
+      return errorResponse(corsHeaders, 401, "customer_session_missing", "Customer session is required for checkout.");
     }
 
     const supabase = createClient(
@@ -251,7 +250,7 @@ serve(async (req: any) => {
 
     const verifiedSession = await verifyAndLoadCustomerSession(supabase, customerSessionToken);
     if (!verifiedSession.valid) {
-      return errorResponse(401, "customer_session_invalid", verifiedSession.error);
+      return errorResponse(corsHeaders, 401, "customer_session_invalid", verifiedSession.error);
     }
 
     const resolvedCustomerIdFromSession = verifiedSession.session.customer_id;
@@ -261,11 +260,11 @@ serve(async (req: any) => {
     });
 
     if (!idempotencyKey) {
-      return errorResponse(400, "invalid_payload", "Missing checkout idempotency key.");
+      return errorResponse(corsHeaders, 400, "invalid_payload", "Missing checkout idempotency key.");
     }
 
     if (!order || !order.store_id || !items.length) {
-      return errorResponse(400, "invalid_payload", "Invalid checkout payload.", {
+      return errorResponse(corsHeaders, 400, "invalid_payload", "Invalid checkout payload.", {
         hasOrder: Boolean(order),
         hasStoreId: Boolean(order?.store_id),
         itemCount: items.length,
@@ -275,7 +274,7 @@ serve(async (req: any) => {
     const paymentMethod = (order.payment_method || "").toString().trim().toLowerCase();
     logStage("validated_payment_method", { paymentMethod });
     if (paymentMethod !== "upi" && paymentMethod !== "card") {
-      return errorResponse(400, "invalid_payload", "Only UPI and Card are allowed for website checkout.", {
+      return errorResponse(corsHeaders, 400, "invalid_payload", "Only UPI and Card are allowed for website checkout.", {
         paymentMethod,
       });
     }
@@ -284,17 +283,17 @@ serve(async (req: any) => {
     try {
       checkoutGateway = resolveCheckoutGateway();
     } catch (error) {
-      return errorResponse(503, "payment_gateway_unavailable", error instanceof Error ? error.message : "Online payment gateway is not configured.");
+      return errorResponse(corsHeaders, 503, "payment_gateway_unavailable", error instanceof Error ? error.message : "Online payment gateway is not configured.");
     }
     const razorpayKeyId = Deno.env.get("RAZORPAY_KEY_ID") || "";
     const razorpayKeySecret = Deno.env.get("RAZORPAY_KEY_SECRET") || "";
 
     if (checkoutGateway === "razorpay" && !razorpayKeyId) {
-      return errorResponse(500, "missing_rzp_env", "RAZORPAY_KEY_ID is missing in Edge Function environment.");
+      return errorResponse(corsHeaders, 500, "missing_rzp_env", "RAZORPAY_KEY_ID is missing in Edge Function environment.");
     }
 
     if (checkoutGateway === "razorpay" && !razorpayKeySecret) {
-      return errorResponse(500, "missing_rzp_env", "RAZORPAY_KEY_SECRET is missing in Edge Function environment.");
+      return errorResponse(corsHeaders, 500, "missing_rzp_env", "RAZORPAY_KEY_SECRET is missing in Edge Function environment.");
     }
 
     const storeIdRaw = String(order.store_id).trim();
@@ -322,12 +321,12 @@ serve(async (req: any) => {
             message: storeLookupError.message,
           });
           if (storeLookupError.code === "42P01") {
-            return errorResponse(500, "db_dependency_missing", "Missing required stores table. Apply database migrations.", {
+            return errorResponse(corsHeaders, 500, "db_dependency_missing", "Missing required stores table. Apply database migrations.", {
               table: "stores",
             });
           }
 
-          return errorResponse(500, "db_lookup_failed", "Could not validate store id.", {
+          return errorResponse(corsHeaders, 500, "db_lookup_failed", "Could not validate store id.", {
             code: storeLookupError.code,
           });
         }
@@ -342,7 +341,7 @@ serve(async (req: any) => {
     }
 
     if (!UUID_PATTERN.test(resolvedStoreId)) {
-      return errorResponse(400, "invalid_payload", "store_id must be a valid store UUID.", {
+      return errorResponse(corsHeaders, 400, "invalid_payload", "store_id must be a valid store UUID.", {
         receivedStoreId: storeIdRaw,
       });
     }
@@ -352,11 +351,11 @@ serve(async (req: any) => {
       : null;
 
     if (customerIdFromPayload && !UUID_PATTERN.test(customerIdFromPayload)) {
-      return errorResponse(400, "invalid_payload", "customer_id must be a valid UUID when provided.");
+      return errorResponse(corsHeaders, 400, "invalid_payload", "customer_id must be a valid UUID when provided.");
     }
 
     if (customerIdFromPayload && customerIdFromPayload !== resolvedCustomerIdFromSession) {
-      return errorResponse(403, "unauthorized_customer_checkout", "Payload customer does not match authenticated customer session.");
+      return errorResponse(corsHeaders, 403, "unauthorized_customer_checkout", "Payload customer does not match authenticated customer session.");
     }
 
     const customerId = resolvedCustomerIdFromSession;
@@ -376,22 +375,22 @@ serve(async (req: any) => {
 
     if (customerLookupError) {
       if (customerLookupError.code === "42P01") {
-        return errorResponse(500, "db_dependency_missing", "Missing required customers table. Apply database migrations.", {
+        return errorResponse(corsHeaders, 500, "db_dependency_missing", "Missing required customers table. Apply database migrations.", {
           table: "customers",
         });
       }
 
-      return errorResponse(500, "db_lookup_failed", "Could not validate customer id.", {
+      return errorResponse(corsHeaders, 500, "db_lookup_failed", "Could not validate customer id.", {
         code: customerLookupError.code,
       });
     }
 
     if (!customerRow?.id) {
-      return errorResponse(404, "customer_not_found", "Customer was not found for authenticated customer session.");
+      return errorResponse(corsHeaders, 404, "customer_not_found", "Customer was not found for authenticated customer session.");
     }
 
     if (customerRow.is_active === false) {
-      return errorResponse(403, "unauthorized_customer_checkout", "Customer account is inactive for checkout.");
+      return errorResponse(corsHeaders, 403, "unauthorized_customer_checkout", "Customer account is inactive for checkout.");
     }
 
     const nonRewardItems = items.filter((line) => {
@@ -415,7 +414,7 @@ serve(async (req: any) => {
         requestedTotal: undefined,
       });
     } catch (error) {
-      return errorResponse(400, "invalid_payload", error instanceof Error ? error.message : "Invalid checkout items.");
+      return errorResponse(corsHeaders, 400, "invalid_payload", error instanceof Error ? error.message : "Invalid checkout items.");
     }
 
     let resolvedCheckoutRewards;
@@ -427,11 +426,11 @@ serve(async (req: any) => {
         Number(preRewardPricing.subtotal ?? 0),
       );
     } catch (error) {
-      return errorResponse(400, "invalid_reward_selection", error instanceof Error ? error.message : "Invalid reward selection.");
+      return errorResponse(corsHeaders, 400, "invalid_reward_selection", error instanceof Error ? error.message : "Invalid reward selection.");
     }
 
     if (rewardItemsFromClient.length !== resolvedCheckoutRewards.canonicalRewardLines.length) {
-      return errorResponse(400, "invalid_reward_selection", "Selected rewards no longer match the checkout payload. Please reselect.");
+      return errorResponse(corsHeaders, 400, "invalid_reward_selection", "Selected rewards no longer match the checkout payload. Please reselect.");
     }
 
     let canonicalPricing;
@@ -446,13 +445,13 @@ serve(async (req: any) => {
         requestedTotal: order.total_amount,
       });
     } catch (error) {
-      return errorResponse(400, "invalid_payload", error instanceof Error ? error.message : "Invalid checkout totals.");
+      return errorResponse(corsHeaders, 400, "invalid_payload", error instanceof Error ? error.message : "Invalid checkout totals.");
     }
 
     const amount = canonicalPricing.total;
     logStage("validated_amount", { amount });
     if (!Number.isFinite(amount) || amount <= 0) {
-      return errorResponse(400, "invalid_payload", "Invalid payable amount.", {
+      return errorResponse(corsHeaders, 400, "invalid_payload", "Invalid payable amount.", {
         amount,
       });
     }
@@ -481,23 +480,23 @@ serve(async (req: any) => {
     if (existingError) {
       console.error("[customer-create-payment-intent] idempotency lookup failed", existingError);
       if (existingError.code === "42P01") {
-        return errorResponse(500, "db_dependency_missing", "Missing required customer_payments table. Apply checkout migration.", {
+        return errorResponse(corsHeaders, 500, "db_dependency_missing", "Missing required customer_payments table. Apply checkout migration.", {
           table: "customer_payments",
         });
       }
 
-      return errorResponse(500, "db_lookup_failed", "Could not start payment. Idempotency lookup failed.", {
+      return errorResponse(corsHeaders, 500, "db_lookup_failed", "Could not start payment. Idempotency lookup failed.", {
         code: existingError.code,
       });
     }
 
     if (existing?.payment_id) {
       if (existing.gateway !== 'razorpay' && existing.gateway !== 'mock') {
-        return errorResponse(503, "payment_gateway_unavailable", "Online payment gateway is not configured.");
+        return errorResponse(corsHeaders, 503, "payment_gateway_unavailable", "Online payment gateway is not configured.");
       }
 
       if (existing.status === "succeeded" && existing.order_id) {
-        return jsonResponse({
+        return jsonResponse(corsHeaders, {
           success: true,
           paymentId: existing.payment_id,
           status: existing.status,
@@ -506,7 +505,7 @@ serve(async (req: any) => {
         }, 200);
       }
 
-      return jsonResponse({
+      return jsonResponse(corsHeaders, {
         success: true,
         paymentId: existing.payment_id,
         status: existing.status,
@@ -521,7 +520,7 @@ serve(async (req: any) => {
 
     const amountPaise = toPaiseAmount(amount);
     if (!Number.isFinite(amountPaise) || amountPaise <= 0) {
-      return errorResponse(400, "invalid_payload", "Amount is invalid after currency conversion.", {
+      return errorResponse(corsHeaders, 400, "invalid_payload", "Amount is invalid after currency conversion.", {
         amount,
         amountPaise,
       });
@@ -558,7 +557,7 @@ serve(async (req: any) => {
         message: error instanceof Error ? error.message : String(error),
         gateway: checkoutGateway,
       });
-      return errorResponse(502, "gateway_order_create_failed", "Could not create payment order with gateway.", {
+      return errorResponse(corsHeaders, 502, "gateway_order_create_failed", "Could not create payment order with gateway.", {
         reason: error instanceof Error ? error.message : "unknown_gateway_error",
       });
     }
@@ -603,7 +602,7 @@ serve(async (req: any) => {
 
     if (insertError || !inserted?.payment_id) {
       console.error("[customer-create-payment-intent] insert failed", insertError);
-      return errorResponse(500, "db_insert_failed", "Could not create payment intent record.", {
+      return errorResponse(corsHeaders, 500, "db_insert_failed", "Could not create payment intent record.", {
         code: insertError?.code,
         message: insertError?.message,
       });
@@ -616,7 +615,7 @@ serve(async (req: any) => {
       amountPaise: gatewayOrder.amountPaise,
     });
 
-    return jsonResponse({
+    return jsonResponse(corsHeaders, {
       success: true,
       paymentId: inserted.payment_id,
       status: "initiated",
@@ -634,7 +633,7 @@ serve(async (req: any) => {
       stack: error?.stack,
       raw: err,
     });
-    return errorResponse(500, "unexpected_error", "Could not start prepaid checkout. Please try again.", {
+    return errorResponse(corsHeaders, 500, "unexpected_error", "Could not start prepaid checkout. Please try again.", {
       reason: error?.message ?? "unknown_error",
     });
   }

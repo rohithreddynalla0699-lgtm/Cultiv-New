@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { loadAuthorizedReceipt } from '../_shared/receipt-data.ts';
+import { createCorsHeaders } from '../_shared/cors.ts';
 
 interface OrderReceiptRequest {
   orderId?: string;
@@ -10,13 +11,7 @@ interface OrderReceiptRequest {
 
 const DEBUG_LOGS = Deno.env.get('RECEIPT_DEBUG_LOGS') === 'true';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
-const json = (status: number, payload: Record<string, unknown>) =>
+const json = (corsHeaders: Record<string, string>, status: number, payload: Record<string, unknown>) =>
   new Response(JSON.stringify(payload), {
     status,
     headers: {
@@ -25,13 +20,6 @@ const json = (status: number, payload: Record<string, unknown>) =>
       'Cache-Control': 'no-store',
     },
   });
-
-const redactToken = (token: string | undefined | null) => {
-  const normalized = String(token ?? '').trim();
-  if (!normalized) return null;
-  if (normalized.length <= 10) return `${normalized.slice(0, 2)}***`;
-  return `${normalized.slice(0, 6)}...${normalized.slice(-4)}`;
-};
 
 const serializeError = (error: unknown) => {
   if (error instanceof Error) {
@@ -62,6 +50,7 @@ const logError = (event: string, details?: Record<string, unknown>) => {
 
 Deno.serve(async (req) => {
   try {
+    const corsHeaders = createCorsHeaders(req);
     log('invoked', {
       method: req.method,
       url: req.url,
@@ -100,22 +89,18 @@ Deno.serve(async (req) => {
     const internalSessionToken = (body.internalSessionToken ?? '').trim();
 
     log('request_body_received', {
-      body: {
-        orderId,
-        hasCustomerSessionToken: Boolean(customerSessionToken),
-        hasInternalSessionToken: Boolean(internalSessionToken),
-        customerSessionTokenPreview: redactToken(customerSessionToken),
-        internalSessionTokenPreview: redactToken(internalSessionToken),
-      },
+      orderId,
+      hasCustomerSessionToken: Boolean(customerSessionToken),
+      hasInternalSessionToken: Boolean(internalSessionToken),
     });
 
     if (!orderId) {
       log('bad_request_missing_order_id');
-      return json(400, { error: 'orderId is required.' });
+      return json(corsHeaders, 400, { error: 'orderId is required.' });
     }
     if (!customerSessionToken && !internalSessionToken) {
       log('bad_request_missing_session_token', { orderId });
-      return json(400, { error: 'A customer or internal session token is required.' });
+      return json(corsHeaders, 400, { error: 'A customer or internal session token is required.' });
     }
 
     const db = createClient(supabaseUrl, serviceRoleKey, {
@@ -136,15 +121,15 @@ Deno.serve(async (req) => {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Could not load order receipt.';
       if (/expired|revoked|not found|required/i.test(message) && /session/i.test(message)) {
-        return json(401, { error: message });
+        return json(corsHeaders, 401, { error: message });
       }
       if (/does not belong|scope does not allow|permission/i.test(message)) {
-        return json(403, { error: message });
+        return json(corsHeaders, 403, { error: message });
       }
       if (/Order not found/i.test(message)) {
-        return json(404, { error: message });
+        return json(corsHeaders, 404, { error: message });
       }
-      return json(500, { error: message });
+      return json(corsHeaders, 500, { error: message });
     }
 
     log('receipt_loaded_successfully', {
@@ -156,12 +141,12 @@ Deno.serve(async (req) => {
       itemCount: receiptData.items.length,
     });
 
-    return json(200, {
+    return json(corsHeaders, 200, {
       success: true,
       receipt: receiptData,
     });
   } catch (error) {
     logError('unhandled_error', { error: serializeError(error) });
-    return json(500, { error: 'Unexpected error while loading receipt.' });
+    return json(createCorsHeaders(req), 500, { error: 'Unexpected error while loading receipt.' });
   }
 });

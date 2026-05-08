@@ -6,6 +6,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.43.0";
 import { hash } from "https://deno.land/x/bcrypt@v0.4.1/mod.ts";
 import { generateOtpCode, hashOtp, sendSms } from "../_shared/phone-update.ts";
 import { logNotificationEvent } from "../_shared/notification-events.ts";
+import { createCorsHeaders } from "../_shared/cors.ts";
 
 declare const Deno: any;
 
@@ -23,13 +24,7 @@ interface SignupRequest {
   password?: string;
 }
 
-const corsHeaders: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
-
-const jsonResponse = (body: Record<string, unknown>, status = 200): Response =>
+const jsonResponse = (corsHeaders: Record<string, string>, body: Record<string, unknown>, status = 200): Response =>
   new Response(JSON.stringify(body), {
     status,
     headers: {
@@ -77,12 +72,15 @@ const createPbkdf2Hash = async (password: string): Promise<string> => {
 
 serve(async (req: any) => {
   try {
+    const corsHeaders = createCorsHeaders(req, {
+      allowedHeaders: ["authorization", "x-client-info", "apikey", "content-type"],
+    });
     if (req.method === "OPTIONS") {
-      return jsonResponse({ success: true }, 200);
+      return jsonResponse(corsHeaders, { success: true }, 200);
     }
 
     if (req.method !== "POST") {
-      return jsonResponse({ success: false, message: "Method not allowed" }, 405);
+      return jsonResponse(corsHeaders, { success: false, message: "Method not allowed" }, 405);
     }
 
     const body: SignupRequest = await req.json();
@@ -90,28 +88,28 @@ serve(async (req: any) => {
 
     // Validate required fields
     if (!full_name || !full_name.trim()) {
-      return jsonResponse({
+      return jsonResponse(corsHeaders, {
         success: false,
         message: "Full name is required.",
       }, 400);
     }
 
     if (!phone || !phone.trim()) {
-      return jsonResponse({
+      return jsonResponse(corsHeaders, {
         success: false,
         message: "Phone number is required.",
       }, 400);
     }
 
     if (!email || !email.trim()) {
-      return jsonResponse({
+      return jsonResponse(corsHeaders, {
         success: false,
         message: "Email is required.",
       }, 400);
     }
 
     if (!password || password.length < 6) {
-      return jsonResponse({
+      return jsonResponse(corsHeaders, {
         success: false,
         message: "Password must be at least 6 characters.",
       }, 400);
@@ -122,7 +120,7 @@ serve(async (req: any) => {
     const normalizedEmail = normalizeEmail(email);
 
     if (normalizedPhone.length !== 10) {
-      return jsonResponse({
+      return jsonResponse(corsHeaders, {
         success: false,
         message: "Phone number must be 10 digits.",
       }, 400);

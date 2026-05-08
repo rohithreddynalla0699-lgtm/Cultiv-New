@@ -2,14 +2,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.43.0';
 import { hash as bcryptHash } from 'https://deno.land/x/bcrypt@v0.4.1/mod.ts';
 import { revokeCustomerSessionsForCustomer } from '../_shared/customer-session.ts';
+import { createCorsHeaders } from '../_shared/cors.ts';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
-const json = (status: number, payload: Record<string, unknown>) =>
+const json = (corsHeaders: Record<string, string>, status: number, payload: Record<string, unknown>) =>
   new Response(JSON.stringify(payload), {
     status,
     headers: {
@@ -180,38 +175,39 @@ const passwordPolicyError = (password: string) => {
 };
 
 Deno.serve(async (req) => {
+  const corsHeaders = createCorsHeaders(req);
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
-    return json(405, { success: false, message: 'Method not allowed.' });
+    return json(corsHeaders, 405, { success: false, message: 'Method not allowed.' });
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !serviceRoleKey) {
-    return json(500, { success: false, message: 'Server is not configured.' });
+    return json(corsHeaders, 500, { success: false, message: 'Server is not configured.' });
   }
 
   let body: { token?: string; password?: string };
   try {
     body = await req.json();
   } catch {
-    return json(400, { success: false, message: 'Invalid JSON body.' });
+    return json(corsHeaders, 400, { success: false, message: 'Invalid JSON body.' });
   }
 
   const token = String(body.token ?? '').trim();
   const password = String(body.password ?? '');
 
   if (!token) {
-    return json(400, { success: false, message: 'Reset token is required.' });
+    return json(corsHeaders, 400, { success: false, message: 'Reset token is required.' });
   }
 
   const policyMessage = passwordPolicyError(password);
   if (policyMessage) {
-    return json(400, { success: false, message: policyMessage });
+    return json(corsHeaders, 400, { success: false, message: policyMessage });
   }
 
   const db = createClient(supabaseUrl, serviceRoleKey, {

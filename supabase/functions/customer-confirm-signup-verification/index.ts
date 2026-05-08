@@ -4,14 +4,9 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { createCustomerSession } from '../_shared/customer-session.ts';
 import { verifyOtp } from '../_shared/phone-update.ts';
 import { notificationChannelPolicy } from '../_shared/notification-policy.ts';
+import { createCorsHeaders } from '../_shared/cors.ts';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
-const jsonResponse = (status: number, payload: Record<string, unknown>) =>
+const jsonResponse = (corsHeaders: Record<string, string>, status: number, payload: Record<string, unknown>) =>
   new Response(JSON.stringify(payload), {
     status,
     headers: {
@@ -25,26 +20,27 @@ const MAX_OTP_ATTEMPTS = 5;
 const LOCKOUT_MS = 30 * 60 * 1000;
 
 Deno.serve(async (req) => {
+  const corsHeaders = createCorsHeaders(req);
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
-    return jsonResponse(405, { success: false, error: 'Method not allowed.' });
+    return jsonResponse(corsHeaders, 405, { success: false, error: 'Method not allowed.' });
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !serviceRoleKey) {
-    return jsonResponse(500, { success: false, error: 'Server is not configured.' });
+    return jsonResponse(corsHeaders, 500, { success: false, error: 'Server is not configured.' });
   }
 
   let body: { customerId?: string; requestId?: string; otpCode?: string };
   try {
     body = await req.json();
   } catch {
-    return jsonResponse(400, { success: false, error: 'Invalid JSON body.' });
+    return jsonResponse(corsHeaders, 400, { success: false, error: 'Invalid JSON body.' });
   }
 
   const customerId = (body.customerId ?? '').trim();
@@ -52,15 +48,15 @@ Deno.serve(async (req) => {
   const otpCode = (body.otpCode ?? '').trim();
 
   if (!customerId) {
-    return jsonResponse(400, { success: false, error: 'Customer id is required.' });
+    return jsonResponse(corsHeaders, 400, { success: false, error: 'Customer id is required.' });
   }
 
   if (!requestId) {
-    return jsonResponse(400, { success: false, error: 'Request id is required.' });
+    return jsonResponse(corsHeaders, 400, { success: false, error: 'Request id is required.' });
   }
 
   if (!otpCode) {
-    return jsonResponse(400, { success: false, error: 'Verification code is required.' });
+    return jsonResponse(corsHeaders, 400, { success: false, error: 'Verification code is required.' });
   }
 
   const db = createClient(supabaseUrl, serviceRoleKey, {

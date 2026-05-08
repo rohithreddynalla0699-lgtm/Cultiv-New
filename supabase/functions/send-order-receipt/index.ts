@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { loadAuthorizedReceipt } from '../_shared/receipt-data.ts';
 import { notificationChannelPolicy } from '../_shared/notification-policy.ts';
 import { logNotificationEvent } from '../_shared/notification-events.ts';
+import { createCorsHeaders } from '../_shared/cors.ts';
 
 type DeliveryMethod = 'print' | 'email' | 'text' | 'all';
 type DigitalMethod = 'email' | 'text';
@@ -26,15 +27,9 @@ interface DeliveryResult {
   errorMessage: string | null;
 }
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
 const SHOULD_LOG_FAILURES = Deno.env.get('APP_ENV') !== 'production';
 
-const json = (status: number, payload: Record<string, unknown>) =>
+const json = (corsHeaders: Record<string, string>, status: number, payload: Record<string, unknown>) =>
   new Response(JSON.stringify(payload), {
     status,
     headers: {
@@ -456,25 +451,26 @@ async function sendSmsReceipt(params: {
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = createCorsHeaders(req);
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
-    return json(405, { error: 'Method not allowed.' });
+    return json(corsHeaders, 405, { error: 'Method not allowed.' });
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (!supabaseUrl || !serviceRoleKey) {
-    return json(500, { error: 'Server is not configured for receipt delivery.' });
+    return json(corsHeaders, 500, { error: 'Server is not configured for receipt delivery.' });
   }
 
   let body: SendOrderReceiptRequest;
   try {
     body = await req.json();
   } catch {
-    return json(400, { error: 'Invalid JSON body.' });
+    return json(corsHeaders, 400, { error: 'Invalid JSON body.' });
   }
 
   const orderId = String(body.orderId ?? '').trim();
@@ -483,13 +479,13 @@ Deno.serve(async (req) => {
   const internalSessionToken = String(body.internalSessionToken ?? '').trim() || null;
 
   if (!orderId) {
-    return json(400, { success: false, code: 'INVALID_REQUEST', error: 'orderId is required.' });
+    return json(corsHeaders, 400, { success: false, code: 'INVALID_REQUEST', error: 'orderId is required.' });
   }
   if (!deliveryMethod || !['print', 'email', 'text', 'all'].includes(deliveryMethod)) {
-    return json(400, { success: false, code: 'INVALID_REQUEST', error: 'deliveryMethod is required.' });
+    return json(corsHeaders, 400, { success: false, code: 'INVALID_REQUEST', error: 'deliveryMethod is required.' });
   }
   if (!customerSessionToken && !internalSessionToken) {
-    return json(401, { success: false, code: 'INVALID_SESSION', error: 'A customer or internal session token is required.' });
+    return json(corsHeaders, 401, { success: false, code: 'INVALID_SESSION', error: 'A customer or internal session token is required.' });
   }
 
   const db = createClient(supabaseUrl, serviceRoleKey, {
@@ -508,15 +504,15 @@ Deno.serve(async (req) => {
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Could not load receipt.';
     if (/expired|revoked|not found|required/i.test(message) && /session/i.test(message)) {
-      return json(401, { success: false, code: 'INVALID_SESSION', error: message });
+      return json(corsHeaders, 401, { success: false, code: 'INVALID_SESSION', error: message });
     }
     if (/does not belong|scope does not allow|permission/i.test(message)) {
-      return json(403, { success: false, code: 'FORBIDDEN', error: message });
+      return json(corsHeaders, 403, { success: false, code: 'FORBIDDEN', error: message });
     }
     if (/Order not found/i.test(message)) {
-      return json(404, { success: false, code: 'ORDER_NOT_FOUND', error: message });
+      return json(corsHeaders, 404, { success: false, code: 'ORDER_NOT_FOUND', error: message });
     }
-    return json(500, { success: false, code: 'RECEIPT_LOAD_FAILED', error: message });
+    return json(corsHeaders, 500, { success: false, code: 'RECEIPT_LOAD_FAILED', error: message });
   }
 
   const attempts: DeliveryResult[] = [];
@@ -638,7 +634,7 @@ Deno.serve(async (req) => {
   const partial = successfulMethods.length > 0 && failedAttempts.length > 0;
 
   if (deliveryMethod === 'print') {
-    return json(200, {
+    return json(corsHeaders, 200, {
       success: true,
       partial: false,
       code: 'PRINT_ONLY',
@@ -651,7 +647,7 @@ Deno.serve(async (req) => {
 
   if (failedAttempts.length === attempts.length) {
     const firstFailure = failedAttempts[0];
-    return json(200, {
+    return json(corsHeaders, 200, {
       success: false,
       partial: false,
       code: firstFailure?.errorCode ?? 'DELIVERY_FAILED',
@@ -662,7 +658,7 @@ Deno.serve(async (req) => {
     });
   }
 
-  return json(200, {
+  return json(corsHeaders, 200, {
     success: true,
     partial,
     code: partial ? 'PARTIAL_SUCCESS' : 'DELIVERY_SENT',

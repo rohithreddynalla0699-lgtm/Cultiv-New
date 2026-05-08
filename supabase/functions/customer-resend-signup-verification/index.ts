@@ -3,14 +3,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { generateOtpCode, hashOtp, sendSms } from '../_shared/phone-update.ts';
 import { logNotificationEvent } from '../_shared/notification-events.ts';
+import { createCorsHeaders } from '../_shared/cors.ts';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
-const jsonResponse = (status: number, payload: Record<string, unknown>) =>
+const jsonResponse = (corsHeaders: Record<string, string>, status: number, payload: Record<string, unknown>) =>
   new Response(JSON.stringify(payload), {
     status,
     headers: {
@@ -27,12 +22,13 @@ const MAX_TOTAL_SENDS_PER_WINDOW = 4;
 const REQUEST_WINDOW_MS = 30 * 60 * 1000;
 
 Deno.serve(async (req) => {
+  const corsHeaders = createCorsHeaders(req);
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
-    return jsonResponse(405, { success: false, error: 'Method not allowed.' });
+    return jsonResponse(corsHeaders, 405, { success: false, error: 'Method not allowed.' });
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');

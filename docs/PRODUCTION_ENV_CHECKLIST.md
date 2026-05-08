@@ -134,6 +134,24 @@ These are required for nearly all edge functions.
 - Required: Yes
 - Purpose: server-side privileged database access for functions
 
+#### `CORS_ALLOWED_ORIGINS`
+
+- Required: Yes in staging/production
+- Purpose: comma-separated allowlist of frontend origins for sensitive customer/payment/receipt edge functions
+- Example:
+
+```env
+CORS_ALLOWED_ORIGINS=https://app.cultiv.com,https://staging.cultiv.com
+```
+
+- Local behavior:
+  - `http://localhost:5173`
+  - `http://127.0.0.1:5173`
+  are allowed automatically in local/dev for the hardened customer/payment/receipt functions
+- Production rule:
+  - set exact origins explicitly
+  - do not rely on wildcard CORS behavior
+
 ## Payment Secrets
 
 Required when customer online checkout is enabled.
@@ -175,6 +193,7 @@ Required if customer phone-update OTP flow or customer signup phone verification
 - Required: Yes in production
 - Purpose: hashes/verifies OTP payloads securely
 - Warning: code currently has a development fallback; do not rely on fallback in production
+- Production rule: always set this explicitly
 
 #### `TWILIO_ACCOUNT_SID`
 
@@ -240,6 +259,8 @@ Required only if order receipts are sent by email and/or SMS.
 RECEIPT_DEBUG_LOGS=false
 ```
 
+- Production rule: keep disabled unless actively debugging
+
 ## Password Reset Debug Secret
 
 #### `PASSWORD_RESET_DEBUG_TOKEN_RESPONSE`
@@ -247,6 +268,16 @@ RECEIPT_DEBUG_LOGS=false
 - Required: No
 - Purpose: local/debug behavior only
 - Production rule: must be disabled or unset
+
+## Production Debug Flag Rules
+
+Keep these disabled in production unless there is a short-lived, deliberate debugging window:
+
+```env
+CHECKOUT_DEBUG_LOGS=false
+RECEIPT_DEBUG_LOGS=false
+PASSWORD_RESET_DEBUG_TOKEN_RESPONSE=false
+```
 
 ## 3. Environment Modes
 
