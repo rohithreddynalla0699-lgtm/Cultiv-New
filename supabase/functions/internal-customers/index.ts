@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createCorsHeaders } from '../_shared/cors.ts';
 
 type RoleKey = 'owner' | 'admin' | 'store';
 type ScopeType = 'global' | 'store' | 'owner' | 'admin';
@@ -21,12 +22,7 @@ interface InternalAccessSessionRow {
   last_seen_at: string;
 }
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
-};
-
-const json = (status: number, payload: Record<string, unknown>) =>
+const json = (corsHeaders: Record<string, string>, status: number, payload: Record<string, unknown>) =>
   new Response(JSON.stringify(payload), {
     status,
     headers: {
@@ -90,37 +86,40 @@ const loadPermissionKeys = async (db: ReturnType<typeof createClient>, internalU
 };
 
 Deno.serve(async (req) => {
+  const corsHeaders = createCorsHeaders(req, {
+    allowedHeaders: ['authorization', 'apikey', 'content-type', 'x-client-info', 'x-internal-session-token'],
+  });
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
-    return json(405, { error: 'Method not allowed.' });
+    return json(corsHeaders, 405, { error: 'Method not allowed.' });
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !serviceRoleKey) {
-    return json(500, { error: 'Server is not configured for customer lookup.' });
+    return json(corsHeaders, 500, { error: 'Server is not configured for customer lookup.' });
   }
 
   let body: InternalCustomerLookupRequest;
   try {
     body = await req.json();
   } catch {
-    return json(400, { error: 'Invalid JSON body.' });
+    return json(corsHeaders, 400, { error: 'Invalid JSON body.' });
   }
 
   const internalSessionToken = (body.internalSessionToken ?? '').trim();
   const normalizedPhone = normalizePhone(body.phone);
 
   if (!internalSessionToken) {
-    return json(400, { error: 'internalSessionToken is required.' });
+    return json(corsHeaders, 400, { error: 'internalSessionToken is required.' });
   }
 
   if (normalizedPhone.length !== 10) {
-    return json(400, { error: 'phone must be a valid 10-digit number.' });
+    return json(corsHeaders, 400, { error: 'phone must be a valid 10-digit number.' });
   }
 
   const db = createClient(supabaseUrl, serviceRoleKey, {
@@ -129,16 +128,16 @@ Deno.serve(async (req) => {
 
   const verifiedSession = await verifyAndLoadSession(db, internalSessionToken);
   if (!verifiedSession.valid) {
-    return json(401, { error: verifiedSession.error });
+    return json(corsHeaders, 401, { error: verifiedSession.error });
   }
 
   const permissionsResult = await loadPermissionKeys(db, verifiedSession.session.internal_user_id);
   if (permissionsResult.error) {
-    return json(500, { error: permissionsResult.error });
+    return json(corsHeaders, 500, { error: permissionsResult.error });
   }
 
   if (!permissionsResult.permissionKeys.includes('can_access_pos')) {
-    return json(403, { error: 'You do not have permission to access POS customer lookup.' });
+    return json(corsHeaders, 403, { error: 'You do not have permission to access POS customer lookup.' });
   }
 
   const { data: customer, error } = await db
@@ -149,14 +148,14 @@ Deno.serve(async (req) => {
     .maybeSingle();
 
   if (error) {
-    return json(500, { error: 'Could not search customers.' });
+    return json(corsHeaders, 500, { error: 'Could not search customers.' });
   }
 
   if (!customer) {
-    return json(200, { success: true, customer: null });
+    return json(corsHeaders, 200, { success: true, customer: null });
   }
 
-  return json(200, {
+  return json(corsHeaders, 200, {
     success: true,
     customer: {
       customerId: customer.id,

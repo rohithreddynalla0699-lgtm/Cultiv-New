@@ -518,55 +518,55 @@ export function RewardsManagementScreen() {
             <div className="grid gap-4 md:grid-cols-2">
               <label className="block text-sm font-medium text-foreground/72">
                 Reward Code
-                <input value={rewardForm.rewardCode} onChange={(event) => setRewardForm((current) => ({ ...current, rewardCode: event.target.value }))} className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                <input id="reward-form-code" name="rewardCode" value={rewardForm.rewardCode} onChange={(event) => setRewardForm((current) => ({ ...current, rewardCode: event.target.value }))} className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
               <label className="block text-sm font-medium text-foreground/72">
                 Title
-                <input value={rewardForm.title} onChange={(event) => setRewardForm((current) => ({ ...current, title: event.target.value }))} className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                <input id="reward-form-title" name="title" value={rewardForm.title} onChange={(event) => setRewardForm((current) => ({ ...current, title: event.target.value }))} className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
             </div>
 
             <label className="block text-sm font-medium text-foreground/72">
               Description
-              <textarea value={rewardForm.description} onChange={(event) => setRewardForm((current) => ({ ...current, description: event.target.value }))} rows={3} className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+              <textarea id="reward-form-description" name="description" value={rewardForm.description} onChange={(event) => setRewardForm((current) => ({ ...current, description: event.target.value }))} rows={3} className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
             </label>
 
             <div className="grid gap-4 md:grid-cols-3">
               <label className="block text-sm font-medium text-foreground/72">
                 Type
-                <select value={rewardForm.rewardType} onChange={(event) => setRewardForm((current) => ({ ...current, rewardType: event.target.value as 'discount' | 'free_item' }))} className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary">
+                <select id="reward-form-type" name="rewardType" value={rewardForm.rewardType} onChange={(event) => setRewardForm((current) => ({ ...current, rewardType: event.target.value as 'discount' | 'free_item' }))} className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary">
                   <option value="free_item">Free item</option>
                   <option value="discount">Discount</option>
                 </select>
               </label>
               <label className="block text-sm font-medium text-foreground/72">
                 Point Cost
-                <input value={rewardForm.pointCost} onChange={(event) => setRewardForm((current) => ({ ...current, pointCost: event.target.value }))} inputMode="numeric" className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                <input id="reward-form-point-cost" name="pointCost" value={rewardForm.pointCost} onChange={(event) => setRewardForm((current) => ({ ...current, pointCost: event.target.value }))} inputMode="numeric" className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
               <label className="block text-sm font-medium text-foreground/72">
                 Sort Order
-                <input value={rewardForm.sortOrder} onChange={(event) => setRewardForm((current) => ({ ...current, sortOrder: event.target.value }))} inputMode="numeric" className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                <input id="reward-form-sort-order" name="sortOrder" value={rewardForm.sortOrder} onChange={(event) => setRewardForm((current) => ({ ...current, sortOrder: event.target.value }))} inputMode="numeric" className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
             </div>
 
             {rewardForm.rewardType === 'discount' ? (
               <label className="block text-sm font-medium text-foreground/72">
                 Discount Amount
-                <input value={rewardForm.discountAmount} onChange={(event) => setRewardForm((current) => ({ ...current, discountAmount: event.target.value }))} inputMode="decimal" className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                <input id="reward-form-discount-amount" name="discountAmount" value={rewardForm.discountAmount} onChange={(event) => setRewardForm((current) => ({ ...current, discountAmount: event.target.value }))} inputMode="decimal" className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
             ) : (
               <div className="grid gap-4 md:grid-cols-3">
                 <label className="block text-sm font-medium text-foreground/72">
                   Free Item Title
-                  <input value={rewardForm.freeItemTitle} onChange={(event) => setRewardForm((current) => ({ ...current, freeItemTitle: event.target.value }))} className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                  <input id="reward-form-free-item-title" name="freeItemTitle" value={rewardForm.freeItemTitle} onChange={(event) => setRewardForm((current) => ({ ...current, freeItemTitle: event.target.value }))} className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
                 </label>
                 <label className="block text-sm font-medium text-foreground/72">
                   Category
-                  <input value={rewardForm.freeItemCategory} onChange={(event) => setRewardForm((current) => ({ ...current, freeItemCategory: event.target.value }))} className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                  <input id="reward-form-free-item-category" name="freeItemCategory" value={rewardForm.freeItemCategory} onChange={(event) => setRewardForm((current) => ({ ...current, freeItemCategory: event.target.value }))} className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
                 </label>
                 <label className="block text-sm font-medium text-foreground/72">
                   Food Value
-                  <input value={rewardForm.freeItemFoodValue} onChange={(event) => setRewardForm((current) => ({ ...current, freeItemFoodValue: event.target.value }))} inputMode="decimal" className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                  <input id="reward-form-free-item-food-value" name="freeItemFoodValue" value={rewardForm.freeItemFoodValue} onChange={(event) => setRewardForm((current) => ({ ...current, freeItemFoodValue: event.target.value }))} inputMode="decimal" className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
                 </label>
               </div>
             )}
@@ -574,16 +574,16 @@ export function RewardsManagementScreen() {
             <div className="grid gap-4 md:grid-cols-2">
               <label className="block text-sm font-medium text-foreground/72">
                 Badge
-                <input value={rewardForm.badge} onChange={(event) => setRewardForm((current) => ({ ...current, badge: event.target.value }))} className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                <input id="reward-form-badge" name="badge" value={rewardForm.badge} onChange={(event) => setRewardForm((current) => ({ ...current, badge: event.target.value }))} className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
               <label className="block text-sm font-medium text-foreground/72">
                 Eligibility Rule
-                <input value={rewardForm.eligibilityRule} onChange={(event) => setRewardForm((current) => ({ ...current, eligibilityRule: event.target.value }))} className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                <input id="reward-form-eligibility-rule" name="eligibilityRule" value={rewardForm.eligibilityRule} onChange={(event) => setRewardForm((current) => ({ ...current, eligibilityRule: event.target.value }))} className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
             </div>
 
             <label className="flex items-center gap-3 text-sm font-medium text-foreground/72">
-              <input type="checkbox" checked={rewardForm.isActive} onChange={(event) => setRewardForm((current) => ({ ...current, isActive: event.target.checked }))} className="h-4 w-4 accent-primary" />
+              <input id="reward-form-is-active" name="isActive" type="checkbox" checked={rewardForm.isActive} onChange={(event) => setRewardForm((current) => ({ ...current, isActive: event.target.checked }))} className="h-4 w-4 accent-primary" />
               Reward is active
             </label>
 
@@ -607,26 +607,26 @@ export function RewardsManagementScreen() {
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <label className="block text-sm font-medium text-foreground/72">
             Earn Rate Rupees / Point
-            <input value={settingsForm.earnRateRupeesPerPoint} onChange={(event) => setSettingsForm((current) => ({ ...current, earnRateRupeesPerPoint: event.target.value }))} inputMode="numeric" className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+            <input id="rewards-settings-earn-rate" name="earnRateRupeesPerPoint" value={settingsForm.earnRateRupeesPerPoint} onChange={(event) => setSettingsForm((current) => ({ ...current, earnRateRupeesPerPoint: event.target.value }))} inputMode="numeric" className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
           </label>
           <label className="block text-sm font-medium text-foreground/72">
             Points Expiry Days
-            <input value={settingsForm.pointsExpiryDays} onChange={(event) => setSettingsForm((current) => ({ ...current, pointsExpiryDays: event.target.value }))} inputMode="numeric" className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+            <input id="rewards-settings-expiry-days" name="pointsExpiryDays" value={settingsForm.pointsExpiryDays} onChange={(event) => setSettingsForm((current) => ({ ...current, pointsExpiryDays: event.target.value }))} inputMode="numeric" className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
           </label>
           <label className="block text-sm font-medium text-foreground/72">
             Min Order Subtotal
-            <input value={settingsForm.minOrderSubtotal} onChange={(event) => setSettingsForm((current) => ({ ...current, minOrderSubtotal: event.target.value }))} inputMode="decimal" className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+            <input id="rewards-settings-min-order-subtotal" name="minOrderSubtotal" value={settingsForm.minOrderSubtotal} onChange={(event) => setSettingsForm((current) => ({ ...current, minOrderSubtotal: event.target.value }))} inputMode="decimal" className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
           </label>
           <label className="block text-sm font-medium text-foreground/72">
             Max Discount Ratio
-            <input value={settingsForm.maxDiscountRatio} onChange={(event) => setSettingsForm((current) => ({ ...current, maxDiscountRatio: event.target.value }))} inputMode="decimal" className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+            <input id="rewards-settings-max-discount-ratio" name="maxDiscountRatio" value={settingsForm.maxDiscountRatio} onChange={(event) => setSettingsForm((current) => ({ ...current, maxDiscountRatio: event.target.value }))} inputMode="decimal" className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
           </label>
           <label className="flex items-center gap-3 rounded-2xl border border-primary/12 bg-background/60 px-4 py-3 text-sm font-medium text-foreground/72">
-            <input type="checkbox" checked={settingsForm.allowRewardRedemption} onChange={(event) => setSettingsForm((current) => ({ ...current, allowRewardRedemption: event.target.checked }))} className="h-4 w-4 accent-primary" />
+            <input id="rewards-settings-allow-redemption" name="allowRewardRedemption" type="checkbox" checked={settingsForm.allowRewardRedemption} onChange={(event) => setSettingsForm((current) => ({ ...current, allowRewardRedemption: event.target.checked }))} className="h-4 w-4 accent-primary" />
             Allow reward redemption
           </label>
           <label className="flex items-center gap-3 rounded-2xl border border-primary/12 bg-background/60 px-4 py-3 text-sm font-medium text-foreground/72">
-            <input type="checkbox" checked={settingsForm.allowCheckoutRewardUse} onChange={(event) => setSettingsForm((current) => ({ ...current, allowCheckoutRewardUse: event.target.checked }))} className="h-4 w-4 accent-primary" />
+            <input id="rewards-settings-allow-checkout-use" name="allowCheckoutRewardUse" type="checkbox" checked={settingsForm.allowCheckoutRewardUse} onChange={(event) => setSettingsForm((current) => ({ ...current, allowCheckoutRewardUse: event.target.checked }))} className="h-4 w-4 accent-primary" />
             Allow checkout reward use
           </label>
         </div>
@@ -649,6 +649,8 @@ export function RewardsManagementScreen() {
           <div className="space-y-4">
             <div className="flex gap-3">
               <input
+                id="rewards-customer-search"
+                name="customerSearch"
                 value={customerSearch}
                 onChange={(event) => setCustomerSearch(event.target.value)}
                 placeholder="Search by name, phone, or email"
@@ -715,11 +717,11 @@ export function RewardsManagementScreen() {
                         </div>
                         <label className="mt-4 block text-sm font-medium text-foreground/72">
                           Points
-                          <input value={adjustmentPoints} onChange={(event) => setAdjustmentPoints(event.target.value)} inputMode="numeric" className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                          <input id="rewards-adjustment-points" name="adjustmentPoints" value={adjustmentPoints} onChange={(event) => setAdjustmentPoints(event.target.value)} inputMode="numeric" className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
                         </label>
                         <label className="mt-4 block text-sm font-medium text-foreground/72">
                           Reason
-                          <textarea value={adjustmentReason} onChange={(event) => setAdjustmentReason(event.target.value)} rows={3} className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                          <textarea id="rewards-adjustment-reason" name="adjustmentReason" value={adjustmentReason} onChange={(event) => setAdjustmentReason(event.target.value)} rows={3} className="mt-2 w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
                         </label>
                         {adjustmentError ? (
                           <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">

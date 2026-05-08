@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import bcrypt from 'https://esm.sh/bcryptjs@2.4.3';
+import { createCorsHeaders } from '../_shared/cors.ts';
 
 type RoleKey = 'owner' | 'admin' | 'store';
 type ScopeType = 'global' | 'store' | 'owner' | 'admin';
@@ -46,14 +47,9 @@ interface EmployeeShiftRow {
   total_hours: number | null;
 }
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
-};
-
 const HOURS_MS = 1000 * 60 * 60;
 
-const json = (status: number, payload: Record<string, unknown>) =>
+const json = (corsHeaders: Record<string, string>, status: number, payload: Record<string, unknown>) =>
   new Response(JSON.stringify(payload), {
     status,
     headers: {
@@ -536,36 +532,39 @@ const resumeOperatorByPin = async (db: ReturnType<typeof createClient>, storeId:
 };
 
 Deno.serve(async (req) => {
+  const corsHeaders = createCorsHeaders(req, {
+    allowedHeaders: ['authorization', 'apikey', 'content-type', 'x-client-info', 'x-internal-session-token'],
+  });
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
-    return json(405, { error: 'Method not allowed' });
+    return json(corsHeaders, 405, { error: 'Method not allowed' });
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !serviceRoleKey) {
-    return json(500, { error: 'Server is not configured for shift control.' });
+    return json(corsHeaders, 500, { error: 'Server is not configured for shift control.' });
   }
 
   let body: InternalShiftControlRequest;
   try {
     body = (await req.json()) as InternalShiftControlRequest;
   } catch {
-    return json(400, { error: 'Invalid JSON body.' });
+    return json(corsHeaders, 400, { error: 'Invalid JSON body.' });
   }
 
   const tokenResult = extractSessionToken(body);
   if (tokenResult.error || !tokenResult.value) {
-    return json(400, { error: tokenResult.error ?? 'Invalid session payload.' });
+    return json(corsHeaders, 400, { error: tokenResult.error ?? 'Invalid session payload.' });
   }
 
   const actionResult = normalizeAction(body);
   if (actionResult.error || !actionResult.value) {
-    return json(400, { error: actionResult.error ?? 'Invalid shift action.' });
+    return json(corsHeaders, 400, { error: actionResult.error ?? 'Invalid shift action.' });
   }
 
   const db = createClient(supabaseUrl, serviceRoleKey, {
@@ -577,12 +576,12 @@ Deno.serve(async (req) => {
 
   const verifyResult = await verifyAndLoadSession(db, tokenResult.value);
   if (!verifyResult.valid) {
-    return json(401, { error: verifyResult.error });
+    return json(corsHeaders, 401, { error: verifyResult.error });
   }
 
   const scopeResult = enforceStoreScope(verifyResult.session);
   if (scopeResult.error || !scopeResult.storeId) {
-    return json(403, { error: scopeResult.error ?? 'Store scope is required.' });
+    return json(corsHeaders, 403, { error: scopeResult.error ?? 'Store scope is required.' });
   }
 
   const clientIp = extractClientIp(req) ?? 'unknown';
@@ -590,23 +589,23 @@ Deno.serve(async (req) => {
   if (actionResult.value === 'dashboard') {
     const result = await loadDashboard(db, scopeResult.storeId);
     if ('error' in result) {
-      return json(500, { error: result.error });
+      return json(corsHeaders, 500, { error: result.error });
     }
-    return json(200, result.data);
+    return json(corsHeaders, 200, result.data);
   }
 
   if (actionResult.value === 'resume_operator') {
     const result = await resumeOperatorByPin(db, scopeResult.storeId, body.employeeId ?? '', body.pin ?? '', clientIp);
     if ('error' in result) {
-      return json(result.status, { error: result.error });
+      return json(corsHeaders, result.status, { error: result.error });
     }
-    return json(200, result.data);
+    return json(corsHeaders, 200, result.data);
   }
 
   const result = await toggleByPin(db, scopeResult.storeId, body.employeeId ?? '', body.pin ?? '', clientIp);
   if ('error' in result) {
-    return json(result.status, { error: result.error });
+    return json(corsHeaders, result.status, { error: result.error });
   }
 
-  return json(200, result.data);
+  return json(corsHeaders, 200, result.data);
 });

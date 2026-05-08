@@ -49,6 +49,7 @@ export default function CancelOrderDialog({ orderId, displayOrderId, isOpen, isS
           </label>
           <textarea
             id="cancellation-reason"
+            name="cancellationReason"
             className="w-full rounded-lg border border-border bg-white/90 p-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-red-200 min-h-[72px] resize-none"
             placeholder="Explain why this order is being cancelled..."
             value={reason}

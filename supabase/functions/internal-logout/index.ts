@@ -1,12 +1,8 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createCorsHeaders } from '../_shared/cors.ts';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-internal-session-token',
-};
-
-const json = (status: number, payload: Record<string, unknown>) =>
+const json = (corsHeaders: Record<string, string>, status: number, payload: Record<string, unknown>) =>
   new Response(JSON.stringify(payload), {
     status,
     headers: {
@@ -17,19 +13,22 @@ const json = (status: number, payload: Record<string, unknown>) =>
   });
 
 Deno.serve(async (req) => {
+  const corsHeaders = createCorsHeaders(req, {
+    allowedHeaders: ['authorization', 'apikey', 'content-type', 'x-client-info', 'x-internal-session-token'],
+  });
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
-    return json(405, { error: 'Method not allowed' });
+    return json(corsHeaders, 405, { error: 'Method not allowed' });
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !serviceRoleKey) {
-    return json(500, { error: 'Server is not configured for internal logout.' });
+    return json(corsHeaders, 500, { error: 'Server is not configured for internal logout.' });
   }
 
 
@@ -37,7 +36,7 @@ Deno.serve(async (req) => {
   const sessionToken = req.headers.get('x-internal-session-token')?.trim() || '';
   if (!sessionToken) {
     // Always return success for idempotency
-    return json(200, { success: true });
+    return json(corsHeaders, 200, { success: true });
   }
 
   const db = createClient(supabaseUrl, serviceRoleKey, {
@@ -60,5 +59,5 @@ Deno.serve(async (req) => {
     .is('revoked_at', null);
 
   // Always return success, never expose session details
-  return json(200, { success: true });
+  return json(corsHeaders, 200, { success: true });
 });

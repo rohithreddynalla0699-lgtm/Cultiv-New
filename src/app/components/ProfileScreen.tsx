@@ -85,6 +85,8 @@ export function ProfileScreen() {
                     {isEditingName ? (
                       <div className="mt-2 space-y-2">
                         <input
+                          id="profile-full-name"
+                          name="fullName"
                           type="text"
                           value={tempName}
                           onChange={(e) => setTempName(e.target.value)}

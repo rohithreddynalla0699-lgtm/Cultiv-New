@@ -161,8 +161,10 @@ export function ProfilePhoneUpdateFlow({ currentPhone, phoneVerified, onPhoneUpd
         </div>
 
         <div className="space-y-3">
-          <label className="block text-sm font-medium text-foreground/80">New phone</label>
+          <label htmlFor="profile-phone-update-new-phone" className="block text-sm font-medium text-foreground/80">New phone</label>
           <input
+            id="profile-phone-update-new-phone"
+            name="newPhone"
             type="tel"
             value={newPhone}
             maxLength={10}
@@ -194,8 +196,10 @@ export function ProfilePhoneUpdateFlow({ currentPhone, phoneVerified, onPhoneUpd
         {requestId ? (
           <div className="space-y-3 rounded-2xl border border-border bg-background/75 p-4">
             <p className="text-sm text-foreground/70">{requestStateLabel}</p>
-            <label className="block text-sm font-medium text-foreground/80">Verification code</label>
+            <label htmlFor="profile-phone-update-otp-code" className="block text-sm font-medium text-foreground/80">Verification code</label>
             <input
+              id="profile-phone-update-otp-code"
+              name="otpCode"
               type="text"
               maxLength={6}
               value={otpCode}

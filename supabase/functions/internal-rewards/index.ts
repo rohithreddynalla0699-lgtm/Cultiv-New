@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createCorsHeaders } from '../_shared/cors.ts';
 
 type RoleKey = 'owner' | 'admin' | 'store';
 type ScopeType = 'global' | 'store' | 'owner' | 'admin';
@@ -52,12 +53,7 @@ interface InternalAccessSessionRow {
   last_seen_at: string;
 }
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
-};
-
-const json = (status: number, payload: Record<string, unknown>) =>
+const json = (corsHeaders: Record<string, string>, status: number, payload: Record<string, unknown>) =>
   new Response(JSON.stringify(payload), {
     status,
     headers: {
@@ -635,31 +631,34 @@ const adjustCustomerPoints = async (
 };
 
 Deno.serve(async (req) => {
+  const corsHeaders = createCorsHeaders(req, {
+    allowedHeaders: ['authorization', 'apikey', 'content-type', 'x-client-info', 'x-internal-session-token'],
+  });
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
-    return json(405, { error: 'Method not allowed.' });
+    return json(corsHeaders, 405, { error: 'Method not allowed.' });
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !serviceRoleKey) {
-    return json(500, { error: 'Server is not configured for rewards management.' });
+    return json(corsHeaders, 500, { error: 'Server is not configured for rewards management.' });
   }
 
   let body: InternalRewardsRequest;
   try {
     body = await req.json();
   } catch {
-    return json(400, { error: 'Invalid JSON body.' });
+    return json(corsHeaders, 400, { error: 'Invalid JSON body.' });
   }
 
   const internalSessionToken = normalizeText(body.internalSessionToken);
   if (!internalSessionToken) {
-    return json(400, { error: 'internalSessionToken is required.' });
+    return json(corsHeaders, 400, { error: 'internalSessionToken is required.' });
   }
 
   const db = createClient(supabaseUrl, serviceRoleKey, {
@@ -668,40 +667,40 @@ Deno.serve(async (req) => {
 
   const verifiedSession = await verifyAndLoadSession(db, internalSessionToken);
   if (!verifiedSession.valid) {
-    return json(401, { error: verifiedSession.error });
+    return json(corsHeaders, 401, { error: verifiedSession.error });
   }
 
   const permission = await enforceManageRewardsPermission(db, verifiedSession.session);
   if (!permission.allowed) {
-    return json(permission.status ?? 403, { error: permission.error ?? 'Not allowed.' });
+    return json(corsHeaders, permission.status ?? 403, { error: permission.error ?? 'Not allowed.' });
   }
 
   switch (body.action) {
     case 'dashboard': {
       const result = await loadDashboard(db);
-      return json(result.status, result.payload);
+      return json(corsHeaders, result.status, result.payload);
     }
     case 'upsert_reward': {
       const result = await upsertReward(db, body);
-      return json(result.status, result.payload);
+      return json(corsHeaders, result.status, result.payload);
     }
     case 'set_reward_active': {
       const result = await setRewardActive(db, body);
-      return json(result.status, result.payload);
+      return json(corsHeaders, result.status, result.payload);
     }
     case 'update_program_settings': {
       const result = await updateProgramSettings(db, body);
-      return json(result.status, result.payload);
+      return json(corsHeaders, result.status, result.payload);
     }
     case 'lookup_customer_rewards': {
       const result = await lookupCustomerRewards(db, body);
-      return json(result.status, result.payload);
+      return json(corsHeaders, result.status, result.payload);
     }
     case 'adjust_customer_points': {
       const result = await adjustCustomerPoints(db, body, verifiedSession.session);
-      return json(result.status, result.payload);
+      return json(corsHeaders, result.status, result.payload);
     }
     default:
-      return json(400, { error: 'Unsupported rewards action.' });
+      return json(corsHeaders, 400, { error: 'Unsupported rewards action.' });
   }
 });

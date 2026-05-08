@@ -533,6 +533,8 @@ export function InventoryScreen() {
         className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
       >
         <input
+          id="inventory-search"
+          name="inventorySearch"
           value={searchValue}
           onChange={(event) => setSearchValue(event.target.value)}
           placeholder="Search inventory"
@@ -587,6 +589,7 @@ export function InventoryScreen() {
             <label className="text-sm font-medium text-foreground/70" htmlFor="inventory-category-filter">Category</label>
             <select
               id="inventory-category-filter"
+              name="categoryFilter"
               value={categoryFilter}
               onChange={(event) => setCategoryFilter(event.target.value)}
               className="cursor-pointer rounded-2xl border border-primary/12 bg-white/88 px-4 py-2.5 text-sm outline-none transition focus:border-primary/24"
@@ -801,6 +804,8 @@ export function InventoryScreen() {
                       {item.isArchived ? null : (
                         <div className="flex flex-wrap items-center gap-2">
                           <input
+                            id={`inventory-entered-quantity-${item.id}`}
+                            name={`enteredQuantity-${item.id}`}
                             value={getEnteredQuantity(item.id)}
                             onChange={(event) => handleEnteredQuantityChange(item.id, event.target.value)}
                             inputMode="decimal"
@@ -949,6 +954,7 @@ export function InventoryScreen() {
                   </label>
                   <textarea
                     id="inventory-adjustment-notes"
+                    name="adjustmentNotes"
                     value={riskyActionNotes}
                     onChange={(event) => {
                       setRiskyActionNotes(event.target.value);
@@ -1025,12 +1031,16 @@ export function InventoryScreen() {
 
           <div className="grid gap-3 md:grid-cols-2">
             <input
+              id="inventory-new-item-name"
+              name="name"
               value={newItemForm.name}
               onChange={(event) => setNewItemForm((previous) => ({ ...previous, name: event.target.value }))}
               placeholder="Item name"
               className="rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 text-sm outline-none transition focus:border-primary/24"
             />
             <select
+              id="inventory-new-item-category"
+              name="category"
               value={newItemForm.category}
               onChange={(event) => setNewItemForm((previous) => ({ ...previous, category: event.target.value }))}
               className="cursor-pointer rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 text-sm outline-none transition focus:border-primary/24"
@@ -1040,12 +1050,16 @@ export function InventoryScreen() {
               ))}
             </select>
             <input
+              id="inventory-new-item-unit"
+              name="unit"
               value={newItemForm.unit}
               onChange={(event) => setNewItemForm((previous) => ({ ...previous, unit: event.target.value }))}
               placeholder="Unit (kg, pcs, packs)"
               className="rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 text-sm outline-none transition focus:border-primary/24"
             />
             <input
+              id="inventory-new-item-threshold"
+              name="threshold"
               value={newItemForm.threshold}
               onChange={(event) => setNewItemForm((previous) => ({ ...previous, threshold: sanitizeDecimalInput(event.target.value) }))}
               inputMode="decimal"
@@ -1053,6 +1067,8 @@ export function InventoryScreen() {
               className="rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 text-sm outline-none transition focus:border-primary/24"
             />
             <input
+              id="inventory-new-item-initial-quantity"
+              name="initialQuantity"
               value={newItemForm.initialQuantity}
               onChange={(event) => setNewItemForm((previous) => ({ ...previous, initialQuantity: sanitizeDecimalInput(event.target.value) }))}
               inputMode="decimal"

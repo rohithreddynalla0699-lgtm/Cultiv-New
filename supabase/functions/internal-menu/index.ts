@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createCorsHeaders } from '../_shared/cors.ts';
 
 type RoleKey = 'owner' | 'admin' | 'store';
 type ScopeType = 'global' | 'store' | 'owner' | 'admin';
@@ -36,12 +37,7 @@ interface InternalAccessSessionRow {
   last_seen_at: string;
 }
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
-};
-
-const json = (status: number, payload: Record<string, unknown>) =>
+const json = (corsHeaders: Record<string, string>, status: number, payload: Record<string, unknown>) =>
   new Response(JSON.stringify(payload), {
     status,
     headers: {
@@ -536,36 +532,39 @@ const deleteMenuItem = async (db: ReturnType<typeof createClient>, body: Interna
 };
 
 Deno.serve(async (req) => {
+  const corsHeaders = createCorsHeaders(req, {
+    allowedHeaders: ['authorization', 'apikey', 'content-type', 'x-client-info', 'x-internal-session-token'],
+  });
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
-    return json(405, { error: 'Method not allowed' });
+    return json(corsHeaders, 405, { error: 'Method not allowed' });
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !serviceRoleKey) {
-    return json(500, { error: 'Server is not configured for internal menu access.' });
+    return json(corsHeaders, 500, { error: 'Server is not configured for internal menu access.' });
   }
 
   let body: InternalMenuRequest;
   try {
     body = (await req.json()) as InternalMenuRequest;
   } catch {
-    return json(400, { error: 'Invalid JSON body.' });
+    return json(corsHeaders, 400, { error: 'Invalid JSON body.' });
   }
 
   const action = normalizeAction(body);
   if (!action.value) {
-    return json(400, { error: action.error ?? 'Invalid action.' });
+    return json(corsHeaders, 400, { error: action.error ?? 'Invalid action.' });
   }
 
   const token = (body.internalSessionToken ?? '').trim();
   if (!token) {
-    return json(400, { error: 'internalSessionToken is required.' });
+    return json(corsHeaders, 400, { error: 'internalSessionToken is required.' });
   }
 
   const db = createClient(supabaseUrl, serviceRoleKey, {
@@ -577,29 +576,29 @@ Deno.serve(async (req) => {
 
   const sessionResult = await verifyAndLoadSession(db, token);
   if (!sessionResult.valid) {
-    return json(401, { error: sessionResult.error });
+    return json(corsHeaders, 401, { error: sessionResult.error });
   }
 
   const permissionResult = await enforcePermission(db, sessionResult.session, 'can_manage_menu');
   if (!permissionResult.allowed) {
-    return json(permissionResult.status ?? 403, { error: permissionResult.error ?? 'Not allowed.' });
+    return json(corsHeaders, permissionResult.status ?? 403, { error: permissionResult.error ?? 'Not allowed.' });
   }
 
   if (action.value === 'dashboard') {
     const dashboard = await loadMenuDashboard(db);
-    return json(dashboard.status, dashboard.payload);
+    return json(corsHeaders, dashboard.status, dashboard.payload);
   }
 
   if (action.value === 'upsert_item') {
     const result = await upsertMenuItem(db, body);
-    return json(result.status, result.payload);
+    return json(corsHeaders, result.status, result.payload);
   }
 
   if (action.value === 'set_availability') {
     const result = await setAvailability(db, body);
-    return json(result.status, result.payload);
+    return json(corsHeaders, result.status, result.payload);
   }
 
   const result = await deleteMenuItem(db, body);
-  return json(result.status, result.payload);
+  return json(corsHeaders, result.status, result.payload);
 });

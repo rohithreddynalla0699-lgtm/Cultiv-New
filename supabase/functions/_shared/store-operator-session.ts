@@ -1,14 +1,13 @@
 // @ts-nocheck
+import { createCorsHeaders } from './cors.ts';
 
 export const STORE_OPERATOR_SESSION_EXPIRY_MS = 12 * 60 * 60 * 1000;
 
-export const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
+export const buildStoreOperatorCorsHeaders = (req: Request) => createCorsHeaders(req, {
+  allowedHeaders: ['authorization', 'apikey', 'content-type', 'x-client-info', 'x-internal-session-token'],
+});
 
-export const json = (status: number, payload: Record<string, unknown>) =>
+export const json = (corsHeaders: Record<string, string>, status: number, payload: Record<string, unknown>) =>
   new Response(JSON.stringify(payload), {
     status,
     headers: {

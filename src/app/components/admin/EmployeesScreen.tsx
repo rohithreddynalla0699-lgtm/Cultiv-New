@@ -361,23 +361,25 @@ export function EmployeesScreen() {
             <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-6">
               <label className="block text-sm text-foreground/68 xl:col-span-2">
                 <span className="mb-2 block font-medium">Employee Name</span>
-                <input data-testid="employee-form-name" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                <input id="employee-form-name" name="employeeName" data-testid="employee-form-name" value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
               <label className="block text-sm text-foreground/68">
                 <span className="mb-2 block font-medium">Role</span>
-                <select data-testid="employee-form-role" value={form.role} onChange={(event) => setForm((current) => ({ ...current, role: event.target.value as EmployeeRole }))} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary">
+                <select id="employee-form-role" name="employeeRole" data-testid="employee-form-role" value={form.role} onChange={(event) => setForm((current) => ({ ...current, role: event.target.value as EmployeeRole }))} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary">
                   {ROLE_OPTIONS.map((role) => <option key={role} value={role}>{role}</option>)}
                 </select>
               </label>
               <label className="block text-sm text-foreground/68">
                 <span className="mb-2 block font-medium">Assigned Store</span>
-                <select data-testid="employee-form-store" value={form.storeId} onChange={(event) => setForm((current) => ({ ...current, storeId: event.target.value }))} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary">
+                <select id="employee-form-store" name="employeeStoreId" data-testid="employee-form-store" value={form.storeId} onChange={(event) => setForm((current) => ({ ...current, storeId: event.target.value }))} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary">
                   {visibleStores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}
                 </select>
               </label>
               <label className="block text-sm text-foreground/68">
                 <span className="mb-2 block font-medium">Shift PIN</span>
                 <input
+                  id="employee-form-pin"
+                  name="employeePin"
                   data-testid="employee-form-pin"
                   value={form.pin}
                   onChange={(event) => setForm((current) => ({ ...current, pin: event.target.value.replace(/\D/g, '').slice(0, 6) }))}
@@ -387,11 +389,11 @@ export function EmployeesScreen() {
               </label>
               <label className="block text-sm text-foreground/68">
                 <span className="mb-2 block font-medium">Phone</span>
-                <input value={form.phone ?? ''} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value.replace(/\D/g, '').slice(0, 10) }))} placeholder="Optional" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                <input id="employee-form-phone" name="employeePhone" value={form.phone ?? ''} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value.replace(/\D/g, '').slice(0, 10) }))} placeholder="Optional" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
               <label className="flex items-center justify-between rounded-2xl border border-primary/12 bg-white/86 px-4 py-3 text-sm text-foreground/72 xl:col-span-2">
                 <span className="font-medium">Employee active</span>
-                <input type="checkbox" checked={form.isActive} onChange={(event) => setForm((current) => ({ ...current, isActive: event.target.checked }))} className="h-4 w-4 accent-primary" />
+                <input id="employee-form-is-active" name="employeeIsActive" type="checkbox" checked={form.isActive} onChange={(event) => setForm((current) => ({ ...current, isActive: event.target.checked }))} className="h-4 w-4 accent-primary" />
               </label>
               <div className={`grid gap-2 ${editingEmployeeId ? 'sm:grid-cols-5' : 'sm:grid-cols-2'} xl:col-span-3`}>
                 <button data-testid="employee-form-submit" type="button" onClick={handleSubmit} className="rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground">{editingEmployeeId ? 'Save changes' : 'Create employee'}</button>
@@ -572,6 +574,8 @@ export function EmployeesScreen() {
             <label className="mt-4 block text-sm text-foreground/68">
               <span className="mb-2 block font-medium">New shift PIN</span>
               <input
+                id="employee-reset-pin"
+                name="resetPin"
                 value={resetPinState.newPin}
                 onChange={(event) => setResetPinState((previous) => ({ ...previous, newPin: event.target.value.replace(/\D/g, '').slice(0, 6) }))}
                 placeholder="6-digit PIN"

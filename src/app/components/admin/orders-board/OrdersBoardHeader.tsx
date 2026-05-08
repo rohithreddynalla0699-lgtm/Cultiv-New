@@ -110,6 +110,8 @@ export function OrdersBoardHeader({
           </div>
           {dateFilter === 'custom' ? (
             <input
+              id="orders-board-custom-date"
+              name="customDate"
               type="date"
               value={customDate}
               onChange={(event) => onChangeCustomDate(event.target.value)}

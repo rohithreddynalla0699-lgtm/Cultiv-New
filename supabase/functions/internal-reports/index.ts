@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createCorsHeaders } from '../_shared/cors.ts';
 
 type RoleKey = 'owner' | 'admin' | 'store';
 type ScopeType = 'global' | 'store' | 'owner' | 'admin';
@@ -39,12 +40,7 @@ type ReconciliationAnomalyType =
 
 type NotificationAnomalySource = 'receipt_delivery' | 'notification_event';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
-};
-
-const json = (status: number, payload: Record<string, unknown>) =>
+const json = (corsHeaders: Record<string, string>, status: number, payload: Record<string, unknown>) =>
   new Response(JSON.stringify(payload), {
     status,
     headers: {
@@ -185,34 +181,37 @@ const isOlderThan15Minutes = (value: unknown) => {
 };
 
 Deno.serve(async (req) => {
+  const corsHeaders = createCorsHeaders(req, {
+    allowedHeaders: ['authorization', 'apikey', 'content-type', 'x-client-info', 'x-internal-session-token'],
+  });
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
-    return json(405, { error: 'Method not allowed.' });
+    return json(corsHeaders, 405, { error: 'Method not allowed.' });
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !serviceRoleKey) {
-    return json(500, { error: 'Server is not configured for reports.' });
+    return json(corsHeaders, 500, { error: 'Server is not configured for reports.' });
   }
 
   let body: InternalReportsRequest;
   try {
     body = await req.json();
   } catch {
-    return json(400, { error: 'Invalid JSON body.' });
+    return json(corsHeaders, 400, { error: 'Invalid JSON body.' });
   }
 
   const internalSessionToken = (body.internalSessionToken ?? '').trim();
   if (body.action !== 'dashboard') {
-    return json(400, { error: 'action must be dashboard.' });
+    return json(corsHeaders, 400, { error: 'action must be dashboard.' });
   }
   if (!internalSessionToken) {
-    return json(400, { error: 'internalSessionToken is required.' });
+    return json(corsHeaders, 400, { error: 'internalSessionToken is required.' });
   }
 
   const db = createClient(supabaseUrl, serviceRoleKey, {
@@ -221,27 +220,27 @@ Deno.serve(async (req) => {
 
   const verifiedSession = await verifyAndLoadSession(db, internalSessionToken);
   if (!verifiedSession.valid) {
-    return json(401, { error: verifiedSession.error });
+    return json(corsHeaders, 401, { error: verifiedSession.error });
   }
 
   const permissionsResult = await loadPermissionKeys(db, verifiedSession.session.internal_user_id);
   if (permissionsResult.error) {
-    return json(500, { error: permissionsResult.error });
+    return json(corsHeaders, 500, { error: permissionsResult.error });
   }
 
   if (!permissionsResult.permissionKeys.includes('can_view_reports')) {
-    return json(403, { error: 'You do not have permission to view reports.' });
+    return json(corsHeaders, 403, { error: 'You do not have permission to view reports.' });
   }
 
   const scopeResult = await resolveScopedStoreIds(db, verifiedSession.session, body.storeId ?? null);
   if ('error' in scopeResult) {
-    return json(scopeResult.status, { error: scopeResult.error });
+    return json(corsHeaders, scopeResult.status, { error: scopeResult.error });
   }
 
   const storeIds = scopeResult.storeIds;
   const normalizedDateRange = normalizeDateRange(body.dateRange ?? null);
   if (!normalizedDateRange) {
-    return json(400, { error: 'dateRange must include a valid from/to pair.' });
+    return json(corsHeaders, 400, { error: 'dateRange must include a valid from/to pair.' });
   }
 
   let ordersQuery = db
@@ -273,7 +272,7 @@ Deno.serve(async (req) => {
   ]);
 
   if (ordersResult.error || storesResult.error || customerPaymentsResult.error) {
-    return json(500, { error: 'Could not load reports.' });
+    return json(corsHeaders, 500, { error: 'Could not load reports.' });
   }
 
   const allOrders = ordersResult.data ?? [];
@@ -346,7 +345,7 @@ Deno.serve(async (req) => {
     ];
 
   if (paymentsResult.error || itemsResult.error || reconciliationOrderPaymentsResult.error || receiptDeliveriesResult.error || notificationEventsResult.error) {
-    return json(500, { error: 'Could not load reports.' });
+    return json(corsHeaders, 500, { error: 'Could not load reports.' });
   }
 
   const payments = (paymentsResult.data ?? []).filter((row: any) => row.status === 'recorded');
@@ -553,7 +552,7 @@ Deno.serve(async (req) => {
     };
   }).sort((left, right) => right.revenue - left.revenue);
 
-  return json(200, {
+  return json(corsHeaders, 200, {
     success: true,
     summary: {
       rangeLabel: normalizedDateRange.label,

@@ -271,12 +271,16 @@ export function MenuManagementScreen() {
 
         <motion.div layout className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <input
+            id="menu-item-name"
+            name="name"
             value={form.name}
             onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))}
             placeholder="Item name"
             className="rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 text-sm outline-none transition focus:border-primary/22"
           />
           <input
+            id="menu-item-price"
+            name="price"
             value={form.price}
             inputMode="numeric"
             pattern="[0-9]*"
@@ -289,6 +293,8 @@ export function MenuManagementScreen() {
             className="rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 text-sm outline-none transition focus:border-primary/22"
           />
           <select
+            id="menu-item-category"
+            name="categorySlug"
             value={form.categorySlug}
             onChange={(event) => setForm((prev) => ({ ...prev, categorySlug: event.target.value }))}
             className="cursor-pointer rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 text-sm outline-none transition focus:border-primary/22"
@@ -298,30 +304,40 @@ export function MenuManagementScreen() {
             ))}
           </select>
           <input
+            id="menu-item-subcategory"
+            name="subcategorySlug"
             value={form.subcategorySlug}
             onChange={(event) => setForm((prev) => ({ ...prev, subcategorySlug: event.target.value }))}
             placeholder="Subcategory slug"
             className="rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 text-sm outline-none transition focus:border-primary/22"
           />
           <input
+            id="menu-item-image-url"
+            name="imageUrl"
             value={form.imageUrl}
             onChange={(event) => setForm((prev) => ({ ...prev, imageUrl: event.target.value }))}
             placeholder="Image URL"
             className="rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 text-sm outline-none transition focus:border-primary/22"
           />
           <input
+            id="menu-item-calories"
+            name="calories"
             value={form.calories}
             onChange={(event) => setForm((prev) => ({ ...prev, calories: event.target.value.replace(/[^\d]/g, '') }))}
             placeholder="Calories"
             className="rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 text-sm outline-none transition focus:border-primary/22"
           />
           <input
+            id="menu-item-protein"
+            name="protein"
             value={form.protein}
             onChange={(event) => setForm((prev) => ({ ...prev, protein: event.target.value.replace(/[^\d]/g, '') }))}
             placeholder="Protein grams"
             className="rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 text-sm outline-none transition focus:border-primary/22"
           />
           <input
+            id="menu-item-sort-order"
+            name="sortOrder"
             value={form.sortOrder}
             onChange={(event) => setForm((prev) => ({ ...prev, sortOrder: event.target.value.replace(/[^\d]/g, '') }))}
             placeholder="Sort order"
@@ -330,6 +346,8 @@ export function MenuManagementScreen() {
         </motion.div>
 
         <textarea
+          id="menu-item-description"
+          name="description"
           value={form.description}
           onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
           placeholder="Description"
@@ -338,6 +356,8 @@ export function MenuManagementScreen() {
 
         <div className="mt-3 grid gap-3 md:grid-cols-[1fr_auto]">
           <input
+            id="menu-item-badge"
+            name="badge"
             value={form.badge}
             onChange={(event) => setForm((prev) => ({ ...prev, badge: event.target.value }))}
             placeholder="Badge"
@@ -345,6 +365,8 @@ export function MenuManagementScreen() {
           />
           <label className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 text-sm text-foreground/72 transition hover:border-primary/18">
             <input
+              id="menu-item-is-active"
+              name="isActive"
               type="checkbox"
               checked={form.isActive}
               onChange={(event) => setForm((prev) => ({ ...prev, isActive: event.target.checked }))}
@@ -373,6 +395,8 @@ export function MenuManagementScreen() {
                 return (
                   <label key={group.id} className={`flex cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3 text-sm transition hover:border-primary/20 hover:bg-white ${isSelected ? 'border-primary/20 bg-white shadow-[0_10px_22px_rgba(28,45,14,0.05)]' : 'border-primary/10 bg-white/70'}`}>
                     <input
+                      id={`menu-item-option-group-${group.id}`}
+                      name={`optionGroup-${group.id}`}
                       type="checkbox"
                       checked={isSelected}
                       onChange={() => toggleOptionGroup(group.id)}

@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createCorsHeaders } from '../_shared/cors.ts';
 
 type RoleKey = 'owner' | 'admin' | 'store';
 type ScopeType = 'global' | 'store' | 'owner' | 'admin';
@@ -50,18 +51,13 @@ interface OrderStatusRow {
   store_id: string;
 }
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
-};
-
 const ALLOWED_NEXT_STATUS: Record<'placed' | 'preparing' | 'ready_for_pickup', NextStatus[]> = {
   placed: ['preparing', 'cancelled'],
   preparing: ['ready_for_pickup', 'cancelled'],
   ready_for_pickup: ['completed'],
 };
 
-const json = (status: number, payload: Record<string, unknown>) =>
+const json = (corsHeaders: Record<string, string>, status: number, payload: Record<string, unknown>) =>
   new Response(JSON.stringify(payload), {
     status,
     headers: {
@@ -128,36 +124,39 @@ const verifyAndLoadSession = async (
 };
 
 Deno.serve(async (req) => {
+  const corsHeaders = createCorsHeaders(req, {
+    allowedHeaders: ['authorization', 'apikey', 'content-type', 'x-client-info', 'x-internal-session-token'],
+  });
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
-    return json(405, { error: 'Method not allowed' });
+    return json(corsHeaders, 405, { error: 'Method not allowed' });
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !serviceRoleKey) {
-    return json(500, { success: false, error: 'Server is not configured for internal order status updates.' });
+    return json(corsHeaders, 500, { success: false, error: 'Server is not configured for internal order status updates.' });
   }
 
   let body: InternalOrderStatusUpdateRequest;
   try {
     body = (await req.json()) as InternalOrderStatusUpdateRequest;
   } catch {
-    return json(400, { success: false, error: 'Invalid JSON body.' });
+    return json(corsHeaders, 400, { success: false, error: 'Invalid JSON body.' });
   }
 
   const tokenResult = extractSessionToken(body);
   if (tokenResult.error || !tokenResult.value) {
-    return json(400, { success: false, error: tokenResult.error ?? 'Invalid session payload.' });
+    return json(corsHeaders, 400, { success: false, error: tokenResult.error ?? 'Invalid session payload.' });
   }
 
   const normalizedUpdate = normalizeUpdatePayload(body);
   if (normalizedUpdate.error || !normalizedUpdate.orderId || !normalizedUpdate.nextStatus) {
-    return json(400, { success: false, error: normalizedUpdate.error ?? 'Invalid update payload.' });
+    return json(corsHeaders, 400, { success: false, error: normalizedUpdate.error ?? 'Invalid update payload.' });
   }
 
   const db = createClient(supabaseUrl, serviceRoleKey, {
@@ -169,12 +168,12 @@ Deno.serve(async (req) => {
 
   const verifyResult = await verifyAndLoadSession(db, tokenResult.value);
   if (!verifyResult.valid) {
-    return json(401, { success: false, error: verifyResult.error });
+    return json(corsHeaders, 401, { success: false, error: verifyResult.error });
   }
 
   const permissionKeys = await loadPermissionKeys(db, verifyResult.session.internal_user_id);
   if (!permissionKeys.includes('can_access_orders')) {
-    return json(403, { success: false, error: 'This internal session cannot update orders.' });
+    return json(corsHeaders, 403, { success: false, error: 'This internal session cannot update orders.' });
   }
 
   const { role_key: roleKey, scope_type: scopeType, scope_store_id: scopeStoreId } = verifyResult.session;
@@ -190,26 +189,26 @@ Deno.serve(async (req) => {
     .maybeSingle();
 
   if (orderReadError) {
-    return json(500, { success: false, error: 'Could not load order for status update.' });
+    return json(corsHeaders, 500, { success: false, error: 'Could not load order for status update.' });
   }
 
   if (!orderRow) {
-    return json(404, { success: false, error: 'Order not found.' });
+    return json(corsHeaders, 404, { success: false, error: 'Order not found.' });
   }
 
   const order = orderRow as OrderStatusRow;
 
   if (isStoreScope && scopeStoreId && order.store_id !== scopeStoreId) {
-    return json(403, { success: false, error: 'Store scope does not allow updating this order.' });
+    return json(corsHeaders, 403, { success: false, error: 'Store scope does not allow updating this order.' });
   }
 
   if (order.order_status !== 'placed' && order.order_status !== 'preparing' && order.order_status !== 'ready_for_pickup') {
-    return json(409, { success: false, error: 'Order status cannot transition from current state.' });
+    return json(corsHeaders, 409, { success: false, error: 'Order status cannot transition from current state.' });
   }
 
   const allowedNextStatuses = ALLOWED_NEXT_STATUS[order.order_status];
   if (!allowedNextStatuses.includes(nextStatus)) {
-    return json(409, { success: false, error: `Invalid transition. Allowed: ${allowedNextStatuses.join(', ')}.` });
+    return json(corsHeaders, 409, { success: false, error: `Invalid transition. Allowed: ${allowedNextStatuses.join(', ')}.` });
   }
 
   let updatePayload: Record<string, unknown> = {
@@ -234,11 +233,11 @@ Deno.serve(async (req) => {
   const { data: updatedOrder, error: updateError } = await updateQuery;
 
   if (updateError) {
-    return json(500, { success: false, error: 'Could not update order status.' });
+    return json(corsHeaders, 500, { success: false, error: 'Could not update order status.' });
   }
 
   if (!updatedOrder) {
-    return json(404, { success: false, error: 'Order not found for update.' });
+    return json(corsHeaders, 404, { success: false, error: 'Order not found for update.' });
   }
 
   if (nextStatus === 'completed') {
@@ -255,7 +254,7 @@ Deno.serve(async (req) => {
     }
   }
 
-  return json(200, {
+  return json(corsHeaders, 200, {
     success: true,
     orderId: updatedOrder.order_id,
     updatedStatus: updatedOrder.order_status,

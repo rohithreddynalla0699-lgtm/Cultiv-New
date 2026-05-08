@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import bcrypt from 'https://esm.sh/bcryptjs@2.4.3';
+import { createCorsHeaders } from '../_shared/cors.ts';
 
 type RoleKey = 'owner' | 'admin' | 'store';
 type ScopeType = 'global' | 'store' | 'owner' | 'admin';
@@ -55,12 +56,7 @@ interface InternalAccessSessionRow {
   last_seen_at: string;
 }
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
-};
-
-const json = (status: number, payload: Record<string, unknown>) =>
+const json = (corsHeaders: Record<string, string>, status: number, payload: Record<string, unknown>) =>
   new Response(JSON.stringify(payload), {
     status,
     headers: {
@@ -909,31 +905,34 @@ const deleteInternalUser = async (db: ReturnType<typeof createClient>, internalU
 };
 
 Deno.serve(async (req) => {
+  const corsHeaders = createCorsHeaders(req, {
+    allowedHeaders: ['authorization', 'apikey', 'content-type', 'x-client-info', 'x-internal-session-token'],
+  });
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
-    return json(405, { error: 'Method not allowed.' });
+    return json(corsHeaders, 405, { error: 'Method not allowed.' });
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !serviceRoleKey) {
-    return json(500, { error: 'Server is not configured for operations management.' });
+    return json(corsHeaders, 500, { error: 'Server is not configured for operations management.' });
   }
 
   let body: ManageOperationsRequest;
   try {
     body = await req.json();
   } catch {
-    return json(400, { error: 'Invalid JSON body.' });
+    return json(corsHeaders, 400, { error: 'Invalid JSON body.' });
   }
 
   const token = String(body.internalSessionToken ?? '').trim();
   if (!token) {
-    return json(400, { error: 'internalSessionToken is required.' });
+    return json(corsHeaders, 400, { error: 'internalSessionToken is required.' });
   }
 
   const db = createClient(supabaseUrl, serviceRoleKey, {
@@ -942,25 +941,25 @@ Deno.serve(async (req) => {
 
   const sessionResult = await verifyAndLoadSession(db, token);
   if (!sessionResult.valid) {
-    return json(401, { error: sessionResult.error });
+    return json(corsHeaders, 401, { error: sessionResult.error });
   }
 
   const permission = await enforceManageStoresPermission(db, sessionResult.session);
   if (!permission.allowed) {
-    return json(permission.status ?? 403, { error: permission.error ?? 'Not allowed.' });
+    return json(corsHeaders, permission.status ?? 403, { error: permission.error ?? 'Not allowed.' });
   }
 
   if (body.action === 'list_internal_users') {
     if (body.roleFilter !== 'admin' && body.roleFilter !== 'store') {
-      return json(400, { error: 'roleFilter must be admin or store.' });
+      return json(corsHeaders, 400, { error: 'roleFilter must be admin or store.' });
     }
 
     const result = await loadInternalUsers(db, body.roleFilter);
     if (result.error) {
-      return json(500, { error: result.error });
+      return json(corsHeaders, 500, { error: result.error });
     }
 
-    return json(200, {
+    return json(corsHeaders, 200, {
       success: true,
       users: result.users,
     });
@@ -968,33 +967,33 @@ Deno.serve(async (req) => {
 
   if (body.action === 'upsert_store') {
     const result = await upsertStore(db, body);
-    return json(result.status, result.payload);
+    return json(corsHeaders, result.status, result.payload);
   }
 
   if (body.action === 'deactivate_store') {
     const result = await deactivateStore(db, String(body.targetStoreId ?? '').trim());
-    return json(result.status, result.payload);
+    return json(corsHeaders, result.status, result.payload);
   }
 
   if (body.action === 'delete_store') {
     const result = await deleteStore(db, String(body.targetStoreId ?? '').trim());
-    return json(result.status, result.payload);
+    return json(corsHeaders, result.status, result.payload);
   }
 
   if (body.action === 'upsert_internal_user') {
     const result = await upsertInternalUser(db, body);
-    return json(result.status, result.payload);
+    return json(corsHeaders, result.status, result.payload);
   }
 
   if (body.action === 'deactivate_internal_user') {
     const result = await deactivateInternalUser(db, String(body.internalUserId ?? '').trim(), sessionResult.session.internal_user_id);
-    return json(result.status, result.payload);
+    return json(corsHeaders, result.status, result.payload);
   }
 
   if (body.action === 'delete_internal_user') {
     const result = await deleteInternalUser(db, String(body.internalUserId ?? '').trim(), sessionResult.session.internal_user_id);
-    return json(result.status, result.payload);
+    return json(corsHeaders, result.status, result.payload);
   }
 
-  return json(400, { error: 'Unsupported action.' });
+  return json(corsHeaders, 400, { error: 'Unsupported action.' });
 });

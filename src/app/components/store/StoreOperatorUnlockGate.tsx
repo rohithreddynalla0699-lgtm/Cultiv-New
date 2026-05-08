@@ -195,6 +195,7 @@ export function StoreOperatorUnlockGate({ currentPath }: StoreOperatorUnlockGate
                 <div className="relative mt-2">
                   <input
                     id="store-operator-pin"
+                    name="employeePin"
                     type={showPin ? 'text' : 'password'}
                     autoComplete="off"
                     inputMode="numeric"

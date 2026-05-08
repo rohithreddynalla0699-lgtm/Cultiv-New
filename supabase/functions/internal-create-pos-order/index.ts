@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { canonicalizeOrderPricing } from '../_shared/canonical-pricing.ts';
+import { createCorsHeaders } from '../_shared/cors.ts';
 
 type RoleKey = 'owner' | 'admin' | 'store';
 type ScopeType = 'global' | 'store' | 'owner' | 'admin';
@@ -47,16 +48,11 @@ interface InternalAccessSessionRow {
   last_seen_at: string;
 }
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
-};
-
 const DEV_LOGS = Deno.env.get('APP_ENV') !== 'production';
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const json = (status: number, payload: Record<string, unknown>) =>
+const json = (corsHeaders: Record<string, string>, status: number, payload: Record<string, unknown>) =>
   new Response(JSON.stringify(payload), {
     status,
     headers: {
@@ -66,12 +62,12 @@ const json = (status: number, payload: Record<string, unknown>) =>
     },
   });
 
-const errorResponse = (status: number, code: string, error: string, debug?: Record<string, unknown>) => {
+const errorResponse = (corsHeaders: Record<string, string>, status: number, code: string, error: string, debug?: Record<string, unknown>) => {
   if (DEV_LOGS && debug) {
     console.error('[internal-create-pos-order]', { status, code, error, ...debug });
   }
 
-  return json(status, { success: false, code, error });
+  return json(corsHeaders, status, { success: false, code, error });
 };
 
 const isValidUuid = (value: unknown): value is string =>
@@ -252,27 +248,30 @@ const awardPosLoyaltyFallback = async (
 };
 
 Deno.serve(async (req) => {
+  const corsHeaders = createCorsHeaders(req, {
+    allowedHeaders: ['authorization', 'apikey', 'content-type', 'x-client-info', 'x-internal-session-token'],
+  });
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
     if (req.method !== 'POST') {
-      return errorResponse(405, 'INVALID_PAYLOAD', 'Method not allowed.');
+      return errorResponse(corsHeaders, 405, 'INVALID_PAYLOAD', 'Method not allowed.');
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
     if (!supabaseUrl || !serviceRoleKey) {
-      return errorResponse(500, 'UNKNOWN_ERROR', 'Server is not configured for POS checkout.');
+      return errorResponse(corsHeaders, 500, 'UNKNOWN_ERROR', 'Server is not configured for POS checkout.');
     }
 
     let body: InternalCreatePosOrderRequest;
     try {
       body = await req.json();
     } catch {
-      return errorResponse(400, 'INVALID_PAYLOAD', 'Invalid JSON body.');
+      return errorResponse(corsHeaders, 400, 'INVALID_PAYLOAD', 'Invalid JSON body.');
     }
 
     const internalSessionToken = (body.internalSessionToken ?? '').trim();
@@ -287,25 +286,25 @@ Deno.serve(async (req) => {
     const total = roundMoney(body.total);
 
     if (!internalSessionToken) {
-      return errorResponse(400, 'INVALID_PAYLOAD', 'internalSessionToken is required.');
+      return errorResponse(corsHeaders, 400, 'INVALID_PAYLOAD', 'internalSessionToken is required.');
     }
     if (!isValidUuid(storeId)) {
-      return errorResponse(400, 'INVALID_PAYLOAD', 'storeId must be a valid store UUID.');
+      return errorResponse(corsHeaders, 400, 'INVALID_PAYLOAD', 'storeId must be a valid store UUID.');
     }
     if (customerId && !isValidUuid(customerId)) {
-      return errorResponse(400, 'INVALID_PAYLOAD', 'customerId must be a valid customer UUID.');
+      return errorResponse(corsHeaders, 400, 'INVALID_PAYLOAD', 'customerId must be a valid customer UUID.');
     }
     if (paymentMethod !== 'cash' && paymentMethod !== 'upi' && paymentMethod !== 'card') {
-      return errorResponse(400, 'INVALID_PAYLOAD', 'paymentMethod must be cash, upi, or card.');
+      return errorResponse(corsHeaders, 400, 'INVALID_PAYLOAD', 'paymentMethod must be cash, upi, or card.');
     }
     if (![subtotal, taxAmount, tipAmount, tipPercentage, total].every((amount) => Number.isFinite(amount) && amount >= 0)) {
-      return errorResponse(400, 'INVALID_PAYLOAD', 'subtotal, taxAmount, tipAmount, and total must be non-negative numbers.');
+      return errorResponse(corsHeaders, 400, 'INVALID_PAYLOAD', 'subtotal, taxAmount, tipAmount, and total must be non-negative numbers.');
     }
     if (total <= 0) {
-      return errorResponse(400, 'INVALID_PAYLOAD', 'total must be greater than zero.');
+      return errorResponse(corsHeaders, 400, 'INVALID_PAYLOAD', 'total must be greater than zero.');
     }
     if (!validateItems(body.items)) {
-      return errorResponse(400, 'INVALID_PAYLOAD', 'POS order must include valid items.');
+      return errorResponse(corsHeaders, 400, 'INVALID_PAYLOAD', 'POS order must include valid items.');
     }
 
     const db = createClient(supabaseUrl, serviceRoleKey, {
@@ -314,20 +313,20 @@ Deno.serve(async (req) => {
 
     const verifiedSession = await verifyAndLoadSession(db, internalSessionToken);
     if (!verifiedSession.valid) {
-      return errorResponse(401, 'INVALID_SESSION', verifiedSession.error);
+      return errorResponse(corsHeaders, 401, 'INVALID_SESSION', verifiedSession.error);
     }
 
     const permissionsResult = await loadPermissionKeys(db, verifiedSession.session.internal_user_id);
     if (permissionsResult.error) {
-      return errorResponse(500, 'UNKNOWN_ERROR', permissionsResult.error);
+      return errorResponse(corsHeaders, 500, 'UNKNOWN_ERROR', permissionsResult.error);
     }
 
     if (!permissionsResult.permissionKeys.includes('can_access_pos')) {
-      return errorResponse(403, 'MISSING_PERMISSION', 'You do not have permission to create POS orders.');
+      return errorResponse(corsHeaders, 403, 'MISSING_PERMISSION', 'You do not have permission to create POS orders.');
     }
 
     if (verifiedSession.session.scope_type === 'store' && verifiedSession.session.scope_store_id !== storeId) {
-      return errorResponse(403, 'STORE_SCOPE_DENIED', 'Store scope does not allow checkout for this store.');
+      return errorResponse(corsHeaders, 403, 'STORE_SCOPE_DENIED', 'Store scope does not allow checkout for this store.');
     }
 
     let canonicalPricing;
@@ -350,6 +349,7 @@ Deno.serve(async (req) => {
       });
     } catch (error) {
       return errorResponse(
+        corsHeaders,
         400,
         'PRICING_MISMATCH',
         error instanceof Error ? error.message : 'Invalid POS pricing payload.',
@@ -386,7 +386,7 @@ Deno.serve(async (req) => {
         ? 'PAYMENT_RECORD_FAILED'
         : 'ORDER_CREATION_FAILED';
 
-      return errorResponse(500, code, safeMessage, { rpcError, storeId, customerId });
+      return errorResponse(corsHeaders, 500, code, safeMessage, { rpcError, storeId, customerId });
     }
 
     if (customerId && rpcResult.orderId) {
@@ -411,7 +411,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    return json(200, {
+    return json(corsHeaders, 200, {
       success: true,
       order: {
         orderId: rpcResult.orderId,
@@ -441,7 +441,7 @@ Deno.serve(async (req) => {
       },
     });
   } catch (error) {
-    return errorResponse(500, 'UNKNOWN_ERROR', 'Could not complete POS checkout.', {
+    return errorResponse(corsHeaders, 500, 'UNKNOWN_ERROR', 'Could not complete POS checkout.', {
       error: error instanceof Error ? error.message : String(error),
     });
   }

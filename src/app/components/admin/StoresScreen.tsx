@@ -620,55 +620,55 @@ export function StoresScreen() {
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <label className="block text-sm text-foreground/68">
                 <span className="mb-2 block font-medium">Store name</span>
-                <input value={storeEditor.name} onChange={(event) => setStoreEditor((previous) => ({ ...previous, name: event.target.value }))} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                <input id="store-editor-name" name="storeName" value={storeEditor.name} onChange={(event) => setStoreEditor((previous) => ({ ...previous, name: event.target.value }))} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
               <label className="block text-sm text-foreground/68">
                 <span className="mb-2 block font-medium">Address line</span>
-                <input value={storeEditor.addressLine1} onChange={(event) => setStoreEditor((previous) => ({ ...previous, addressLine1: event.target.value }))} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                <input id="store-editor-address-line-1" name="addressLine1" value={storeEditor.addressLine1} onChange={(event) => setStoreEditor((previous) => ({ ...previous, addressLine1: event.target.value }))} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
               <label className="block text-sm text-foreground/68">
                 <span className="mb-2 block font-medium">City</span>
-                <input value={storeEditor.city} onChange={(event) => setStoreEditor((previous) => ({ ...previous, city: event.target.value }))} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                <input id="store-editor-city" name="city" value={storeEditor.city} onChange={(event) => setStoreEditor((previous) => ({ ...previous, city: event.target.value }))} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
               <label className="block text-sm text-foreground/68">
                 <span className="mb-2 block font-medium">State</span>
-                <input value={storeEditor.state} onChange={(event) => setStoreEditor((previous) => ({ ...previous, state: event.target.value }))} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                <input id="store-editor-state" name="state" value={storeEditor.state} onChange={(event) => setStoreEditor((previous) => ({ ...previous, state: event.target.value }))} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
               <label className="block text-sm text-foreground/68">
                 <span className="mb-2 block font-medium">Postal code</span>
-                <input value={storeEditor.postalCode} onChange={(event) => setStoreEditor((previous) => ({ ...previous, postalCode: event.target.value.replace(/\D/g, '').slice(0, 10) }))} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                <input id="store-editor-postal-code" name="postalCode" value={storeEditor.postalCode} onChange={(event) => setStoreEditor((previous) => ({ ...previous, postalCode: event.target.value.replace(/\D/g, '').slice(0, 10) }))} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
               <label className="block text-sm text-foreground/68">
                 <span className="mb-2 block font-medium">Store phone</span>
-                <input value={storeEditor.phone} onChange={(event) => setStoreEditor((previous) => ({ ...previous, phone: event.target.value.replace(/\D/g, '').slice(0, 10) }))} placeholder="Optional" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                <input id="store-editor-phone" name="storePhone" value={storeEditor.phone} onChange={(event) => setStoreEditor((previous) => ({ ...previous, phone: event.target.value.replace(/\D/g, '').slice(0, 10) }))} placeholder="Optional" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
               <label className="block text-sm text-foreground/68">
                 <span className="mb-2 block font-medium">Latitude</span>
-                <input value={storeEditor.latitude} onChange={(event) => setStoreEditor((previous) => ({ ...previous, latitude: event.target.value }))} placeholder="Optional, e.g. 45.4871" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                <input id="store-editor-latitude" name="latitude" value={storeEditor.latitude} onChange={(event) => setStoreEditor((previous) => ({ ...previous, latitude: event.target.value }))} placeholder="Optional, e.g. 45.4871" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
               <label className="block text-sm text-foreground/68">
                 <span className="mb-2 block font-medium">Longitude</span>
-                <input value={storeEditor.longitude} onChange={(event) => setStoreEditor((previous) => ({ ...previous, longitude: event.target.value }))} placeholder="Optional, e.g. -122.8037" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                <input id="store-editor-longitude" name="longitude" value={storeEditor.longitude} onChange={(event) => setStoreEditor((previous) => ({ ...previous, longitude: event.target.value }))} placeholder="Optional, e.g. -122.8037" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
               <label className="block text-sm text-foreground/68">
                 <span className="mb-2 block font-medium">Store code</span>
-                <input value={storeEditor.code} onChange={(event) => setStoreEditor((previous) => ({ ...previous, code: event.target.value.toUpperCase() }))} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                <input id="store-editor-code" name="storeCode" value={storeEditor.code} onChange={(event) => setStoreEditor((previous) => ({ ...previous, code: event.target.value.toUpperCase() }))} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
               <label className="flex items-center justify-between rounded-2xl border border-primary/12 bg-white/86 px-4 py-3 text-sm text-foreground/72">
                 <span className="font-medium">Store active</span>
-                <input type="checkbox" checked={storeEditor.isActive} onChange={(event) => setStoreEditor((previous) => ({ ...previous, isActive: event.target.checked }))} className="h-4 w-4 accent-primary" />
+                <input id="store-editor-is-active" name="storeIsActive" type="checkbox" checked={storeEditor.isActive} onChange={(event) => setStoreEditor((previous) => ({ ...previous, isActive: event.target.checked }))} className="h-4 w-4 accent-primary" />
               </label>
               <label className="block text-sm text-foreground/68">
                 <span className="mb-2 block font-medium">{storeEditor.storeLoginInternalUserId ? 'Store login user' : 'Initial store login user'}</span>
-                <input value={storeEditor.storeLoginFullName} onChange={(event) => setStoreEditor((previous) => ({ ...previous, storeLoginFullName: event.target.value }))} placeholder="Store operator name" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                <input id="store-editor-login-full-name" name="storeLoginFullName" value={storeEditor.storeLoginFullName} onChange={(event) => setStoreEditor((previous) => ({ ...previous, storeLoginFullName: event.target.value }))} placeholder="Store operator name" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
               <label className="block text-sm text-foreground/68">
                 <span className="mb-2 block font-medium">{storeEditor.storeLoginInternalUserId ? 'Create new PIN only if replacing missing login' : 'Initial store login PIN'}</span>
-                <input value={storeEditor.storeLoginPin} onChange={(event) => setStoreEditor((previous) => ({ ...previous, storeLoginPin: event.target.value.replace(/\D/g, '').slice(0, 6) }))} placeholder={storeEditor.storeLoginInternalUserId ? 'Leave blank to keep current PIN' : '6-digit PIN'} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                <input id="store-editor-login-pin" name="storeLoginPin" value={storeEditor.storeLoginPin} onChange={(event) => setStoreEditor((previous) => ({ ...previous, storeLoginPin: event.target.value.replace(/\D/g, '').slice(0, 6) }))} placeholder={storeEditor.storeLoginInternalUserId ? 'Leave blank to keep current PIN' : '6-digit PIN'} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
               <label className="flex items-center justify-between rounded-2xl border border-primary/12 bg-white/86 px-4 py-3 text-sm text-foreground/72 md:col-span-2">
                 <span className="font-medium">Store login active</span>
-                <input type="checkbox" checked={storeEditor.storeLoginIsActive} onChange={(event) => setStoreEditor((previous) => ({ ...previous, storeLoginIsActive: event.target.checked }))} className="h-4 w-4 accent-primary" />
+                <input id="store-editor-login-is-active" name="storeLoginIsActive" type="checkbox" checked={storeEditor.storeLoginIsActive} onChange={(event) => setStoreEditor((previous) => ({ ...previous, storeLoginIsActive: event.target.checked }))} className="h-4 w-4 accent-primary" />
               </label>
             </div>
             <div className="mt-6 flex gap-3">
@@ -687,15 +687,15 @@ export function StoresScreen() {
             <div className="mt-5 grid gap-4 md:grid-cols-2">
               <label className="block text-sm text-foreground/68 md:col-span-2">
                 <span className="mb-2 block font-medium">Full name</span>
-                <input value={adminEditor.fullName} onChange={(event) => setAdminEditor((previous) => ({ ...previous, fullName: event.target.value }))} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                <input id="admin-editor-full-name" name="adminFullName" value={adminEditor.fullName} onChange={(event) => setAdminEditor((previous) => ({ ...previous, fullName: event.target.value }))} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
               <label className="block text-sm text-foreground/68">
                 <span className="mb-2 block font-medium">{adminEditor.internalUserId ? 'New PIN (optional)' : 'Initial PIN'}</span>
-                <input value={adminEditor.pin} onChange={(event) => setAdminEditor((previous) => ({ ...previous, pin: event.target.value.replace(/\D/g, '').slice(0, 6) }))} placeholder={adminEditor.internalUserId ? 'Leave blank to keep current PIN' : '6-digit PIN'} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+                <input id="admin-editor-pin" name="adminPin" value={adminEditor.pin} onChange={(event) => setAdminEditor((previous) => ({ ...previous, pin: event.target.value.replace(/\D/g, '').slice(0, 6) }))} placeholder={adminEditor.internalUserId ? 'Leave blank to keep current PIN' : '6-digit PIN'} className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
               </label>
               <label className="flex items-center justify-between rounded-2xl border border-primary/12 bg-white/86 px-4 py-3 text-sm text-foreground/72">
                 <span className="font-medium">Admin active</span>
-                <input type="checkbox" checked={adminEditor.isActive} onChange={(event) => setAdminEditor((previous) => ({ ...previous, isActive: event.target.checked }))} className="h-4 w-4 accent-primary" />
+                <input id="admin-editor-is-active" name="adminIsActive" type="checkbox" checked={adminEditor.isActive} onChange={(event) => setAdminEditor((previous) => ({ ...previous, isActive: event.target.checked }))} className="h-4 w-4 accent-primary" />
               </label>
             </div>
             <div className="mt-6 flex gap-3">
@@ -713,7 +713,7 @@ export function StoresScreen() {
             <p className="mt-2 text-sm text-foreground/72">Set a new 6-digit login PIN for {resetPinState.label}. Active sessions for that account will be revoked.</p>
             <label className="mt-4 block text-sm text-foreground/68">
               <span className="mb-2 block font-medium">New login PIN</span>
-              <input value={resetPinState.newPin} onChange={(event) => setResetPinState((previous) => ({ ...previous, newPin: event.target.value.replace(/\D/g, '').slice(0, 6) }))} placeholder="6-digit PIN" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
+              <input id="reset-login-pin" name="newLoginPin" value={resetPinState.newPin} onChange={(event) => setResetPinState((previous) => ({ ...previous, newPin: event.target.value.replace(/\D/g, '').slice(0, 6) }))} placeholder="6-digit PIN" className="w-full rounded-2xl border border-primary/12 bg-background/80 px-4 py-3 outline-none transition-colors focus:border-primary" />
             </label>
             <div className="mt-6 flex gap-3">
               <button type="button" onClick={closeResetPin} disabled={resetPinState.isSubmitting} className="flex-1 rounded-2xl border border-primary/16 bg-white px-4 py-2 text-sm font-medium text-foreground/72 disabled:opacity-50">Cancel</button>

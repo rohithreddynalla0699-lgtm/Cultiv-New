@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createCorsHeaders } from '../_shared/cors.ts';
 
 type RoleKey = 'owner' | 'admin' | 'store';
 type ScopeType = 'global' | 'store' | 'owner' | 'admin';
@@ -26,12 +27,7 @@ interface InternalAccessSessionRow {
   last_seen_at: string;
 }
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
-};
-
-const json = (status: number, payload: Record<string, unknown>) =>
+const json = (corsHeaders: Record<string, string>, status: number, payload: Record<string, unknown>) =>
   new Response(JSON.stringify(payload), {
     status,
     headers: {
@@ -93,26 +89,29 @@ const loadPermissionKeys = async (db: ReturnType<typeof createClient>, internalU
 };
 
 Deno.serve(async (req) => {
+  const corsHeaders = createCorsHeaders(req, {
+    allowedHeaders: ['authorization', 'apikey', 'content-type', 'x-client-info', 'x-internal-session-token'],
+  });
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
-    return json(405, { error: 'Method not allowed.' });
+    return json(corsHeaders, 405, { error: 'Method not allowed.' });
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !serviceRoleKey) {
-    return json(500, { error: 'Server is not configured for payments.' });
+    return json(corsHeaders, 500, { error: 'Server is not configured for payments.' });
   }
 
   let body: InternalPosPaymentRequest;
   try {
     body = await req.json();
   } catch {
-    return json(400, { error: 'Invalid JSON body.' });
+    return json(corsHeaders, 400, { error: 'Invalid JSON body.' });
   }
 
   const internalSessionToken = (body.internalSessionToken ?? '').trim();
@@ -122,19 +121,19 @@ Deno.serve(async (req) => {
   const amount = Number(body.amount ?? NaN);
 
   if (body.action !== 'record_pos_payment') {
-    return json(400, { error: 'action must be record_pos_payment.' });
+    return json(corsHeaders, 400, { error: 'action must be record_pos_payment.' });
   }
   if (!internalSessionToken) {
-    return json(400, { error: 'internalSessionToken is required.' });
+    return json(corsHeaders, 400, { error: 'internalSessionToken is required.' });
   }
   if (!orderId) {
-    return json(400, { error: 'orderId is required.' });
+    return json(corsHeaders, 400, { error: 'orderId is required.' });
   }
   if (paymentMethod !== 'cash' && paymentMethod !== 'upi' && paymentMethod !== 'card') {
-    return json(400, { error: 'paymentMethod must be cash, upi, or card.' });
+    return json(corsHeaders, 400, { error: 'paymentMethod must be cash, upi, or card.' });
   }
   if (!Number.isFinite(amount) || amount < 0) {
-    return json(400, { error: 'amount must be a non-negative number.' });
+    return json(corsHeaders, 400, { error: 'amount must be a non-negative number.' });
   }
 
   const db = createClient(supabaseUrl, serviceRoleKey, {
@@ -143,16 +142,16 @@ Deno.serve(async (req) => {
 
   const verifiedSession = await verifyAndLoadSession(db, internalSessionToken);
   if (!verifiedSession.valid) {
-    return json(401, { error: verifiedSession.error });
+    return json(corsHeaders, 401, { error: verifiedSession.error });
   }
 
   const permissionsResult = await loadPermissionKeys(db, verifiedSession.session.internal_user_id);
   if (permissionsResult.error) {
-    return json(500, { error: permissionsResult.error });
+    return json(corsHeaders, 500, { error: permissionsResult.error });
   }
 
   if (!permissionsResult.permissionKeys.includes('can_access_pos')) {
-    return json(403, { error: 'You do not have permission to record POS payments.' });
+    return json(corsHeaders, 403, { error: 'You do not have permission to record POS payments.' });
   }
 
   const { data: orderRow, error: orderError } = await db
@@ -162,25 +161,25 @@ Deno.serve(async (req) => {
     .maybeSingle();
 
   if (orderError) {
-    return json(500, { error: 'Could not load order for payment recording.' });
+    return json(corsHeaders, 500, { error: 'Could not load order for payment recording.' });
   }
 
   if (!orderRow) {
-    return json(404, { error: 'Order not found.' });
+    return json(corsHeaders, 404, { error: 'Order not found.' });
   }
 
   if (verifiedSession.session.scope_type === 'store' && verifiedSession.session.scope_store_id !== orderRow.store_id) {
-    return json(403, { error: 'Store scope does not allow payment recording for this order.' });
+    return json(corsHeaders, 403, { error: 'Store scope does not allow payment recording for this order.' });
   }
 
   if (orderRow.order_status === 'cancelled') {
-    return json(409, { error: 'Cancelled orders cannot receive payments.' });
+    return json(corsHeaders, 409, { error: 'Cancelled orders cannot receive payments.' });
   }
 
   const roundedAmount = Number(amount.toFixed(2));
   const expectedAmount = Number(Number(orderRow.total_amount ?? 0).toFixed(2));
   if (Math.abs(roundedAmount - expectedAmount) > 0.009) {
-    return json(409, { error: `Payment amount must match the order total of ${expectedAmount.toFixed(2)}.` });
+    return json(corsHeaders, 409, { error: `Payment amount must match the order total of ${expectedAmount.toFixed(2)}.` });
   }
 
   const nowIso = new Date().toISOString();
@@ -213,7 +212,7 @@ Deno.serve(async (req) => {
     .single();
 
   if (paymentError || !paymentRow) {
-    return json(500, { error: 'Could not record the payment.' });
+    return json(corsHeaders, 500, { error: 'Could not record the payment.' });
   }
 
   const { error: orderUpdateError } = await db
@@ -228,10 +227,10 @@ Deno.serve(async (req) => {
     .eq('order_id', orderRow.order_id);
 
   if (orderUpdateError) {
-    return json(500, { error: 'Payment was recorded, but order payment status could not be updated.' });
+    return json(corsHeaders, 500, { error: 'Payment was recorded, but order payment status could not be updated.' });
   }
 
-  return json(200, {
+  return json(corsHeaders, 200, {
     success: true,
     payment: {
       paymentId: paymentRow.payment_id,

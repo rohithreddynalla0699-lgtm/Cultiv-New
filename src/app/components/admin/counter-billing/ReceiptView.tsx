@@ -123,6 +123,9 @@ export function ReceiptView({
                       Phone
                     </p>
                     <input
+                      id="counter-receipt-phone"
+                      name="receiptPhone"
+                      autoComplete="tel"
                       type="tel"
                       value={customer.phone}
                       onChange={(event) => onCustomerPhoneChange(event.target.value)}
@@ -139,6 +142,9 @@ export function ReceiptView({
                       Email
                     </p>
                     <input
+                      id="counter-receipt-email"
+                      name="receiptEmail"
+                      autoComplete="email"
                       type="email"
                       value={customer.email}
                       onChange={(event) => onCustomerEmailChange(event.target.value)}

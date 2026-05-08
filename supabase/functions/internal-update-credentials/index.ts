@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import bcrypt from 'https://esm.sh/bcryptjs@2.4.3';
+import { createCorsHeaders } from '../_shared/cors.ts';
 
 type RoleKey = 'owner' | 'admin' | 'store';
 type ScopeType = 'global' | 'store' | 'owner' | 'admin';
@@ -29,12 +30,7 @@ interface InternalAccessSessionRow {
   last_seen_at: string;
 }
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
-};
-
-const json = (status: number, payload: Record<string, unknown>) =>
+const json = (corsHeaders: Record<string, string>, status: number, payload: Record<string, unknown>) =>
   new Response(JSON.stringify(payload), {
     status,
     headers: {
@@ -121,6 +117,7 @@ const enforcePermission = async (
 };
 
 const listInternalUserTargets = async (
+  corsHeaders: Record<string, string>,
   db: ReturnType<typeof createClient>,
   session: InternalAccessSessionRow,
   roleFilter: 'admin' | 'store',
@@ -133,11 +130,11 @@ const listInternalUserTargets = async (
   );
 
   if (!permission.allowed) {
-    return json(permission.status ?? 403, { error: permission.error ?? 'Not allowed.' });
+    return json(corsHeaders, permission.status ?? 403, { error: permission.error ?? 'Not allowed.' });
   }
 
   if (session.scope_type === 'store') {
-    return json(403, { error: 'Store-scoped sessions cannot manage internal login credentials.' });
+    return json(corsHeaders, 403, { error: 'Store-scoped sessions cannot manage internal login credentials.' });
   }
 
   const { data, error } = await db
@@ -147,7 +144,7 @@ const listInternalUserTargets = async (
     .order('full_name', { ascending: true });
 
   if (error) {
-    return json(500, { error: 'Could not load internal access targets.' });
+    return json(corsHeaders, 500, { error: 'Could not load internal access targets.' });
   }
 
   const rows = (data ?? []) as Array<{
@@ -159,7 +156,7 @@ const listInternalUserTargets = async (
     roles?: { role_key: string; scope_type: string } | null;
   }>;
 
-  return json(200, {
+  return json(corsHeaders, 200, {
     success: true,
     targets: rows
       .filter((row) => roleFilter === 'admin' || (row.store_id && row.stores?.id))
@@ -178,6 +175,7 @@ const listInternalUserTargets = async (
 };
 
 const updateEmployeeCredential = async (
+  corsHeaders: Record<string, string>,
   db: ReturnType<typeof createClient>,
   session: InternalAccessSessionRow,
   targetId: string,
@@ -191,7 +189,7 @@ const updateEmployeeCredential = async (
   );
 
   if (!permission.allowed) {
-    return json(permission.status ?? 403, { error: permission.error ?? 'Not allowed.' });
+    return json(corsHeaders, permission.status ?? 403, { error: permission.error ?? 'Not allowed.' });
   }
 
   const { data: employee, error: employeeError } = await db
@@ -201,15 +199,15 @@ const updateEmployeeCredential = async (
     .maybeSingle();
 
   if (employeeError) {
-    return json(500, { error: 'Could not load employee credentials target.' });
+    return json(corsHeaders, 500, { error: 'Could not load employee credentials target.' });
   }
 
   if (!employee) {
-    return json(404, { error: 'Employee not found.' });
+    return json(corsHeaders, 404, { error: 'Employee not found.' });
   }
 
   if (session.scope_type === 'store' && session.scope_store_id !== employee.store_id) {
-    return json(403, { error: 'Store scope does not allow updating this employee PIN.' });
+    return json(corsHeaders, 403, { error: 'Store scope does not allow updating this employee PIN.' });
   }
 
   const pinHash = await bcrypt.hash(newPin, 10);
@@ -222,10 +220,10 @@ const updateEmployeeCredential = async (
     .eq('id', employee.id);
 
   if (updateError) {
-    return json(500, { error: 'Could not update employee PIN.' });
+    return json(corsHeaders, 500, { error: 'Could not update employee PIN.' });
   }
 
-  return json(200, {
+  return json(corsHeaders, 200, {
     success: true,
     targetType: 'employee',
     targetId: employee.id,
@@ -235,6 +233,7 @@ const updateEmployeeCredential = async (
 };
 
 const updateInternalUserCredential = async (
+  corsHeaders: Record<string, string>,
   db: ReturnType<typeof createClient>,
   session: InternalAccessSessionRow,
   targetId: string,
@@ -249,7 +248,7 @@ const updateInternalUserCredential = async (
   );
 
   if (!permission.allowed) {
-    return json(permission.status ?? 403, { error: permission.error ?? 'Not allowed.' });
+    return json(corsHeaders, permission.status ?? 403, { error: permission.error ?? 'Not allowed.' });
   }
 
   const { data: targetUser, error: targetError } = await db
@@ -259,19 +258,19 @@ const updateInternalUserCredential = async (
     .maybeSingle();
 
   if (targetError) {
-    return json(500, { error: 'Could not load internal credential target.' });
+    return json(corsHeaders, 500, { error: 'Could not load internal credential target.' });
   }
 
   if (!targetUser) {
-    return json(404, { error: 'Internal user not found.' });
+    return json(corsHeaders, 404, { error: 'Internal user not found.' });
   }
 
   if (targetUser.roles?.role_key === 'owner') {
-    return json(403, { error: 'Owner credentials cannot be reset from this screen.' });
+    return json(corsHeaders, 403, { error: 'Owner credentials cannot be reset from this screen.' });
   }
 
   if (targetUser.roles?.role_key === 'store' && (!targetUser.roles?.scope_type || !targetUser.store_id)) {
-    return json(400, { error: 'Store login target is missing store scope.' });
+    return json(corsHeaders, 400, { error: 'Store login target is missing store scope.' });
   }
 
   const pinHash = await bcrypt.hash(newPin, 10);
@@ -286,7 +285,7 @@ const updateInternalUserCredential = async (
     .eq('id', targetUser.id);
 
   if (updateError) {
-    return json(500, { error: 'Could not update store login PIN.' });
+    return json(corsHeaders, 500, { error: 'Could not update store login PIN.' });
   }
 
   if (revokeExistingSessions) {
@@ -297,11 +296,11 @@ const updateInternalUserCredential = async (
       .is('revoked_at', null);
 
     if (revokeError) {
-      return json(500, { error: 'PIN updated, but existing sessions could not be revoked.' });
+      return json(corsHeaders, 500, { error: 'PIN updated, but existing sessions could not be revoked.' });
     }
   }
 
-  return json(200, {
+  return json(corsHeaders, 200, {
     success: true,
     targetType: 'internal_user',
     targetId: targetUser.id,
@@ -311,31 +310,34 @@ const updateInternalUserCredential = async (
 };
 
 Deno.serve(async (req) => {
+  const corsHeaders = createCorsHeaders(req, {
+    allowedHeaders: ['authorization', 'apikey', 'content-type', 'x-client-info', 'x-internal-session-token'],
+  });
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
-    return json(405, { error: 'Method not allowed.' });
+    return json(corsHeaders, 405, { error: 'Method not allowed.' });
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !serviceRoleKey) {
-    return json(500, { error: 'Server is not configured for credential updates.' });
+    return json(corsHeaders, 500, { error: 'Server is not configured for credential updates.' });
   }
 
   let body: InternalUpdateCredentialsRequest;
   try {
     body = await req.json();
   } catch {
-    return json(400, { error: 'Invalid JSON body.' });
+    return json(corsHeaders, 400, { error: 'Invalid JSON body.' });
   }
 
   const internalSessionToken = (body.internalSessionToken ?? '').trim();
   if (!internalSessionToken) {
-    return json(400, { error: 'internalSessionToken is required.' });
+    return json(corsHeaders, 400, { error: 'internalSessionToken is required.' });
   }
 
   const db = createClient(supabaseUrl, serviceRoleKey, {
@@ -344,16 +346,16 @@ Deno.serve(async (req) => {
 
   const verifiedSession = await verifyAndLoadSession(db, internalSessionToken);
   if (!verifiedSession.valid) {
-    return json(401, { error: verifiedSession.error });
+    return json(corsHeaders, 401, { error: verifiedSession.error });
   }
 
   if (body.action === 'list_store_targets') {
     const roleFilter = body.roleFilter === 'admin' ? 'admin' : 'store';
-    return listInternalUserTargets(db, verifiedSession.session, roleFilter);
+    return listInternalUserTargets(corsHeaders, db, verifiedSession.session, roleFilter);
   }
 
   if (body.action !== 'update_credential') {
-    return json(400, { error: 'action must be list_store_targets or update_credential.' });
+    return json(corsHeaders, 400, { error: 'action must be list_store_targets or update_credential.' });
   }
 
   const targetId = (body.targetId ?? '').trim();
@@ -361,20 +363,20 @@ Deno.serve(async (req) => {
   const revokeExistingSessions = body.revokeExistingSessions !== false;
 
   if (!targetId) {
-    return json(400, { error: 'targetId is required.' });
+    return json(corsHeaders, 400, { error: 'targetId is required.' });
   }
 
   if (!newPin) {
-    return json(400, { error: 'newPin must be a valid 6-digit PIN.' });
+    return json(corsHeaders, 400, { error: 'newPin must be a valid 6-digit PIN.' });
   }
 
   if (body.targetType === 'employee') {
-    return updateEmployeeCredential(db, verifiedSession.session, targetId, newPin);
+    return updateEmployeeCredential(corsHeaders, db, verifiedSession.session, targetId, newPin);
   }
 
   if (body.targetType === 'internal_user') {
-    return updateInternalUserCredential(db, verifiedSession.session, targetId, newPin, revokeExistingSessions);
+    return updateInternalUserCredential(corsHeaders, db, verifiedSession.session, targetId, newPin, revokeExistingSessions);
   }
 
-  return json(400, { error: 'targetType must be employee or internal_user.' });
+  return json(corsHeaders, 400, { error: 'targetType must be employee or internal_user.' });
 });

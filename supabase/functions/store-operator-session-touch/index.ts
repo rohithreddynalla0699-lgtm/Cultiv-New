@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import {
-  corsHeaders,
+  buildStoreOperatorCorsHeaders,
   enforceStoreScope,
   extractSessionToken,
   json,
@@ -10,31 +10,32 @@ import {
 } from '../_shared/store-operator-session.ts';
 
 Deno.serve(async (req) => {
+  const corsHeaders = buildStoreOperatorCorsHeaders(req);
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
-    return json(405, { error: 'Method not allowed' });
+    return json(corsHeaders, 405, { error: 'Method not allowed' });
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !serviceRoleKey) {
-    return json(500, { error: 'Server is not configured for store operator sessions.' });
+    return json(corsHeaders, 500, { error: 'Server is not configured for store operator sessions.' });
   }
 
   let body: { internalSessionToken?: string };
   try {
     body = await req.json();
   } catch {
-    return json(400, { error: 'Invalid JSON body.' });
+    return json(corsHeaders, 400, { error: 'Invalid JSON body.' });
   }
 
   const tokenResult = extractSessionToken(body);
   if (tokenResult.error || !tokenResult.value) {
-    return json(400, { error: tokenResult.error ?? 'Invalid session payload.' });
+    return json(corsHeaders, 400, { error: tokenResult.error ?? 'Invalid session payload.' });
   }
 
   const db = createClient(supabaseUrl, serviceRoleKey, {
@@ -46,21 +47,21 @@ Deno.serve(async (req) => {
 
   const verifyResult = await verifyAndLoadSession(db, tokenResult.value);
   if (!verifyResult.valid) {
-    return json(401, { error: verifyResult.error });
+    return json(corsHeaders, 401, { error: verifyResult.error });
   }
 
   const scopeResult = enforceStoreScope(verifyResult.session);
   if (scopeResult.error) {
-    return json(403, { error: scopeResult.error });
+    return json(corsHeaders, 403, { error: scopeResult.error });
   }
 
   const sessionResult = await loadActiveOperatorSession(db, verifyResult.session.id);
   if (sessionResult.error) {
-    return json(sessionResult.status ?? 500, { error: sessionResult.error });
+    return json(corsHeaders, sessionResult.status ?? 500, { error: sessionResult.error });
   }
 
   if (!sessionResult.session?.id) {
-    return json(404, { error: 'No active store operator session was found.' });
+    return json(corsHeaders, 404, { error: 'No active store operator session was found.' });
   }
 
   const nowIso = new Date().toISOString();
@@ -75,10 +76,10 @@ Deno.serve(async (req) => {
     .single();
 
   if (error || !data) {
-    return json(500, { error: 'Could not update store operator session activity.' });
+    return json(corsHeaders, 500, { error: 'Could not update store operator session activity.' });
   }
 
-  return json(200, {
+  return json(corsHeaders, 200, {
     success: true,
     lastActivityAt: nowIso,
     expiresAt: data.expires_at,

@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import bcrypt from 'https://esm.sh/bcryptjs@2.4.3';
+import { createCorsHeaders } from '../_shared/cors.ts';
 
 type LoginMode = 'owner' | 'admin' | 'store';
 
@@ -30,12 +31,7 @@ interface InternalUserAccessRow {
   };
 }
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
-};
-
-const json = (status: number, payload: Record<string, unknown>) =>
+const json = (corsHeaders: Record<string, string>, status: number, payload: Record<string, unknown>) =>
   new Response(JSON.stringify(payload), {
     status,
     headers: {
@@ -184,26 +180,29 @@ const clearFailedAttempts = async (db: ReturnType<typeof createClient>, attemptK
 };
 
 Deno.serve(async (req) => {
+  const corsHeaders = createCorsHeaders(req, {
+    allowedHeaders: ['authorization', 'apikey', 'content-type', 'x-client-info', 'x-internal-session-token'],
+  });
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
-    return json(405, { error: 'Method not allowed' });
+    return json(corsHeaders, 405, { error: 'Method not allowed' });
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !serviceRoleKey) {
-    return json(500, { error: 'Server is not configured for internal login.' });
+    return json(corsHeaders, 500, { error: 'Server is not configured for internal login.' });
   }
 
   let body: InternalLoginRequest;
   try {
     body = (await req.json()) as InternalLoginRequest;
   } catch {
-    return json(400, { error: 'Invalid JSON body.' });
+    return json(corsHeaders, 400, { error: 'Invalid JSON body.' });
   }
 
   const mode = body.mode;
@@ -211,15 +210,15 @@ Deno.serve(async (req) => {
   const storeCode = body.storeCode ? normalizeStoreCode(body.storeCode) : '';
 
   if (mode !== 'owner' && mode !== 'admin' && mode !== 'store') {
-    return json(400, { error: 'mode must be one of owner, admin, or store.' });
+    return json(corsHeaders, 400, { error: 'mode must be one of owner, admin, or store.' });
   }
 
   if (!isSixDigitPin(pin)) {
-    return json(400, { error: 'pin must be a valid 6-digit string.' });
+    return json(corsHeaders, 400, { error: 'pin must be a valid 6-digit string.' });
   }
 
   if (mode === 'store' && !storeCode) {
-    return json(400, { error: 'storeCode is required for store mode.' });
+    return json(corsHeaders, 400, { error: 'storeCode is required for store mode.' });
   }
 
   const db = createClient(supabaseUrl, serviceRoleKey, {
@@ -233,7 +232,7 @@ Deno.serve(async (req) => {
   const attemptKey = `${mode}:${storeCode || 'global'}:${clientIp}`;
   const attemptState = await loadAttemptState(db, attemptKey);
   if (attemptState?.locked_until && new Date(attemptState.locked_until) > new Date()) {
-    return json(429, { error: 'Too many failed login attempts. Try again later.' });
+    return json(corsHeaders, 429, { error: 'Too many failed login attempts. Try again later.' });
   }
 
   // Read candidate users by scope/role, then verify PIN securely in function code.
@@ -256,13 +255,13 @@ Deno.serve(async (req) => {
   const { data, error } = await query;
 
   if (error) {
-    return json(500, { error: 'Could not validate internal credentials.' });
+    return json(corsHeaders, 500, { error: 'Could not validate internal credentials.' });
   }
 
   const users = (data ?? []) as InternalUserAccessRow[];
   if (users.length === 0) {
     await registerFailedAttempt(db, attemptKey);
-    return json(401, { error: 'Invalid PIN.' });
+    return json(corsHeaders, 401, { error: 'Invalid PIN.' });
   }
 
   let user: InternalUserAccessRow | null = null;
@@ -276,11 +275,11 @@ Deno.serve(async (req) => {
 
   if (!user) {
     await registerFailedAttempt(db, attemptKey);
-    return json(401, { error: 'Invalid PIN.' });
+    return json(corsHeaders, 401, { error: 'Invalid PIN.' });
   }
 
   if (!user.is_active || (mode === 'store' && user.stores && user.stores.is_active === false)) {
-    return json(403, { error: 'This login is inactive. Contact the owner.' });
+    return json(corsHeaders, 403, { error: 'This login is inactive. Contact the owner.' });
   }
 
   await clearFailedAttempts(db, attemptKey);
@@ -288,15 +287,15 @@ Deno.serve(async (req) => {
   // Extra scope guards for defense in depth.
   if (mode === 'store') {
     if (user.roles.scope_type !== 'store') {
-      return json(403, { error: 'Permission denied for this access mode.' });
+      return json(corsHeaders, 403, { error: 'Permission denied for this access mode.' });
     }
     if (!user.store_id) {
-      return json(403, { error: 'Permission denied for this access mode.' });
+      return json(corsHeaders, 403, { error: 'Permission denied for this access mode.' });
     }
   } else {
     const allowedGlobalScopes = new Set(['global', 'owner', 'admin']);
     if (!allowedGlobalScopes.has(user.roles.scope_type)) {
-      return json(403, { error: 'Permission denied for this access mode.' });
+      return json(corsHeaders, 403, { error: 'Permission denied for this access mode.' });
     }
   }
 
@@ -328,10 +327,10 @@ Deno.serve(async (req) => {
     .single();
 
   if (sessionInsertError || !insertedSession) {
-    return json(500, { error: 'Could not create internal access session.' });
+    return json(corsHeaders, 500, { error: 'Could not create internal access session.' });
   }
 
-  return json(200, {
+  return json(corsHeaders, 200, {
     userId: user.id,
     roleKey,
     permissionKeys,

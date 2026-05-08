@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import bcrypt from 'https://esm.sh/bcryptjs@2.4.3';
+import { createCorsHeaders } from '../_shared/cors.ts';
 
 type RoleKey = 'owner' | 'admin' | 'store';
 type ScopeType = 'global' | 'store' | 'owner' | 'admin';
@@ -77,14 +78,9 @@ interface EmployeeShiftRow {
   total_hours: number | null;
 }
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
-};
-
 const HOURS_MS = 1000 * 60 * 60;
 
-const json = (status: number, payload: Record<string, unknown>) =>
+const json = (corsHeaders: Record<string, string>, status: number, payload: Record<string, unknown>) =>
   new Response(JSON.stringify(payload), {
     status,
     headers: {
@@ -729,36 +725,39 @@ const saveEmployee = async (db: ReturnType<typeof createClient>, session: Intern
 };
 
 Deno.serve(async (req) => {
+  const corsHeaders = createCorsHeaders(req, {
+    allowedHeaders: ['authorization', 'apikey', 'content-type', 'x-client-info', 'x-internal-session-token'],
+  });
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
-    return json(405, { error: 'Method not allowed' });
+    return json(corsHeaders, 405, { error: 'Method not allowed' });
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !serviceRoleKey) {
-    return json(500, { error: 'Server is not configured for internal employees.' });
+    return json(corsHeaders, 500, { error: 'Server is not configured for internal employees.' });
   }
 
   let body: InternalEmployeesRequest;
   try {
     body = (await req.json()) as InternalEmployeesRequest;
   } catch {
-    return json(400, { error: 'Invalid JSON body.' });
+    return json(corsHeaders, 400, { error: 'Invalid JSON body.' });
   }
 
   const action = normalizeAction(body);
   if (!action.value) {
-    return json(400, { error: action.error ?? 'Invalid action.' });
+    return json(corsHeaders, 400, { error: action.error ?? 'Invalid action.' });
   }
 
   const token = (body.internalSessionToken ?? '').trim();
   if (!token) {
-    return json(400, { error: 'internalSessionToken is required.' });
+    return json(corsHeaders, 400, { error: 'internalSessionToken is required.' });
   }
 
   const db = createClient(supabaseUrl, serviceRoleKey, {
@@ -770,40 +769,40 @@ Deno.serve(async (req) => {
 
   const sessionResult = await verifyAndLoadSession(db, token);
   if (!sessionResult.valid) {
-    return json(401, { error: sessionResult.error });
+    return json(corsHeaders, 401, { error: sessionResult.error });
   }
 
   const session = sessionResult.session;
   const permissionKeys = await loadPermissionKeys(db, session.internal_user_id);
   if (!permissionKeys.includes('can_manage_employees')) {
-    return json(403, { error: 'This internal session cannot manage employees.' });
+    return json(corsHeaders, 403, { error: 'This internal session cannot manage employees.' });
   }
 
   if (action.value === 'dashboard') {
     const period = normalizePeriod(body.period);
     const scoped = await getScopedStores(db, session);
     if (!scoped.storeIds) {
-      return json(403, { error: scoped.error ?? 'Session cannot access any store.' });
+      return json(corsHeaders, 403, { error: scoped.error ?? 'Session cannot access any store.' });
     }
 
     const result = await buildDashboard(db, scoped.storeIds, period);
     if ('error' in result) {
-      return json(500, { error: result.error });
+      return json(corsHeaders, 500, { error: result.error });
     }
 
-    return json(200, { employees: result.employees });
+    return json(corsHeaders, 200, { employees: result.employees });
   }
 
   if (action.value === 'delete_employee') {
     const deleteResult = await deleteEmployee(db, session, body.employeeId ?? '');
-    return json(deleteResult.status, deleteResult.payload as Record<string, unknown>);
+    return json(corsHeaders, deleteResult.status, deleteResult.payload as Record<string, unknown>);
   }
 
   if (action.value === 'deactivate_employee') {
     const deactivateResult = await deactivateEmployee(db, session, body.employeeId ?? '');
-    return json(deactivateResult.status, deactivateResult.payload as Record<string, unknown>);
+    return json(corsHeaders, deactivateResult.status, deactivateResult.payload as Record<string, unknown>);
   }
 
   const saveResult = await saveEmployee(db, session, body);
-  return json(saveResult.status, saveResult.payload as Record<string, unknown>);
+  return json(corsHeaders, saveResult.status, saveResult.payload as Record<string, unknown>);
 });

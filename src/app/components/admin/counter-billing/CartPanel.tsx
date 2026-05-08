@@ -109,6 +109,8 @@ export function CartPanel({
 
           {selectedTipOption === 'custom' ? (
             <input
+              id="counter-billing-custom-tip"
+              name="customTip"
               type="number"
               min="0"
               step="0.01"

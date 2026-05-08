@@ -663,6 +663,9 @@ export function OrdersBoardScreen() {
                 {getReceiptContactRequirements(receiptDeliveryOption).needsPhone ? (
                   <div>
                     <input
+                      id="orders-board-receipt-phone"
+                      name="receiptPhone"
+                      autoComplete="tel"
                       type="tel"
                       value={receiptPhone}
                       onChange={(event) => setReceiptPhone(event.target.value)}
@@ -675,6 +678,9 @@ export function OrdersBoardScreen() {
                 {getReceiptContactRequirements(receiptDeliveryOption).needsEmail ? (
                   <div>
                     <input
+                      id="orders-board-receipt-email"
+                      name="receiptEmail"
+                      autoComplete="email"
                       type="email"
                       value={receiptEmail}
                       onChange={(event) => setReceiptEmail(event.target.value)}

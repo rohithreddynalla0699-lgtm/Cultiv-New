@@ -79,6 +79,8 @@ export function AppWaitlistModal({ isOpen, defaultEmail, onClose }: AppWaitlistM
             <div className="mt-5 flex items-center gap-2 rounded-2xl border border-primary/16 bg-white/92 px-3 py-2">
               <Sparkles className="h-4 w-4 text-primary" />
               <input
+                id="app-waitlist-email"
+                name="email"
                 type="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}

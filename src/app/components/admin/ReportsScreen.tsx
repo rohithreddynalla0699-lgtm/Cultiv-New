@@ -570,6 +570,8 @@ export function ReportsScreen() {
             <label className="text-sm text-foreground/72">
               <span className="mb-1 block text-xs uppercase tracking-[0.14em] text-foreground/52">From</span>
               <input
+                id="reports-custom-from"
+                name="customFrom"
                 type="date"
                 value={customFrom}
                 onChange={(event) => setCustomFrom(event.target.value)}
@@ -579,6 +581,8 @@ export function ReportsScreen() {
             <label className="text-sm text-foreground/72">
               <span className="mb-1 block text-xs uppercase tracking-[0.14em] text-foreground/52">To</span>
               <input
+                id="reports-custom-to"
+                name="customTo"
                 type="date"
                 value={customTo}
                 onChange={(event) => setCustomTo(event.target.value)}

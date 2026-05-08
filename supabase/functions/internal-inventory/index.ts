@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createCorsHeaders } from '../_shared/cors.ts';
 
 type RoleKey = 'owner' | 'admin' | 'store';
 type ScopeType = 'global' | 'store' | 'owner' | 'admin';
@@ -42,12 +43,7 @@ interface InternalAccessSessionRow {
   last_seen_at: string;
 }
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
-};
-
-const json = (status: number, payload: Record<string, unknown>) =>
+const json = (corsHeaders: Record<string, string>, status: number, payload: Record<string, unknown>) =>
   new Response(JSON.stringify(payload), {
     status,
     headers: {
@@ -877,36 +873,39 @@ const deleteInventoryItem = async (
 };
 
 Deno.serve(async (req) => {
+  const corsHeaders = createCorsHeaders(req, {
+    allowedHeaders: ['authorization', 'apikey', 'content-type', 'x-client-info', 'x-internal-session-token'],
+  });
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
-    return json(405, { error: 'Method not allowed' });
+    return json(corsHeaders, 405, { error: 'Method not allowed' });
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !serviceRoleKey) {
-    return json(500, { error: 'Server is not configured for internal inventory access.' });
+    return json(corsHeaders, 500, { error: 'Server is not configured for internal inventory access.' });
   }
 
   let body: InternalInventoryRequest;
   try {
     body = (await req.json()) as InternalInventoryRequest;
   } catch {
-    return json(400, { error: 'Invalid JSON body.' });
+    return json(corsHeaders, 400, { error: 'Invalid JSON body.' });
   }
 
   const action = normalizeAction(body);
   if (!action.value) {
-    return json(400, { error: action.error ?? 'Invalid action.' });
+    return json(corsHeaders, 400, { error: action.error ?? 'Invalid action.' });
   }
 
   const token = (body.internalSessionToken ?? '').trim();
   if (!token) {
-    return json(400, { error: 'internalSessionToken is required.' });
+    return json(corsHeaders, 400, { error: 'internalSessionToken is required.' });
   }
 
   const db = createClient(supabaseUrl, serviceRoleKey, {
@@ -918,45 +917,45 @@ Deno.serve(async (req) => {
 
   const sessionResult = await verifyAndLoadSession(db, token);
   if (!sessionResult.valid) {
-    return json(401, { error: sessionResult.error });
+    return json(corsHeaders, 401, { error: sessionResult.error });
   }
 
   const permissionResult = await enforcePermission(db, sessionResult.session, 'can_access_inventory');
   if (!permissionResult.allowed) {
-    return json(permissionResult.status ?? 403, { error: permissionResult.error ?? 'Not allowed.' });
+    return json(corsHeaders, permissionResult.status ?? 403, { error: permissionResult.error ?? 'Not allowed.' });
   }
 
   if (action.value === 'dashboard') {
     const storeResult = await resolveStoreIds(db, sessionResult.session, body.storeId);
     if (storeResult.error || !storeResult.storeIds) {
-      return json(storeResult.status ?? 400, { error: storeResult.error ?? 'No accessible store found.' });
+      return json(corsHeaders, storeResult.status ?? 400, { error: storeResult.error ?? 'No accessible store found.' });
     }
 
     const historyLimit = Math.max(5, Math.min(100, Math.round(parseNumeric(body.historyLimit) ?? 20)));
     const dashboard = await buildDashboard(db, storeResult.storeIds, historyLimit);
-    return json(dashboard.status, dashboard.payload);
+    return json(corsHeaders, dashboard.status, dashboard.payload);
   }
 
   if (action.value === 'create_item') {
     const creation = await createInventoryItem(db, sessionResult.session, body);
-    return json(creation.status, creation.payload);
+    return json(corsHeaders, creation.status, creation.payload);
   }
 
   if (action.value === 'archive_item') {
     const archive = await archiveInventoryItem(db, sessionResult.session, body);
-    return json(archive.status, archive.payload);
+    return json(corsHeaders, archive.status, archive.payload);
   }
 
   if (action.value === 'unarchive_item') {
     const unarchive = await unarchiveInventoryItem(db, sessionResult.session, body);
-    return json(unarchive.status, unarchive.payload);
+    return json(corsHeaders, unarchive.status, unarchive.payload);
   }
 
   if (action.value === 'delete_item') {
     const deletion = await deleteInventoryItem(db, sessionResult.session, body);
-    return json(deletion.status, deletion.payload);
+    return json(corsHeaders, deletion.status, deletion.payload);
   }
 
   const mutation = await adjustInventory(db, sessionResult.session, body);
-  return json(mutation.status, mutation.payload);
+  return json(corsHeaders, mutation.status, mutation.payload);
 });

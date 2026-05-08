@@ -33,6 +33,8 @@ export function OrderNotesDrawer({ orderId, initialValue, isOpen, isSaving, onCl
         <p className="mt-1 text-xs uppercase tracking-[0.12em] text-foreground/52">Order #{orderId}</p>
 
         <textarea
+          id="order-notes-draft"
+          name="orderNotes"
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           placeholder="Add instructions, escalation context, or pickup notes."
