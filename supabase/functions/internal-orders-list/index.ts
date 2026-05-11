@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createCorsHeaders } from '../_shared/cors.ts';
 
 type RoleKey = 'owner' | 'admin' | 'store';
 type OrderType = 'online' | 'walk_in' | 'phone';
@@ -52,12 +53,7 @@ const loadPermissionKeys = async (db: ReturnType<typeof createClient>, internalU
   return Array.from(new Set(permissionKeys));
 };
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
-};
-
-const json = (status: number, payload: Record<string, unknown>) =>
+const json = (corsHeaders: Record<string, string>, status: number, payload: Record<string, unknown>) =>
   new Response(JSON.stringify(payload), {
     status,
     headers: {
@@ -182,6 +178,10 @@ const verifyAndLoadSession = async (
 
 // MAIN HANDLER (no nested Deno.serve)
 Deno.serve(async (req) => {
+  const corsHeaders = createCorsHeaders(req, {
+    methods: 'POST, OPTIONS',
+  });
+
   try {
     // ...removed debug log...
     if (req.method === 'OPTIONS') {
@@ -189,14 +189,14 @@ Deno.serve(async (req) => {
     }
 
     if (req.method !== 'POST') {
-      return json(405, { error: 'Method not allowed' });
+      return json(corsHeaders, 405, { error: 'Method not allowed' });
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL');
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
     if (!supabaseUrl || !serviceRoleKey) {
-      return json(500, { error: 'Server is not configured for internal orders access.' });
+      return json(corsHeaders, 500, { error: 'Server is not configured for internal orders access.' });
     }
 
     let body: InternalOrdersListRequest;
@@ -204,19 +204,19 @@ Deno.serve(async (req) => {
       body = (await req.json()) as InternalOrdersListRequest;
     } catch (err) {
       console.log('[internal-orders-list] invalid JSON body', err?.message);
-      return json(400, { error: 'Invalid JSON body.' });
+      return json(corsHeaders, 400, { error: 'Invalid JSON body.' });
     }
 
     // ...removed debug log...
     const tokenResult = extractSessionToken(body);
     // ...removed debug log...
     if (tokenResult.error || !tokenResult.value) {
-      return json(400, { error: tokenResult.error ?? 'Invalid session payload.' });
+      return json(corsHeaders, 400, { error: tokenResult.error ?? 'Invalid session payload.' });
     }
 
     const normalizedFilters = normalizeFilters(body.filters);
     if (normalizedFilters.error) {
-      return json(400, { error: normalizedFilters.error });
+      return json(corsHeaders, 400, { error: normalizedFilters.error });
     }
 
     const db = createClient(supabaseUrl, serviceRoleKey, {
@@ -228,12 +228,12 @@ Deno.serve(async (req) => {
 
     const verifyResult = await verifyAndLoadSession(db, tokenResult.value);
     if (!verifyResult.valid) {
-      return json(401, { error: verifyResult.error });
+      return json(corsHeaders, 401, { error: verifyResult.error });
     }
 
     const permissionKeys = await loadPermissionKeys(db, verifyResult.session.internal_user_id);
     if (!permissionKeys.includes('can_access_orders')) {
-      return json(403, { error: 'This internal session cannot access orders.' });
+      return json(corsHeaders, 403, { error: 'This internal session cannot access orders.' });
     }
 
     const { role_key: roleKey, scope_type: scopeType, scope_store_id: scopeStoreId } = verifyResult.session;
@@ -244,7 +244,7 @@ Deno.serve(async (req) => {
 
     // Validate store scope UUID
     if (isStoreScope && (!isValidUuid(scopeStoreId))) {
-      return json(400, { error: 'Invalid store scope in session' });
+      return json(corsHeaders, 400, { error: 'Invalid store scope in session' });
     }
 
     let query = db
@@ -289,14 +289,14 @@ Deno.serve(async (req) => {
 
     if (error) {
       console.log('[internal-orders-list] query error', error?.message);
-      return json(500, { error: error?.message || 'Could not fetch internal orders.' });
+      return json(corsHeaders, 500, { error: error?.message || 'Could not fetch internal orders.' });
     }
 
-    return json(200, {
+    return json(corsHeaders, 200, {
       orders: data ?? [],
     });
   } catch (err) {
     console.log('[internal-orders-list] handler error', err?.message);
-    return json(500, { error: err?.message || 'Internal server error' });
+    return json(corsHeaders, 500, { error: err?.message || 'Internal server error' });
   }
 });

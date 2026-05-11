@@ -2,9 +2,11 @@ node_modules
 dist
 .vercel
 .env
+.env.e2e.local
 .env.local
 .env.*.local
 .DS_Store
 *.log.vscode/
 .vscode/
 supabase/snippets/
+qa/e2e/artifacts/

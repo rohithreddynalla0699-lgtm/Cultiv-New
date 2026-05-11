@@ -874,6 +874,7 @@ const deleteInventoryItem = async (
 
 Deno.serve(async (req) => {
   const corsHeaders = createCorsHeaders(req, {
+    methods: 'POST, OPTIONS',
     allowedHeaders: ['authorization', 'apikey', 'content-type', 'x-client-info', 'x-internal-session-token'],
   });
   if (req.method === 'OPTIONS') {
