@@ -19,7 +19,7 @@ const isInStoreOrder = (order: Order) =>
 	order.orderType === 'walk_in' || order.source === 'walk_in';
 
 export function OrderHistoryScreen() {
-	const { user, orders, activeOrders } = useAuth();
+	const { user, orders, activeOrders, ordersLoading, authRestoring } = useAuth();
 	const navigate = useNavigate();
 	const location = useLocation();
 	const [activeFilter, setActiveFilter] = useState<OrderFilter>('all');
@@ -29,6 +29,8 @@ export function OrderHistoryScreen() {
 	if (!user) {
 		return <Navigate to="/" replace />;
 	}
+
+	const isInitialOrdersLoading = authRestoring || (ordersLoading && orders.length === 0 && activeOrders.length === 0);
 
 	const sortedOrders = orders.slice().sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 	const onlineOrders = sortedOrders.filter((order) => order.source === 'app');
@@ -147,140 +149,164 @@ export function OrderHistoryScreen() {
 					</div>
 				) : null}
 
-				{activeOrders[0] ? <motion.div variants={CardStaggerItem} className="relative z-10"><ActiveOrderTracker order={activeOrders[0]} compact /></motion.div> : null}
-
-				<motion.div variants={CardStaggerItem} className="relative z-10 rounded-[28px] border border-primary/14 bg-[linear-gradient(160deg,rgba(255,255,255,0.9),rgba(241,246,236,0.82))] p-3 shadow-[0_18px_52px_rgba(45,80,22,0.11)]">
-					<div className="flex flex-wrap gap-2">
-						{tabData.map((tab) => {
-							const isActive = activeFilter === tab.key;
-							return (
-								<motion.button
-									key={tab.key}
-									type="button"
-									onClick={() => setActiveFilter(tab.key)}
-									className={`relative rounded-full px-4 py-2 text-sm font-medium transition-colors ${isActive ? 'text-primary-foreground' : 'text-foreground/70 hover:text-foreground'}`}
-								>
-									{isActive ? <motion.span layoutId="order-history-tab-indicator" className="absolute inset-0 rounded-full bg-primary" transition={{ type: 'spring', stiffness: 280, damping: 24 }} /> : null}
-									<span className="relative z-10">{tab.label} ({tab.count})</span>
-								</motion.button>
-							);
-						})}
-					</div>
-				</motion.div>
-
-				<AnimatePresence mode="wait">
-					<motion.div
-						key={activeFilter}
-						initial={{ opacity: 0, y: 8 }}
-						animate={{ opacity: 1, y: 0 }}
-						exit={{ opacity: 0, y: -6 }}
-						transition={{ duration: 0.22 }}
-						className="relative z-10"
-					>
-						{filteredOrders.length === 0 ? (
-							<div className="rounded-[30px] border border-primary/14 bg-[linear-gradient(155deg,rgba(255,255,255,0.92),rgba(240,246,233,0.82))] shadow-[0_18px_52px_rgba(45,80,22,0.11)] p-10 text-center">
-								<Package className="w-12 h-12 text-primary mx-auto mb-4" />
-								<h2 className="text-2xl font-semibold tracking-tight">Your CULTIV history starts here.</h2>
-								<p className="mt-3 text-foreground/68 max-w-xl mx-auto">Once you place an order, it will appear here for quick reordering and tracking.</p>
-								<button
-									onClick={() => {
-										const nextState: HomeOrderLaunchState = {
-											openOrder: true,
-											categorySlug: DEFAULT_FIRST_ORDER_CATEGORY_SLUG,
-										};
-										navigate('/', { state: nextState });
-									}}
-									className="mt-6 rounded-full bg-primary px-5 py-3 text-sm font-medium text-primary-foreground"
-								>
-									Order your first bowl
-								</button>
+				{isInitialOrdersLoading ? (
+					<div className="relative z-10 grid min-h-[70vh] place-items-center">
+						<div className="w-full max-w-md rounded-[32px] border border-primary/14 bg-[linear-gradient(155deg,rgba(255,255,255,0.96),rgba(240,246,233,0.88))] p-7 text-center shadow-[0_18px_42px_rgba(45,80,22,0.09)]">
+							<div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-primary/12 bg-primary/8 text-primary">
+								<Package className="h-6 w-6" />
 							</div>
-						) : (
-							<CardStagger className="space-y-4">
-								{filteredOrders.map((order) => {
-									const statusLabel = order.statusTimeline.find((event) => event.status === order.status)?.label ?? order.status;
-									// Status badge color for customer
-									let statusBadgeClass = '';
-									let statusBadgeLabel = '';
-									switch (order.status) {
-										case 'cancelled':
-											statusBadgeClass = 'bg-rose-100 text-rose-700 border border-rose-200';
-											statusBadgeLabel = 'Cancelled';
-											break;
-										case 'completed':
-											statusBadgeClass = 'bg-primary/8 text-primary border border-primary/20';
-											statusBadgeLabel = 'Completed';
-											break;
-								default:
-									statusBadgeClass = 'bg-background/75 text-foreground/72 border border-border';
-									statusBadgeLabel = statusLabel.charAt(0).toUpperCase() + statusLabel.slice(1).replace(/_/g, ' ');
-									break;
-							}
-							const orderDate = new Date(order.createdAt);
-							const inStoreOrder = isInStoreOrder(order);
-							const modeLabel = inStoreOrder ? 'In-Store' : 'Online';
-							const fulfillmentLabel = inStoreOrder ? 'In-Store' : 'Pickup';
-							const itemTitles = order.items.map((item) => item.title);
+							<p className="mt-4 text-[10px] font-semibold uppercase tracking-[0.22em] text-primary/60">Order history</p>
+							<p className="mt-2 text-base font-semibold tracking-[-0.02em] text-foreground">Loading your orders</p>
+							<p className="mt-1 text-sm text-foreground/68">Fetching recent orders, status updates, and reorder details.</p>
+							<div className="mt-5 flex items-center justify-center gap-2">
+								<span className="h-2.5 w-2.5 animate-pulse rounded-full bg-primary/70 [animation-delay:0ms]" />
+								<span className="h-2.5 w-2.5 animate-pulse rounded-full bg-primary/50 [animation-delay:120ms]" />
+								<span className="h-2.5 w-2.5 animate-pulse rounded-full bg-primary/35 [animation-delay:240ms]" />
+							</div>
+							<div className="mt-5 space-y-3">
+								<div className="h-14 rounded-[20px] bg-white/78" />
+								<div className="h-24 rounded-[20px] bg-white/62" />
+								<div className="h-24 rounded-[20px] bg-white/48" />
+							</div>
+						</div>
+					</div>
+				) : (
+					<>
+						{activeOrders[0] ? <motion.div variants={CardStaggerItem} className="relative z-10"><ActiveOrderTracker order={activeOrders[0]} compact /></motion.div> : null}
 
+						<motion.div variants={CardStaggerItem} className="relative z-10 rounded-[28px] border border-primary/14 bg-[linear-gradient(160deg,rgba(255,255,255,0.9),rgba(241,246,236,0.82))] p-3 shadow-[0_18px_52px_rgba(45,80,22,0.11)]">
+							<div className="flex flex-wrap gap-2">
+								{tabData.map((tab) => {
+									const isActive = activeFilter === tab.key;
 									return (
-										<motion.article
-											key={order.id}
-											variants={CardStaggerItem}
-											whileHover={HoverLift.whileHover}
-											className="rounded-[28px] border border-primary/14 bg-[linear-gradient(155deg,rgba(255,255,255,0.92),rgba(240,246,233,0.82))] p-6 shadow-[0_18px_52px_rgba(45,80,22,0.11)]"
+										<motion.button
+											key={tab.key}
+											type="button"
+											onClick={() => setActiveFilter(tab.key)}
+											className={`relative rounded-full px-4 py-2 text-sm font-medium transition-colors ${isActive ? 'text-primary-foreground' : 'text-foreground/70 hover:text-foreground'}`}
 										>
-											<div className="flex flex-wrap items-start justify-between gap-4">
-												<div className="space-y-1">
-													<p className="text-sm font-semibold">Order #{order.id.slice(-6)}</p>
-													<p className="text-sm text-foreground/62">{orderDate.toLocaleDateString()} • {orderDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-												</div>
-												<div className="flex flex-wrap items-center gap-2">
-													<span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${inStoreOrder ? 'bg-[#EAF2E1] text-primary' : 'bg-primary/10 text-primary'}`}>
-														{inStoreOrder ? <Store className="h-3.5 w-3.5" /> : <Smartphone className="h-3.5 w-3.5" />}
-														{modeLabel}
-													</span>
-													<span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${statusBadgeClass}`}>{statusBadgeLabel}</span>
-												</div>
-											</div>
-
-											<div className="mt-4 rounded-2xl border border-primary/12 bg-[#F7FAF2] p-4">
-												<p className="text-xs uppercase tracking-[0.2em] text-primary/58">Items</p>
-												<ul className="mt-2 space-y-1 text-sm text-foreground/76">
-													{itemTitles.map((title, index) => (
-														<li key={`${order.id}-${title}-${index}`} className="leading-6">{title}</li>
-													))}
-												</ul>
-											</div>
-
-											<div className="mt-4 flex flex-wrap items-center justify-between gap-4">
-												<div className="flex flex-wrap gap-2 text-xs text-foreground/68">
-													<span className="rounded-full bg-background/75 px-3 py-1">Total: ₹{order.total.toFixed(2)}</span>
-													{getGstBreakdown(order).hasGstAwareTotal ? <span className="rounded-full bg-background/75 px-3 py-1">GST: ₹{getGstBreakdown(order).gstAmount.toFixed(2)}</span> : null}
-													{getGstBreakdown(order).hasGstAwareTotal ? <span className="rounded-full bg-background/75 px-3 py-1">Tip: ₹{getGstBreakdown(order).tipAmount.toFixed(2)}</span> : null}
-													<span className="rounded-full bg-background/75 px-3 py-1">Payment: {getPaymentLabel(order)}</span>
-													<span className="rounded-full bg-background/75 px-3 py-1">{fulfillmentLabel}</span>
-												</div>
-												<div className="flex flex-wrap gap-2">
-													<motion.button
-														onClick={() => handleReorder(order)}
-														className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-														whileTap={{ scale: 0.97 }}
-													>
-														Reorder
-													</motion.button>
-													<Link to={`/orders/${order.id}`} className="inline-flex items-center gap-2 rounded-full border border-primary/20 px-4 py-2 text-sm font-medium text-primary">
-														<ReceiptText className="h-4 w-4" />
-														View Details
-													</Link>
-												</div>
-											</div>
-										</motion.article>
+											{isActive ? <motion.span layoutId="order-history-tab-indicator" className="absolute inset-0 rounded-full bg-primary" transition={{ type: 'spring', stiffness: 280, damping: 24 }} /> : null}
+											<span className="relative z-10">{tab.label} ({tab.count})</span>
+										</motion.button>
 									);
 								})}
-							</CardStagger>
-						)}
-					</motion.div>
-				</AnimatePresence>
+							</div>
+						</motion.div>
+
+						<AnimatePresence mode="wait">
+							<motion.div
+								key={activeFilter}
+								initial={{ opacity: 0, y: 8 }}
+								animate={{ opacity: 1, y: 0 }}
+								exit={{ opacity: 0, y: -6 }}
+								transition={{ duration: 0.22 }}
+								className="relative z-10"
+							>
+								{filteredOrders.length === 0 ? (
+									<div className="rounded-[30px] border border-primary/14 bg-[linear-gradient(155deg,rgba(255,255,255,0.92),rgba(240,246,233,0.82))] shadow-[0_18px_52px_rgba(45,80,22,0.11)] p-10 text-center">
+										<Package className="w-12 h-12 text-primary mx-auto mb-4" />
+										<h2 className="text-2xl font-semibold tracking-tight">Your CULTIV history starts here.</h2>
+										<p className="mt-3 text-foreground/68 max-w-xl mx-auto">Once you place an order, it will appear here for quick reordering and tracking.</p>
+										<button
+											onClick={() => {
+												const nextState: HomeOrderLaunchState = {
+													openOrder: true,
+													categorySlug: DEFAULT_FIRST_ORDER_CATEGORY_SLUG,
+												};
+												navigate('/', { state: nextState });
+											}}
+											className="mt-6 rounded-full bg-primary px-5 py-3 text-sm font-medium text-primary-foreground"
+										>
+											Order your first bowl
+										</button>
+									</div>
+								) : (
+									<CardStagger className="space-y-4">
+										{filteredOrders.map((order) => {
+											const statusLabel = order.statusTimeline.find((event) => event.status === order.status)?.label ?? order.status;
+											let statusBadgeClass = '';
+											let statusBadgeLabel = '';
+											switch (order.status) {
+												case 'cancelled':
+													statusBadgeClass = 'bg-rose-100 text-rose-700 border border-rose-200';
+													statusBadgeLabel = 'Cancelled';
+													break;
+												case 'completed':
+													statusBadgeClass = 'bg-primary/8 text-primary border border-primary/20';
+													statusBadgeLabel = 'Completed';
+													break;
+												default:
+													statusBadgeClass = 'bg-background/75 text-foreground/72 border border-border';
+													statusBadgeLabel = statusLabel.charAt(0).toUpperCase() + statusLabel.slice(1).replace(/_/g, ' ');
+													break;
+											}
+											const orderDate = new Date(order.createdAt);
+											const inStoreOrder = isInStoreOrder(order);
+											const modeLabel = inStoreOrder ? 'In-Store' : 'Online';
+											const fulfillmentLabel = inStoreOrder ? 'In-Store' : 'Pickup';
+											const itemTitles = order.items.map((item) => item.title);
+
+											return (
+												<motion.article
+													key={order.id}
+													variants={CardStaggerItem}
+													whileHover={HoverLift.whileHover}
+													className="rounded-[28px] border border-primary/14 bg-[linear-gradient(155deg,rgba(255,255,255,0.92),rgba(240,246,233,0.82))] p-6 shadow-[0_18px_52px_rgba(45,80,22,0.11)]"
+												>
+													<div className="flex flex-wrap items-start justify-between gap-4">
+														<div className="space-y-1">
+															<p className="text-sm font-semibold">Order #{order.id.slice(-6)}</p>
+															<p className="text-sm text-foreground/62">{orderDate.toLocaleDateString()} • {orderDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+														</div>
+														<div className="flex flex-wrap items-center gap-2">
+															<span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ${inStoreOrder ? 'bg-[#EAF2E1] text-primary' : 'bg-primary/10 text-primary'}`}>
+																{inStoreOrder ? <Store className="h-3.5 w-3.5" /> : <Smartphone className="h-3.5 w-3.5" />}
+																{modeLabel}
+															</span>
+															<span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-medium ${statusBadgeClass}`}>{statusBadgeLabel}</span>
+														</div>
+													</div>
+
+													<div className="mt-4 rounded-2xl border border-primary/12 bg-[#F7FAF2] p-4">
+														<p className="text-xs uppercase tracking-[0.2em] text-primary/58">Items</p>
+														<ul className="mt-2 space-y-1 text-sm text-foreground/76">
+															{itemTitles.map((title, index) => (
+																<li key={`${order.id}-${title}-${index}`} className="leading-6">{title}</li>
+															))}
+														</ul>
+													</div>
+
+													<div className="mt-4 flex flex-wrap items-center justify-between gap-4">
+														<div className="flex flex-wrap gap-2 text-xs text-foreground/68">
+															<span className="rounded-full bg-background/75 px-3 py-1">Total: ₹{order.total.toFixed(2)}</span>
+															{getGstBreakdown(order).hasGstAwareTotal ? <span className="rounded-full bg-background/75 px-3 py-1">GST: ₹{getGstBreakdown(order).gstAmount.toFixed(2)}</span> : null}
+															{getGstBreakdown(order).hasGstAwareTotal ? <span className="rounded-full bg-background/75 px-3 py-1">Tip: ₹{getGstBreakdown(order).tipAmount.toFixed(2)}</span> : null}
+															<span className="rounded-full bg-background/75 px-3 py-1">Payment: {getPaymentLabel(order)}</span>
+															<span className="rounded-full bg-background/75 px-3 py-1">{fulfillmentLabel}</span>
+														</div>
+														<div className="flex flex-wrap gap-2">
+															<motion.button
+																onClick={() => handleReorder(order)}
+																className="rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
+																whileTap={{ scale: 0.97 }}
+															>
+																Reorder
+															</motion.button>
+															<Link to={`/orders/${order.id}`} className="inline-flex items-center gap-2 rounded-full border border-primary/20 px-4 py-2 text-sm font-medium text-primary">
+																<ReceiptText className="h-4 w-4" />
+																View Details
+															</Link>
+														</div>
+													</div>
+												</motion.article>
+											);
+										})}
+									</CardStagger>
+								)}
+							</motion.div>
+						</AnimatePresence>
+					</>
+				)}
 			</div>
 		</PageReveal>
 	);

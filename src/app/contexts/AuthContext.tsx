@@ -68,6 +68,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   authRestoring: boolean;
   orders: Order[];
+  ordersLoading: boolean;
   sharedOrders: Order[];
   activeOrders: Order[];
   offers: Offer[];
@@ -943,6 +944,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [customerSessionExpiresAt, setCustomerSessionExpiresAt] = useState<string | null>(() => readCustomerSessionExpiresAtFromStorage());
   const [currentPathname, setCurrentPathname] = useState<string>(readInitialPathname);
   const [authRestoring, setAuthRestoring] = useState<boolean>(() => Boolean(readCustomerSessionTokenFromStorage()));
+  const [ordersLoading, setOrdersLoading] = useState(false);
   const [loyaltySummary, setLoyaltySummary] = useState<LoyaltySummary | null>(null);
   const [loyaltyLoading, setLoyaltyLoading] = useState(false);
 
@@ -1072,6 +1074,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setCustomerAccount(null);
       setCurrentUserId(null);
       setAllOrders([]);
+      setOrdersLoading(false);
       setPendingGuestOrderClaims([]);
       setPendingGuestClaimsError(null);
       setLoyaltySummary(null);
@@ -1128,9 +1131,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const requestToken = normalizeCustomerSessionToken(customerSessionToken);
     if (!requestToken) {
       setAllOrders([]);
+      setOrdersLoading(false);
       return;
     }
 
+    setOrdersLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke('customer-list-orders', {
         body: {
@@ -1209,6 +1214,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
       console.error('Customer orders read failed.', err);
       setAllOrders([]);
+    } finally {
+      setOrdersLoading(false);
     }
   }, [clearInvalidCustomerSession, customerSessionToken]);
 
@@ -1288,6 +1295,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   useEffect(() => {
     if (!customerSessionToken || authRestoring || !customerAccount?.id) {
       setAllOrders([]);
+      setOrdersLoading(false);
       return;
     }
 
@@ -2287,6 +2295,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     isAuthenticated: Boolean(customerSessionToken),
     authRestoring,
     orders,
+    ordersLoading,
     sharedOrders,
     activeOrders,
     offers,

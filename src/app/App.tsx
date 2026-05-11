@@ -7,6 +7,7 @@ import { StoreSessionProvider } from './contexts/StoreSessionContext';
 import { Header } from './components/Header';
 import { Hero } from './components/Hero';
 import { Footer } from './components/Footer';
+import { Logo } from './components/Logo';
 import { PrivacyPolicy } from './components/PrivacyPolicy';
 import { TermsOfUse } from './components/TermsOfUse';
 import { Suspense, lazy, useEffect, useRef, useState } from 'react';
@@ -53,6 +54,30 @@ const EmployeesScreen = lazy(() => import('./components/admin/EmployeesScreen').
 const StoresScreen = lazy(() => import('./components/admin/StoresScreen').then((module) => ({ default: module.StoresScreen })));
 const AdminDashboardProvider = lazy(() => import('./contexts/AdminDashboardContext').then((module) => ({ default: module.AdminDashboardProvider })));
 
+function RouteLoadingShell({ fullScreen = false, label = 'Loading page...' }: { fullScreen?: boolean; label?: string }) {
+  return (
+    <div className={`grid place-items-center px-4 py-8 sm:px-6 ${fullScreen ? 'min-h-screen' : 'min-h-[calc(100vh-11rem)]'}`}>
+      <div className="w-full max-w-sm rounded-[32px] border border-primary/14 bg-[linear-gradient(160deg,rgba(255,255,255,0.98),rgba(240,246,233,0.94))] px-6 py-7 text-center shadow-[0_24px_52px_rgba(20,35,10,0.12)] backdrop-blur-md">
+        <div className="flex justify-center">
+          <Logo variant="emblem" animated />
+        </div>
+        <p className="mt-4 text-[10px] font-semibold uppercase tracking-[0.22em] text-primary/60">Cultiv</p>
+        <p className="mt-2 text-base font-semibold tracking-[-0.02em] text-foreground">Loading</p>
+        <p className="mt-1 text-sm text-foreground/68">{label}</p>
+        <div className="mt-5 flex items-center justify-center gap-2">
+          <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-primary/70 [animation-delay:0ms]" />
+          <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-primary/55 [animation-delay:120ms]" />
+          <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-primary/40 [animation-delay:240ms]" />
+        </div>
+        <div className="mt-5 space-y-2">
+          <div className="h-3 rounded-full bg-primary/10" />
+          <div className="mx-auto h-3 w-4/5 rounded-full bg-primary/8" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MenuCategoryRedirect() {
   const { slug } = useParams<{ slug: string }>();
   if (!slug || !MENU_CATEGORIES.some((category) => category.slug === slug)) {
@@ -74,7 +99,7 @@ function CustomerProtectedRoute() {
   const { isAuthenticated, authRestoring } = useAuth();
 
   if (authRestoring) {
-    return null;
+    return <RouteLoadingShell label="Loading your account..." />;
   }
 
   if (!isAuthenticated) {
@@ -260,7 +285,7 @@ function AppShell() {
         </div>
       ) : null}
       <main>
-        <Suspense fallback={<div className="min-h-[35vh]" />}>
+        <Suspense fallback={<RouteLoadingShell fullScreen={hideGlobalShell} />}>
           <Routes>
             <Route
               path="/"
