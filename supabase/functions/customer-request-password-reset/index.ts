@@ -3,6 +3,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { notificationChannelPolicy } from '../_shared/notification-policy.ts';
 import { logNotificationEvent } from '../_shared/notification-events.ts';
 import { createCorsHeaders } from '../_shared/cors.ts';
+import { sendEmailViaProvider } from '../_shared/email-provider.ts';
 
 const json = (corsHeaders: Record<string, string>, status: number, payload: Record<string, unknown>) =>
   new Response(JSON.stringify(payload), {
@@ -20,10 +21,19 @@ const GENERIC_SUCCESS_MESSAGE =
 const REQUEST_LIMIT = 5;
 const REQUEST_WINDOW_MINUTES = 15;
 const RESET_TOKEN_TTL_MINUTES = 30;
+const SUPPORT_EMAIL = 'support@eatcultiv.com';
 
 const normalizePhone = (phone: string) => phone.replace(/\D/g, '').slice(-10);
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
 const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+const escapeHtml = (value: string) => (
+  value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+);
 
 const bytesToBase64Url = (bytes: Uint8Array) => {
   let binary = '';
@@ -98,6 +108,81 @@ const extractUserAgent = (req: Request): string | null => {
   if (!userAgent) return null;
   return userAgent.slice(0, 1024);
 };
+
+const normalizeBaseUrl = (value: string | undefined | null) => String(value ?? '').trim().replace(/\/+$/, '');
+
+const buildResetLink = (rawToken: string) => {
+  const appBaseUrl = normalizeBaseUrl(Deno.env.get('APP_BASE_URL'));
+  if (!appBaseUrl) {
+    return null;
+  }
+
+  try {
+    const url = new URL(`${appBaseUrl}/reset-password`);
+    url.searchParams.set('token', rawToken);
+    return url.toString();
+  } catch {
+    return null;
+  }
+};
+
+const renderPasswordResetEmailHtml = (params: {
+  resetLink: string;
+  recipientEmail: string;
+}) => `
+  <div style="font-family:Arial,sans-serif;background:#f6f8f2;padding:24px;color:#1f2937;">
+    <div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e5ebdd;border-radius:20px;overflow:hidden;">
+      <div style="padding:28px 24px 18px;text-align:center;border-bottom:1px solid #eef2e8;">
+        <div style="font-size:30px;font-weight:800;letter-spacing:-0.03em;color:#15230f;">CULTIV</div>
+        <div style="margin-top:8px;font-size:12px;font-weight:700;letter-spacing:0.18em;text-transform:uppercase;color:#6d7c62;">
+          Reset your password
+        </div>
+      </div>
+      <div style="padding:28px 24px;">
+        <p style="margin:0 0 12px;font-size:16px;line-height:1.6;color:#344054;">
+          We received a request to reset the password for <strong>${escapeHtml(params.recipientEmail)}</strong>.
+        </p>
+        <p style="margin:0 0 20px;font-size:14px;line-height:1.7;color:#667085;">
+          Use the secure link below to choose a new password for your CULTIV account.
+        </p>
+        <div style="margin:24px 0;text-align:center;">
+          <a
+            href="${escapeHtml(params.resetLink)}"
+            style="display:inline-block;padding:14px 24px;border-radius:999px;background:#2f5b1b;color:#ffffff;text-decoration:none;font-weight:700;"
+          >
+            Reset Password
+          </a>
+        </div>
+        <p style="margin:0 0 12px;font-size:13px;line-height:1.7;color:#667085;">
+          This reset link expires in ${RESET_TOKEN_TTL_MINUTES} minutes. If the button does not work, copy and paste this URL into your browser:
+        </p>
+        <p style="margin:0 0 18px;font-size:13px;line-height:1.7;color:#2f5b1b;word-break:break-word;">
+          ${escapeHtml(params.resetLink)}
+        </p>
+        <p style="margin:0 0 8px;font-size:13px;line-height:1.7;color:#667085;">
+          If you did not request this reset, you can safely ignore this email.
+        </p>
+        <p style="margin:0;font-size:13px;line-height:1.7;color:#667085;">
+          Need help? Contact <a href="mailto:${SUPPORT_EMAIL}" style="color:#2f5b1b;">${SUPPORT_EMAIL}</a>.
+        </p>
+      </div>
+    </div>
+  </div>
+`;
+
+const renderPasswordResetEmailText = (params: {
+  resetLink: string;
+  recipientEmail: string;
+}) => [
+  'CULTIV password reset',
+  '',
+  `We received a request to reset the password for ${params.recipientEmail}.`,
+  `Use this secure link to choose a new password: ${params.resetLink}`,
+  '',
+  `This link expires in ${RESET_TOKEN_TTL_MINUTES} minutes.`,
+  `If you did not request this reset, you can ignore this email.`,
+  `Need help? Contact ${SUPPORT_EMAIL}.`,
+].join('\n');
 
 const loadAttemptState = async (db: ReturnType<typeof createClient>, attemptKey: string) => {
   const { data } = await db
@@ -232,8 +317,8 @@ Deno.serve(async (req) => {
   let debugResetToken: string | undefined;
   const allowDebugTokenResponse = (Deno.env.get('PASSWORD_RESET_DEBUG_TOKEN_RESPONSE') ?? '').toLowerCase() === 'true';
 
-  // Security recovery channel policy: password reset tokens are part of account security flows; SMS remains the default security channel for verification.
-  const receiptChannelPolicy = notificationChannelPolicy.security;
+  // Security recovery channel policy: password reset tokens are part of account security flows; SMS remains the default policy baseline even though this phase delivers by email.
+  const securityChannelPolicy = notificationChannelPolicy.security;
   if (customer?.id && customer.is_active !== false) {
     const rawResetToken = createResetToken();
     const tokenHash = await sha256Base64Url(rawResetToken);
@@ -271,21 +356,74 @@ Deno.serve(async (req) => {
       debugResetToken = rawResetToken;
     }
 
-    await logNotificationEvent(db, {
-      channel: 'sms',
-      purpose: 'password_reset',
-      status: 'not_delivered',
-      provider: null,
-      recipient: customer.phone ? String(customer.phone) : null,
-      customerId: customer.id,
-      errorCode: 'DELIVERY_NOT_IMPLEMENTED',
-      errorMessage: 'Password reset token was prepared, but provider-backed delivery is not implemented in this environment.',
-      metadata: {
-        securityPreferredChannel: receiptChannelPolicy.preferred,
-        debugTokenResponseEnabled: allowDebugTokenResponse,
-        identifierType: isPhoneIdentifier ? 'phone' : 'email',
-      },
-    });
+    const resetLink = buildResetLink(rawResetToken);
+    const customerEmail = isValidEmail(String(customer.email ?? '').trim())
+      ? normalizeEmail(String(customer.email))
+      : null;
+
+    if (!customerEmail) {
+      await logNotificationEvent(db, {
+        channel: 'email',
+        purpose: 'password_reset',
+        status: 'not_delivered',
+        provider: 'resend',
+        recipient: null,
+        customerId: customer.id,
+        errorCode: 'MISSING_EMAIL',
+        errorMessage: 'Password reset token was prepared, but the customer account does not have a deliverable email address.',
+        metadata: {
+          securityPreferredChannel: securityChannelPolicy.preferred,
+          debugTokenResponseEnabled: allowDebugTokenResponse,
+          identifierType: isPhoneIdentifier ? 'phone' : 'email',
+        },
+      });
+    } else if (!resetLink) {
+      await logNotificationEvent(db, {
+        channel: 'email',
+        purpose: 'password_reset',
+        status: 'failed',
+        provider: 'resend',
+        recipient: customerEmail,
+        customerId: customer.id,
+        errorCode: 'APP_BASE_URL_MISSING',
+        errorMessage: 'Password reset token was prepared, but APP_BASE_URL is missing or invalid for reset-link generation.',
+        metadata: {
+          securityPreferredChannel: securityChannelPolicy.preferred,
+          debugTokenResponseEnabled: allowDebugTokenResponse,
+          identifierType: isPhoneIdentifier ? 'phone' : 'email',
+        },
+      });
+    } else {
+      const deliveryResult = await sendEmailViaProvider({
+        to: customerEmail,
+        subject: 'Reset your CULTIV password',
+        html: renderPasswordResetEmailHtml({
+          resetLink,
+          recipientEmail: customerEmail,
+        }),
+        text: renderPasswordResetEmailText({
+          resetLink,
+          recipientEmail: customerEmail,
+        }),
+      });
+
+      await logNotificationEvent(db, {
+        channel: 'email',
+        purpose: 'password_reset',
+        status: deliveryResult.success ? 'sent' : 'failed',
+        provider: deliveryResult.provider,
+        recipient: customerEmail,
+        customerId: customer.id,
+        errorCode: deliveryResult.errorCode ?? null,
+        errorMessage: deliveryResult.success ? null : deliveryResult.errorMessage ?? 'Password reset email could not be delivered.',
+        metadata: {
+          securityPreferredChannel: securityChannelPolicy.preferred,
+          debugTokenResponseEnabled: allowDebugTokenResponse,
+          identifierType: isPhoneIdentifier ? 'phone' : 'email',
+          providerMessageId: deliveryResult.messageId ?? null,
+        },
+      });
+    }
   }
 
   return json(200, {

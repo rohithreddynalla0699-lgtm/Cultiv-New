@@ -229,6 +229,38 @@ Required only if order receipts are sent by email and/or SMS.
 
 - Required for email receipts
 
+## Shared Email Delivery Secrets
+
+These are used by provider-backed transactional email flows.
+
+#### `RESEND_API_KEY`
+
+- Required for:
+  - password reset email delivery
+  - any future Resend-backed transactional emails
+
+#### `EMAIL_FROM_ADDRESS`
+
+- Required for:
+  - password reset email delivery
+- Recommended example:
+
+```env
+EMAIL_FROM_ADDRESS=noreply@yourdomain.com
+```
+
+#### `APP_BASE_URL`
+
+- Required for:
+  - password reset link generation
+- Purpose:
+  - builds customer-facing secure links in transactional emails
+- Recommended example:
+
+```env
+APP_BASE_URL=https://app.cultiv.com
+```
+
 ### Email provider keys
 
 #### `RESEND_API_KEY`
@@ -268,6 +300,25 @@ RECEIPT_DEBUG_LOGS=false
 - Required: No
 - Purpose: local/debug behavior only
 - Production rule: must be disabled or unset
+
+## Password Reset Email Readiness
+
+Password reset delivery now depends on the shared email provider configuration.
+
+Required for production:
+
+- `RESEND_API_KEY`
+- `EMAIL_FROM_ADDRESS`
+- `APP_BASE_URL`
+
+Password reset checklist:
+
+- password reset request returns the generic anti-enumeration success response
+- reset token row is created for matching active customers
+- reset email is successfully delivered through Resend
+- `notification_events` records `purpose=password_reset`
+- no raw reset token appears in logs
+- `PASSWORD_RESET_DEBUG_TOKEN_RESPONSE` is disabled in production
 
 ## Production Debug Flag Rules
 
